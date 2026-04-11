@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simulation-project"
+version = "0.1.0"
+description = "Simulación numérica con RBF y MRMT"
+authors = [
+    { name="Alexander Lobaina" }
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy",
+    "scikit-learn",
+    "rbf"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
