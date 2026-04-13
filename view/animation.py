@@ -1,11 +1,12 @@
 from contextlib import ExitStack
 from funtions.step_time import step_time
-from config import dt, sp_q, Nr, T, K, ncols, savefolder_data, savefolder_video
+from funtions.runtime import RUNTIME
+
 import numpy as np
 from scipy.sparse.linalg import splu
 import time
 from matplotlib.animation import FFMpegWriter
-
+p = RUNTIME.params
 
 class Simulation:
 
@@ -18,24 +19,24 @@ class Simulation:
 
         self.Qout = Qout
         self.t = 0.0
-        self.dt = dt
+        self.dt = p.dt
 
     def update(self, step, mask_h, d, visuals):
-        self.t += dt 
+        self.t += p.dt 
 
         if visuals is not None:
             im_H, im_V, im_C, im_C_im, quiv_V = visuals
 
-        for k in range(K): 
+        for k in range(p.K): 
             self.H[k], self.U[k], self.C[k], self.C_im[k] = step_time( H=self.H[k], C=self.C[k], C_im=self.C_im[k],
                                          nodes=d.nodes, groups=d.groups, normals=d.normals, A_solver=splu(d.A_left), 
                                          eps_M=d.eps_M, K=d.K, grad=d.grad, pho=d.pho, D_f=d.D_f, A_right=d.A_right,
                                          delta_p=d.delta_p, gauss_p=d.gauss_p, gauss_f=d.gauss_f, Qout=self.Qout[k],
-                                         t=self.t, T=T, mask_h=mask_h, exp_lam_dt=d.exp_lam_dt) 
+                                         t=self.t, T=p.T, mask_h=mask_h, exp_lam_dt=d.exp_lam_dt) 
 
 
             if visuals is not None:
-                i, j = divmod(k, ncols)
+                i, j = divmod(k, p.ncols)
                                             
                 # ----- campo H ----- S
                 SH = d.I.dot(self.H[k]); SH[~d.mask] = np.nan 
@@ -58,7 +59,7 @@ class Simulation:
                 Ux0 = Ux0.reshape(d.xy_grid.shape[1:]).T 
                 Uy0 = Uy0.reshape(d.xy_grid.shape[1:]).T 
 
-                quiv_V[i][j].set_UVC(Ux0[::sp_q, ::sp_q], Uy0[::sp_q, ::sp_q])
+                quiv_V[i][j].set_UVC(Ux0[::p.sp_q, ::p.sp_q], Uy0[::p.sp_q, ::p.sp_q])
                 
                 # ----- campo C ----- 
                 SC = d.I.dot(self.C[k]); 
@@ -68,7 +69,7 @@ class Simulation:
                 im_C[i][j].set_data(SC) 
 
                 # ----- campo C_im -----
-                for r in range(Nr):
+                for r in range(p.Nr):
                     SC_im = d.I.dot(self.C_im[k][r])
                     SC_im[~d.mask] = np.nan
                     SC_im = SC_im.reshape(
@@ -114,7 +115,7 @@ def run_simulation(sim, frames, outputs, d,
                 writer_V.grab_frame()
                 writer_C.grab_frame()
 
-                for r in range(Nr):
+                for r in range(p.Nr):
                     writer_C_im[r].grab_frame()
 
     finally:
@@ -163,19 +164,19 @@ def create_writers(figs):
     writer_H = FFMpegWriter(**writer_kwargs)
     writer_V = FFMpegWriter(**writer_kwargs)
     writer_C = FFMpegWriter(**writer_kwargs)
-    writer_C_im = [FFMpegWriter(**writer_kwargs) for _ in range(Nr)]
+    writer_C_im = [FFMpegWriter(**writer_kwargs) for _ in range(p.Nr)]
 
     context = [
-        writer_H.saving(fig_H, f"{savefolder_video}/H.mp4", dpi=150),
-        writer_V.saving(fig_V, f"{savefolder_video}/V.mp4", dpi=150),
-        writer_C.saving(fig_C, f"{savefolder_video}/C.mp4", dpi=150)
+        writer_H.saving(fig_H, f"{p.save_video}/H.mp4", dpi=150),
+        writer_V.saving(fig_V, f"{p.save_video}/V.mp4", dpi=150),
+        writer_C.saving(fig_C, f"{p.save_video}/C.mp4", dpi=150)
     ]
 
-    for r in range(Nr):
+    for r in range(p.Nr):
         context.append(
             writer_C_im[r].saving(
                 fig_C_im[r],
-                f"{savefolder_video}/C_im_r{r}.mp4",
+                f"{p.save_video}/C_im_r{r}.mp4",
                 dpi=150
             )
         )
@@ -207,7 +208,7 @@ def finalize_outputs(outputs, sim):
     if outputs["save_data"]:
 
         np.savez(
-            f"{savefolder_data}/simulation_results.npz",
+            f"{p.save_data}/simulation_results.npz",
             H=np.array(outputs["H_hist"]),  
             C=np.array(outputs["C_hist"]),  
             U=np.array(outputs["U_hist"]),

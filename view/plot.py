@@ -5,7 +5,8 @@ from matplotlib.animation import FFMpegWriter
 from contextlib import ExitStack
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from config import Nr, xmin, xmax, ymin, ymax, sp_q, nrows, ncols, K
+from funtions.runtime import RUNTIME
+p = RUNTIME.params
 
 def plot_mesh(nodes, groups, simplices, title='Malla', figsize=(10, 3)):
 
@@ -119,16 +120,16 @@ def get_colormaps():
 
 def create_figures():
 
-    fig_H, axes_H = plt.subplots(nrows, ncols, figsize=(18, 7))
-    fig_V, axes_V = plt.subplots(nrows, ncols, figsize=(18, 7))
-    fig_C, axes_C = plt.subplots(nrows, ncols, figsize=(18, 7))
+    fig_H, axes_H = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
+    fig_V, axes_V = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
+    fig_C, axes_C = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
 
 
     fig_C_im = []
     axes_C_im = []
 
-    for r in range(Nr):
-        fig, axes = plt.subplots(nrows, ncols, figsize=(18, 7))
+    for r in range(p.Nr):
+        fig, axes = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
         fig_C_im.append(fig)
         axes_C_im.append(np.atleast_2d(axes))
 
@@ -191,7 +192,7 @@ def export_videos(figs, sim, frames, mask_h):
 def setup_figures():
     (fig_H, fig_V, fig_C, fig_C_im,
      axes_H, axes_V, axes_C, axes_C_im,
-     cmap_main, cmap_h) = create_figures(Nr)
+     cmap_main, cmap_h) = create_figures(p.Nr)
 
     figs = [fig_H, fig_V, fig_C] + fig_C_im
 
@@ -207,16 +208,16 @@ def setup_figures():
             cmap_main, cmap_h)
 
 def create_visual_arrays():
-    im_H = [[None for _ in range(ncols)] for _ in range(nrows)]
-    im_V = [[None for _ in range(ncols)] for _ in range(nrows)]
-    im_C = [[None for _ in range(ncols)] for _ in range(nrows)]
+    im_H = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
+    im_V = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
+    im_C = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
 
     im_C_im = [
-        [[None for _ in range(ncols)] for _ in range(nrows)]
-        for _ in range(Nr)
+        [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
+        for _ in range(p.Nr)
     ]
 
-    quiv_V = [[None for _ in range(ncols)] for _ in range(nrows)]
+    quiv_V = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
 
     return im_H, im_V, im_C, im_C_im, quiv_V
 
@@ -227,8 +228,8 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
     X = d.xy_grid[0].T
     Y = d.xy_grid[1].T
 
-    for k in range(K):
-        i, j = divmod(k, ncols)
+    for k in range(p.K):
+        i, j = divmod(k, p.ncols)
 
         # H
         H0 = d.I.dot(d.H[k])
@@ -238,7 +239,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
         im_H[i][j] = axes[0][i,j].imshow(
             H0, vmin=305, vmax=309,
             cmap=cmaps[0], origin="lower",
-            extent=[xmin, xmax, ymin, ymax]
+            extent=[p.xmin, p.xmax, p.ymin, p.ymax]
         )
         axes[0][i,j].set_title(
                     f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
@@ -254,7 +255,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
         im_V[i][j] = axes[1][i,j].imshow(
             S0, vmin=4e-12, vmax=4.5e-4,
             cmap=cmaps[0], origin="lower",
-            extent=[xmin, xmax, ymin, ymax]
+            extent=[p.xmin, p.xmax, p.ymin, p.ymax]
         )
 
         # quiver
@@ -268,10 +269,10 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
         Uy = Uy.reshape(d.xy_grid.shape[1:]).T
 
         quiv_V[i][j] = axes[1][i,j].quiver(
-            X[::sp_q, ::sp_q],
-            Y[::sp_q, ::sp_q],
-            Ux[::sp_q, ::sp_q],
-            Uy[::sp_q, ::sp_q],
+            X[::p.sp_q, ::p.sp_q],
+            Y[::p.sp_q, ::p.sp_q],
+            Ux[::p.sp_q, ::p.sp_q],
+            Uy[::p.sp_q, ::p.sp_q],
             scale=50, width=0.001, color="k"
         )
 
@@ -288,7 +289,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
         im_C[i][j] = axes[2][i,j].imshow(
             C0, vmin=0, vmax=7.6e-11,
             cmap=cmaps[1], origin="lower",
-            extent=[xmin, xmax, ymin, ymax]
+            extent=[p.xmin, p.xmax, p.ymin, p.ymax]
         )
         axes[2][i,j].set_title(
                     f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
@@ -296,7 +297,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
                 )
 
         # MRMT
-        for r in range(Nr):
+        for r in range(p.Nr):
             Cim = d.I.dot(d.C_im[k][r])
             Cim[~d.mask] = np.nan
             Cim = Cim.reshape(d.xy_grid.shape[1:]).T
@@ -304,7 +305,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             im_C_im[r][i][j] = axes[3][r][i,j].imshow(
                 Cim, vmin=0, vmax=7.6e-11,
                 cmap=cmaps[1], origin="lower",
-                extent=[xmin, xmax, ymin, ymax]
+                extent=[p.xmin, p.xmax, p.ymin, p.ymax]
             )
 
             axes[3][r][i][j].set_title(
@@ -319,7 +320,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             im_C[0][0]
             ]
         
-        for r in range(Nr):
+        for r in range(p.Nr):
 
             ims.append(
                 im_C_im[r][0][0]

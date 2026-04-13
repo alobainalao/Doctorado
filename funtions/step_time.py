@@ -4,13 +4,14 @@ import numpy as np
 # Dependencias externas (ya las tienes en otros módulos)
 from funtions.operators import H_vector, U_vector, build_transport_matrix, C_vector
 from funtions.utils import D_total, Div_KD
-from config import Nr, beta, model, dt, alpha_r
+from funtions.runtime import RUNTIME
 
 
 def step_time(H, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
               pho, D_f, A_right, delta_p, gauss_p, gauss_f, Qout,
               t, T, mask_h, exp_lam_dt):
-
+    p = RUNTIME.get()
+    
     N = len(nodes)
     idx = np.hstack((groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'], groups['boundary:wall']))
     
@@ -34,23 +35,23 @@ def step_time(H, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
 
     C_im_new = np.zeros_like(C_im)
 
-    if model == "mrmt_semi":
+    if p.model == "mrmt_semi":
         # --- MRMT ---
         C_new = C_new[None, :]
 
-        for r in range(Nr):
+        for r in range(p.Nr):
             C_im_new = C_new + (C_im - C_new) * exp_lam_dt[r]
 
             C_new += np.sum(
-                beta[r] * (C_im - C_im_new),
+                p.beta[r] * (C_im - C_im_new),
                 axis=0
             )
 
         C_new = C_new.squeeze()        
 
-    elif model == "mrmt_block":
+    elif p.model == "mrmt_block":
 
-        coef = dt * alpha_r / beta 
+        coef = p.dt * p.alpha_r / p.beta 
 
         C_im_new[:, idx] = (
             coef[:, None] * (C_new[idx] + C[idx])

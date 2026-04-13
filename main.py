@@ -1,15 +1,19 @@
 import numpy as np
-import time
-from preprocessing.preprocess  import load_data
+from funtions.runtime import RUNTIME
 from postprocessing.create_btc  import create_btc
 from view.plot  import create_figures, initialize_plots
 from view.animation  import *
-from config import dt, T, xmin
 from view import *
-from config import postproc
+
+from preprocessing.preprocess  import load_data
 
 
-def main(save_data=False, animate=False):
+def main():
+    print("main")
+    
+    p = RUNTIME.get()
+    save_data = p.save_dat
+    animate = p.animate
 
     d = load_data()
 
@@ -32,9 +36,9 @@ def main(save_data=False, animate=False):
 
     sim = Simulation(d.H.copy(), d.C.copy(), d.C_im.copy(), d.U.copy(), Qout)
 
-    frames = int(T / dt)
+    frames = int(p.T / p.dt)
 
-    mask_h_cor = np.isclose(d.nodes[:,0], xmin) & (d.nodes[:,1] < -4000)
+    mask_h_cor = np.isclose(d.nodes[:,0], p.xmin) & (d.nodes[:,1] < -4000)
 
     outputs = setup_outputs(
             figs=figs,
@@ -47,8 +51,8 @@ def main(save_data=False, animate=False):
 
     finalize_outputs(outputs, sim)
 
-    if postproc:
+    if p.postproc:
         create_btc()
 
 if __name__ == "__main__":
-    main(save_data=True, animate=True)
+    main()

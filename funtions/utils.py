@@ -4,10 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.special import ellipe
 from scipy.interpolate import CloughTocher2DInterpolator, NearestNDInterpolator
 import h5py
-
-from config import (g, d_z, D_d, alpha, a_t, domain,
-    theta, xmin, xmax, ymin, ymax, nu, a_l
-)
+from funtions.runtime import RUNTIME
 
 
 class In_h():
@@ -20,9 +17,10 @@ class In_h():
         self.v_min = v_min
 
     def __call__(self, x):
+        p = RUNTIME.get()    
         z = x[1]
 
-        if domain == "real":
+        if p.domain == "real":
             values = np.piecewise(
                 z,
                 [
@@ -38,18 +36,19 @@ class In_h():
                     lambda z_: self.v_min* np.cos((z_ - self.z_t2) * np.pi / (2 * (self.z_t2 - self.z_min))) ** 2, 
                 ]
             )
-        elif domain == "benchmark":
+        elif p.domain == "benchmark":
             Lz = self.z_0 - self.z_min
             z_norm = (z - self.z_min) / Lz
 
             values = 4 * self.amplitud * z_norm * (1 - z_norm)
 
         else:
-            raise ValueError(f"Dominio inválido: {domain}")
+            raise ValueError(f"Dominio inválido: {p.domain}")
 
         return values
 
 def gaussian_2d(x, x_s, amplitude, epsilon_x, epsilon_y=None):
+    p = RUNTIME.get()
     x = np.asarray(x, float)
     x_s = np.asarray(x_s, float)
 
@@ -73,6 +72,8 @@ def gaussian_2d(x, x_s, amplitude, epsilon_x, epsilon_y=None):
     return g if len(g) > 1 else g[0]
 
 def fuente_C(t, T):
+    p = RUNTIME.get()
+
     return 1e-11 * t/T * np.exp(-8*t/T) + 1e-12 * (1 - np.exp(-8*t/T))
 
 
@@ -85,6 +86,8 @@ def local_lengthscale(nodes, k=8):
     Calcula h_i = distancia media a los k vecinos más cercanos (excluye el propio punto).
     Devuelve array (N,)
     """
+    p = RUNTIME.get()
+
     nbrs = NearestNeighbors(n_neighbors=k+1, algorithm='auto').fit(nodes)
     dists, idxs = nbrs.kneighbors(nodes)
     # ignorar la primera columna (distancia a sí mismo = 0)
@@ -92,6 +95,7 @@ def local_lengthscale(nodes, k=8):
     return h
 
 def eps_from_h(h, scale=1.0, min_factor=0.75, max_factor=1.25):
+    p = RUNTIME.get()
 
     h = np.asarray(h)
     eps = scale / (h + 1e-16)              # relación inversa: menor h → mayor ε
@@ -101,9 +105,11 @@ def eps_from_h(h, scale=1.0, min_factor=0.75, max_factor=1.25):
     return eps
 
 def K_ope(pho):
+    p = RUNTIME.get()
+
     K = np.zeros((len(pho), 2))
-    K[:, 1] = 8.3e-3 * g * d_z**2 * pho**3 / (nu * (1 - pho)**2)             # componente y
-    K[:, 0] = K[:, 1] * alpha**2  # componente x
+    K[:, 1] = 8.3e-3 * p.g * p.d_z**2 * pho**3 / (p.nu * (1 - pho)**2)             # componente y
+    K[:, 0] = K[:, 1] * p.alpha**2  # componente x
     
     return K
 
@@ -114,7 +120,7 @@ def D_total(Dif, V):
     a_l : dispersividad longitudinal
     a_t : dispersividad transversal
     """
-
+    p = RUNTIME.get()
     V = np.asarray(V)
 
     # Componentes al cuadrado
@@ -127,8 +133,8 @@ def D_total(Dif, V):
 
     # Difusión por dispersión (N,2)
     D_disp = np.column_stack([
-        a_l * Vx2 + a_t * Vy2,      # componente x
-        a_t * Vx2 + a_l * Vy2       # componente y
+        p.a_l * Vx2 + p.a_t * Vy2,      # componente x
+        p.a_t * Vx2 + p.a_l * Vy2       # componente y
     ]) / Vnorm[:, None]             # escala cada fila → (N,1)
 
     # Asegurar que Dif tiene shape (N,2)
@@ -146,6 +152,7 @@ def D_total(Dif, V):
     return Dif + D_disp
 
 def delta_char(nodes, x_p, tol):
+
     dist = np.linalg.norm(nodes - x_p, axis=1)
     return np.where(dist < tol, 1.0, 0.0)
 
@@ -166,10 +173,11 @@ def Div_KD(Op_vec, grad, anisotropic=True):
 
 # Función para definir el operador de difusión
 def diffusion_operator(pho):
+    p = RUNTIME.get()
 
     Diff = np.zeros((len(pho), 2))
-    Diff[:,0] = 0.5 * D_d * pho* ellipe(1 - alpha**-2)
-    Diff[:,1] = Diff[:,0]/ alpha
+    Diff[:,0] = 0.5 * p.D_d * pho* ellipe(1 - p.alpha**-2)
+    Diff[:,1] = Diff[:,0]/ p.alpha
     
     return Diff
 
@@ -198,13 +206,14 @@ def apply_boundary(U, nodes, dirich_nd, inlet_obj: In_h):
     U[dirich_nd] = inlet_obj(z)
 
 def get_init_values(new_nodes):
+    p = RUNTIME.get()
 
-    if domain == "real":
+    if p.domain == "real":
         filename="./data/input/funcion.h5"
-    elif domain == "benchmark":
+    elif p.domain == "benchmark":
         filename="./data/input/benchmark.h5"
     else:
-        raise ValueError(f"Dominio inválido: {domain}")
+        raise ValueError(f"Dominio inválido: {p.domain}")
 
 
     # Leer datos del archivo HDF5
@@ -276,15 +285,17 @@ def set_limits(ax, delt=150):
     delt : float
         Margen extra alrededor del dominio.
     """
-    ax.set_xlim(xmin - delt, xmax + delt)
-    ax.set_ylim(ymin - delt, ymax + delt)
+    p = RUNTIME.get()
+
+    ax.set_xlim(p.xmin - delt, p.xmax + delt)
+    ax.set_ylim(p.ymin - delt, p.ymax + delt)
 
 def new_H_init(H, M_right, gauss_p, groups, N, eps_arr,
                  nodes, normals, pho, K, div_K, eps_M):
-    
+    p = RUNTIME.get()
     from funtions.operators import  build_H_matrix, H_vector
     
-    H_solver = splu(build_H_matrix(nodes, groups, normals, theta, pho, K, div_K, eps_M, -1,  eps_arr, "Identity"))
+    H_solver = splu(build_H_matrix(nodes, groups, normals, p.theta, pho, K, div_K, eps_M, -1,  eps_arr, "Identity"))
 
     vec = H_vector(H, M_right, gauss_p, groups, nodes, N, operador= "Identity")
 

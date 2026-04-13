@@ -4,6 +4,7 @@ import sys
 import os
 
 st.set_page_config(layout="wide")
+
 st.title("Simulador de Transporte (ADR / MRMT)")
 
 # =========================
@@ -11,10 +12,10 @@ st.title("Simulador de Transporte (ADR / MRMT)")
 # =========================
 with st.form("sim_form"):
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     # =========================
-    # CONFIGURACIÓN GENERAL
+    # COLUMNA 1: CONFIG GENERAL
     # =========================
     with col1:
         st.subheader("⚙️ Configuración general")
@@ -37,14 +38,22 @@ with st.form("sim_form"):
             help="Dominio físico real o caso de prueba"
         )
 
-        st.markdown("#### Opciones de ejecución")
+        st.markdown("#### 🧠 Parámetros avanzados")
 
-        pre = st.checkbox("Ejecutar preprocesamiento")
-        postproc = st.checkbox("Ejecutar postproceso", value=True)
-        plot_grid = st.checkbox("Visualizar malla")
+        D_d = st.number_input(
+            "Coeficiente de difusión molecular",
+            value=1e-19,
+            format="%.2e"
+        )
+
+        eps = st.number_input(
+            "Tolerancia numérica",
+            value=1e-16,
+            format="%.2e"
+        )
 
     # =========================
-    # PARÁMETROS NUMÉRICOS
+    # COLUMNA 2: NUMÉRICOS + FÍSICOS
     # =========================
     with col2:
         st.subheader("🧮 Parámetros numéricos")
@@ -66,19 +75,8 @@ with st.form("sim_form"):
             value=2592000.0
         )
 
-        st.markdown("#### Activación de procesos físicos")
+        st.markdown("#### 🌊 Parámetros físicos")
 
-        activate_fuente = st.checkbox("Incluir fuente", value=True)
-        activate_ext = st.checkbox("Incluir extracción", value=True)
-
-    # =========================
-    # PARÁMETROS FÍSICOS
-    # =========================
-    st.subheader("🌊 Parámetros físicos")
-
-    col3, col4 = st.columns(2)
-
-    with col3:
         phi_const = st.number_input(
             "Porosidad del medio",
             value=0.1
@@ -89,22 +87,32 @@ with st.form("sim_form"):
             value=10.0
         )
 
-    with col4:
+        
+
+    # =========================
+    # COLUMNA 3: CONTROL + PROCESOS
+    # =========================
+    with col3:
+        st.subheader("💾 Salida y control")
+
+        save_dat = st.checkbox("Guardar datos", value=True)
+        animate = st.checkbox("Generar animación", value=True)
+
+        st.markdown("#### ⚡ Activación de procesos físicos")
+
+        activate_fuente = st.checkbox("Incluir fuente", value=True)
+        activate_ext = st.checkbox("Incluir extracción", value=True)
+
+
+        st.markdown("#### ▶️ Opciones de ejecución")
+
+        pre = st.checkbox("Ejecutar preprocesamiento")
+        postproc = st.checkbox("Ejecutar postproceso", value=True)
+        plot_grid = st.checkbox("Visualizar malla")
+
         a_t = st.number_input(
             "Dispersividad transversal (a_t)",
             value=1.0
-        )
-
-        D_d = st.number_input(
-            "Coeficiente de difusión molecular",
-            value=1e-19,
-            format="%.2e"
-        )
-
-        eps = st.number_input(
-            "Tolerancia numérica",
-            value=1e-16,
-            format="%.2e"
         )
 
     # =========================
@@ -112,32 +120,37 @@ with st.form("sim_form"):
     # =========================
     if "mrmt" in model:
 
+        st.markdown("---")
         st.subheader("🧩 Parámetros MRMT")
 
-        Nr = st.number_input(
-            "Número de regiones inmóviles",
-            value=3,
-            help="Cantidad de zonas de intercambio"
-        )
+        col4, col5, col6, col7 = st.columns(4)
 
-        Deff = st.text_input(
-            "Difusividades efectivas (Deff)",
-            "1e-9,5e-10,1e-10",
-            help="Separadas por coma"
-        )
+        with col4:
+            Nr = st.number_input(
+                "Número de regiones inmóviles",
+                value=3,
+                help="Cantidad de zonas de intercambio"
+            )
 
-        beta = st.text_input(
-            "Coeficientes de intercambio (beta)",
-            "0.15,0.1,0.05"
-        )
+        with col5:
+            Deff = st.text_input(
+                "Difusividades efectivas (Deff)",
+                "1e-9,5e-10,1e-10"
+            )
 
-        phi_im = st.text_input(
-            "Porosidad inmóvil",
-            "0.1,0.05,0.02"
-        )
+        with col6:
+            beta = st.text_input(
+                "Coeficientes de intercambio (beta)",
+                "0.15,0.1,0.05"
+            )
+
+        with col7:
+            phi_im = st.text_input(
+                "Porosidad inmóvil",
+                "0.1,0.05,0.02"
+            )
 
     else:
-        # valores por defecto silenciosos
         Nr = 3
         Deff = "1e-9,5e-10,1e-10"
         beta = "0.15,0.1,0.05"
@@ -176,12 +189,15 @@ if submit:
         "NR": str(Nr),
         "DEFF": Deff,
         "BETA": beta,
-        "PHI_IM": phi_im
+        "PHI_IM": phi_im,
+
+        "SAVE_DAT": str(save_dat),
+        "ANIMATE": str(animate)
     })
 
     process = subprocess.Popen(
-        [sys.executable, "main.py"],
-        cwd=os.getcwd(),  # 🔥 importante
+        [sys.executable, "run.py"],
+        cwd=os.getcwd(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -202,3 +218,7 @@ if submit:
         st.text(errors)
     else:
         st.success("✅ Simulación terminada correctamente")
+
+    
+
+

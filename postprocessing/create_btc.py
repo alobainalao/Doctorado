@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
-from config import savefolder_data, dt
+from funtions.runtime import RUNTIME
+p = RUNTIME.params
+
 
 
 # ==========================================================
@@ -38,7 +40,7 @@ def extract_btc_matrix(C_hist, node_indices):
 # 4. Graficar comparación
 # ==========================================================
 def plot_btc_comparison(btc_adr, btc_mrmt, dt, labels=None):
-
+    p = RUNTIME.get()
     Nt = btc_adr.shape[1]
     t = np.arange(Nt) * dt
 
@@ -60,7 +62,7 @@ def plot_btc_comparison(btc_adr, btc_mrmt, dt, labels=None):
         axes[i].legend()
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f"{p.save_video}/btc.png")
 
 
 # ==========================================================
@@ -90,7 +92,6 @@ def run_btc_analysis(path_adr, path_mrmt, control_points):
     plt.scatter(nodes_mrmt[:,0], nodes_mrmt[:,1], c='c', s=1)
     plt.scatter(cp_adr[:,0], cp_adr[:,1], c='r')
     plt.scatter(cp_adr[:,0], cp_adr[:,1], c='k')
-    plt.show()
 
     if not np.allclose(cp_adr, cp_mrmt, atol=tol):
         print("⚠️ Advertencia: los puntos no coinciden entre mallas")
@@ -108,7 +109,7 @@ def run_btc_analysis(path_adr, path_mrmt, control_points):
     plot_btc_comparison(
         btc_adr,
         btc_mrmt,
-        dt= dt,
+        dt= p.dt,
         labels=[f"P{i+1}" for i in range(4)]
     )
 
@@ -125,7 +126,7 @@ def create_btc():
     # === rutas ===
     import os
 
-    base_path = os.path.dirname(savefolder_data)  # quita el model
+    base_path = os.path.dirname(p.save_data)  # quita el model
 
     path_adr = os.path.join(base_path, "adr", "simulation_results.npz")
     path_mrmt = os.path.join(base_path, "mrmt_block", "simulation_results.npz")

@@ -7,14 +7,9 @@ import funtions.get_phi as gph
 from funtions.mesh import build_nodes_var
 from funtions.utils import *
 from funtions.operators import *
-from config import phi
+from funtions.runtime import RUNTIME
+p = RUNTIME.params
 
-from config import (
-    pre, n_stencil, Deff, Nr, R, beta, L, dt,
-    theta, fnte, epsilon_x, epsilon_y,
-    xmin, xmax, ymin, ymax, domain,
-    vert, save_preporcess, phi_const
-)
 
 def run_preprocess():
 
@@ -22,27 +17,27 @@ def run_preprocess():
 
     nodes, groups, normals, simplices, pozo_cor = build_nodes_var()
 
-    hU = local_lengthscale(nodes, k=n_stencil-1)
+    hU = local_lengthscale(nodes, k=p.n_stencil-1)
     eps_arr_ = eps_from_h(hU, scale=1.0)
 
-    eps_M = np.repeat(eps_arr_[:, None], n_stencil, axis=1)
+    eps_M = np.repeat(eps_arr_[:, None], p.n_stencil, axis=1)
     eps_arr = np.repeat(eps_arr_[:, None], 1, axis=1)
 
-    if domain == "benchmark":
+    if p.domain == "benchmark":
         pho = np.full(len(nodes), phi_const)
 
-    elif domain == "real":
+    elif p.domain == "real":
         pho = gph.gen_malla(nodes)
 
     else:
-        raise ValueError(f"Dominio inválido: {domain}")
+        raise ValueError(f"Dominio inválido: {p.domain}")
 
-    lam_im = Deff.copy()
-    exp_lam_dt = np.zeros(Deff.shape)
+    lam_im = p.Deff.copy()
+    exp_lam_dt = np.zeros(p.Deff.shape)
 
-    for r in range(Nr):
-        lam_im[r] /= (R*beta[r]*(L**2))
-        exp_lam_dt[r] = np.exp(-lam_im[r]*dt)
+    for r in range(p.Nr):
+        lam_im[r] /= (p.R*p.beta[r]*(p.L**2))
+        exp_lam_dt[r] = np.exp(-lam_im[r]*p.dt)
 
     K = K_ope(pho)
     D_f = diffusion_operator(pho)
@@ -50,12 +45,12 @@ def run_preprocess():
 
     div_K = Div_KD(K, grad)
 
-    A_left = build_H_matrix(nodes, groups, normals, theta, pho, K, div_K, eps_M, -1)
-    A_right = build_H_matrix(nodes, groups, normals, 1-theta, pho, K, div_K, eps_M, 1)
+    A_left = build_H_matrix(nodes, groups, normals, p.theta, pho, K, div_K, eps_M, -1)
+    A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, pho, K, div_K, eps_M, 1)
 
     delta_p = delta_char(nodes, pozo_cor, 1e-6)
-    gauss_p = gaussian_2d(nodes, pozo_cor, 1, epsilon_y)
-    gauss_f = gaussian_2d(nodes, fnte, 1, epsilon_x, epsilon_y)
+    gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_y)
+    gauss_f = gaussian_2d(nodes, p.fnte, 1, p.epsilon_x, p.epsilon_y)
 
     N = nodes.shape[0]
 
@@ -68,9 +63,9 @@ def run_preprocess():
     H = [H0.copy() for _ in range(4)]
     U = [U0.copy() for _ in range(4)]
     C = [C0.copy() for _ in range(4)]
-    C_im = [np.zeros((Nr, len(nodes))) for _ in range(4)]
+    C_im = [np.zeros((p.Nr, len(nodes))) for _ in range(4)]
 
-    xy_grid = np.mgrid[xmin:xmax:400j, ymin:ymax:80j]
+    xy_grid = np.mgrid[p.xmin:p.xmax:400j, p.ymin:p.ymax:80j]
     xy = xy_grid.reshape(2, -1).T
 
     _, stencils = KDTree(nodes).query(xy)
@@ -78,15 +73,15 @@ def run_preprocess():
 
     I = weight_matrix(
         x=xy, p=nodes, n=1, diffs=[[0,0]],
-        phi=phi, eps=eps_matrix, chunk_size=None
+        phi=p.phi, eps=eps_matrix, chunk_size=None
     )
 
     segments = np.column_stack((
-        np.arange(len(vert)),
-        np.roll(np.arange(len(vert)), -1)
+        np.arange(len(p.vert)),
+        np.roll(np.arange(len(p.vert)), -1)
     ))
 
-    mask = contains(xy, vert, segments)
+    mask = contains(xy, p.vert, segments)
 
     data = dict(
         nodes=nodes, groups=groups, normals=normals, simplices=simplices,
@@ -99,7 +94,7 @@ def run_preprocess():
         stencils=stencils, exp_lam_dt=exp_lam_dt
     )
 
-    savefile = f"{save_preporcess}/preproceso.pkl"
+    savefile = f"{p.save_preprocess}/preproceso.pkl"
     with open(savefile, "wb") as f:
         pickle.dump(data, f)
 
@@ -109,11 +104,12 @@ def run_preprocess():
 
 
 def load_data():
-    if pre:
+    p = RUNTIME.params
+    if p.pre:
         data = run_preprocess()
     else:
         print(">>> Cargando datos...")
-        with open(f"{save_preporcess}/preproceso.pkl", "rb") as f:
+        with open(f"{p.save_preprocess}/preproceso.pkl", "rb") as f:
             data = pickle.load(f)
 
     class Data:

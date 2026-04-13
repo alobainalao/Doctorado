@@ -1,0 +1,54 @@
+{
+  "pre": false,
+  "postproc": true,
+  "plot_grid": false,
+
+  "activate_fuente": true,
+  "activate_ext": true,
+
+  "save_dat": true,
+  "animate": true,
+
+  "model": "adr",
+  "metodo": "bfr",
+  "domain": "real",
+
+  "K": 4,
+  "spacing": 30,
+  "dt": 36000,
+  "T": 2592000,
+
+  "phi_const": 0.1,
+
+  "nu": 0.001,
+  "rho": 1.0,
+
+  "n_stencil": 25,
+  "phi": "mq",
+  "order": 2,
+
+  "tol": 1e-5,
+  "theta": 0.9,
+  "sp_q": 5,
+
+  "g": 9.81,
+  "nu_fluid": 1.055e-6,
+  "d_z": 0.001,
+  "alpha": 2.0,
+
+  "R": 1,
+  "landa": 1e-10,
+
+  "a_l": 10,
+  "a_t": 1,
+  "D_d": 1.2e-19,
+  "eps": 1e-16,
+
+  "Nr": 3,
+  "Deff": [1e-9, 5e-10, 1e-10],
+  "phi_im": [0.1, 0.05, 0.02],
+  "beta": [0.15, 0.1, 0.05],
+
+  "L": 0.01
+}
+
