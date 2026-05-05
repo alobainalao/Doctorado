@@ -1,5 +1,5 @@
 {
-  "pre": false,
+  "pre": true,
   "postproc": true,
   "plot_grid": false,
 
@@ -13,14 +13,14 @@
   "metodo": "bfr",
   "domain": "real",
 
-  "K": 4,
+  "K": 1,
   "spacing": 30,
   "dt": 36000,
   "T": 2592000,
 
   "phi_const": 0.1,
 
-  "nu": 0.001,
+  "nu": 1.055e-6,
   "rho": 1.0,
 
   "n_stencil": 25,
@@ -32,7 +32,7 @@
   "sp_q": 5,
 
   "g": 9.81,
-  "nu_fluid": 1.055e-6,
+  "nu_C": 1.055e-6,
   "d_z": 0.001,
   "alpha": 2.0,
 

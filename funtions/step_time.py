@@ -8,8 +8,8 @@ from funtions.runtime import RUNTIME
 
 
 def step_time(H, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
-              pho, D_f, A_right, delta_p, gauss_p, gauss_f, Qout,
-              t, T, mask_h, exp_lam_dt):
+              pho, D_f, A_right, delta_p, gauss_p, gauss_f, Qout_n, Qout_N,
+              t, T, exp_lam_dt):
     p = RUNTIME.get()
     
     N = len(nodes)
@@ -17,9 +17,8 @@ def step_time(H, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     
 
     # --- FLOW ---
-    rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout)
-    H_ = A_solver.solve(rhs)
-    H = np.where(mask_h, H, H_)
+    rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N)
+    H = A_solver.solve(rhs)
 
     U = U_vector(H, K, grad)
 
@@ -27,8 +26,8 @@ def step_time(H, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     D = D_total(D_f, U)
     Div_D = Div_KD(D, grad)
 
-    C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D, Div_D, eps_M, gauss_p, -1)
-    C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D, Div_D, eps_M, gauss_p, 1)
+    C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D, Div_D, Qout_N, eps_M, gauss_p, -1)
+    C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D, Div_D, Qout_n, eps_M, gauss_p, 1)
     rhs = C_vector(C, C_right, gauss_f, groups, t, T, N, C_im, pho)
 
     C_new = C_solver.solve(rhs)

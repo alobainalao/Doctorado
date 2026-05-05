@@ -102,5 +102,6 @@ def build_nodes_var():
     if p.plot_grid:
         plot_mesh(nodes, groups, smp, title='Discretización del dominio')
 
+    print(nodes.shape)
     return nodes, groups, normals, smp, nodes[idx_p]
 

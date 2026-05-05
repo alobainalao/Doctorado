@@ -76,6 +76,80 @@ def fuente_C(t, T):
 
     return 1e-11 * t/T * np.exp(-8*t/T) + 1e-12 * (1 - np.exp(-8*t/T))
 
+def update_pozo(d, pozo_cor):
+    p = RUNTIME.get()
+
+    d.delta_p = delta_char(d.nodes, pozo_cor, 1e-6)
+
+    d.gauss_p = gaussian_2d(
+        d.nodes, pozo_cor, 1, p.epsilon_y
+    )
+
+    return d
+
+def get_solucion(prop1, prop2,filepath):
+    data = np.load(filepath)
+
+    H = data[prop1]   # shape: (K, N)
+    C = data[prop2]   # shape: (K, N)
+
+    return H, C
+
+
+
+
+def dC_dz(C, p):
+    dz = p.spacing  # o p.dz si lo tienes
+    dC = np.zeros_like(C)
+
+    # diferencia central (interior)
+    dC[1:-1] = (C[2:] - C[:-2]) / (2 * dz)
+
+    # bordes
+    dC[0] = (C[1] - C[0]) / dz
+    dC[-1] = (C[-1] - C[-2]) / dz
+
+    return dC
+def d_g_dz(zp, p):
+    z = p.nodes[:, 1]
+    sigma = p.spacing
+
+    g = np.exp(-((z - zp) ** 2) / (2 * sigma**2))
+    return g * ((z - zp) / (sigma**2))
+def well_distribution(p, zp):
+    z = p.nodes[:, 1]
+    sigma = p.spacing
+
+    return np.exp(-((z - zp) ** 2) / (2 * sigma**2))
+def grad_zp(Q, zp, psi_h, psi_C, C, p):
+
+    term1 = 2 * p.gamma * np.sum(C * dC_dz(C, p))
+    term2 = -np.sum(Q**2)
+    term3 = 2 * p.beta * (zp - p.z0)
+
+    g_z = d_g_dz(zp, p)
+
+    term4 = 0
+    for n in range(len(Q)):
+        term4 += np.sum(
+            Q[n] * g_z * (psi_C[n] * C[n] / p.Q_ref + psi_h[n])
+        )
+
+    return term1 + term2 + term3 - term4
+def grad_Q(Q, zp, psi_h, psi_C, C, p):
+
+    grad = np.zeros_like(Q)
+
+    g = well_distribution(p, zp)
+
+    for n in range(len(Q)):
+        grad[n] = (
+            2 * abs(zp - p.z0) * Q[n]
+            - np.sum(psi_h[n] * g)
+            - np.sum(psi_C[n] * (C[n] / p.Q_ref) * g)
+        )
+
+    return grad
 
 # ====================================================
 # Utilidades para calcular eps local

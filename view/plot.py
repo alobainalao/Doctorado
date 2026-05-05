@@ -24,75 +24,66 @@ def plot_mesh(nodes, groups, simplices, title='Malla', figsize=(10, 3)):
     plt.tight_layout()
     plt.show()
 
-def update_supertitles(
-        fig_H,
-        fig_V,
-        fig_C,
-        fig_C_im,
-        t0
-):
+def update_supertitles(figs, t):
     """
-    Actualiza títulos para H, V, C y C_im(r)
+    figs: list
+        [fig_H, fig_V, fig_C, figs_C_im]
 
-    Parameters
-    ----------
-    fig_H, fig_V, fig_C : matplotlib.figure.Figure
+    t: float
+        tiempo en segundos
 
-    fig_C_im : list
-        Lista de figuras MRMT
-
-    t0 : float
-        Tiempo en segundos
+    mrmt: bool
+        activa títulos C_im
     """
 
-    t_hours = t0 / 3600.0
+    t_hours = t / 3600.0
 
-    title_H = fig_H.suptitle(
+    titles = []
+
+    # ---- H ----
+    title_H = figs[0].suptitle(
         f"Spatial Distribution of Hydraulic Head H (m) at t = {t_hours:.2f} h",
         fontsize=20,
         color="#DCCB7F",
         y=0.95
     )
+    titles.append(title_H)
 
-    title_V = fig_V.suptitle(
+    # ---- V ----
+    title_V = figs[1].suptitle(
         f"Velocity Magnitude Field |U| (m/s) at t = {t_hours:.2f} h",
         fontsize=20,
         color="#DCCB7F",
         y=0.95
     )
+    titles.append(title_V)
 
-    title_C = fig_C.suptitle(
+    # ---- C ----
+    title_C = figs[2].suptitle(
         f"Solute Concentration Field C (kg/m³) at t = {t_hours:.2f} h",
         fontsize=20,
         color="#DCCB7F",
         y=0.95
     )
+    titles.append(title_C)
 
+    # ---- MRMT ----
     titles_C_im = []
 
-    for r, fig in enumerate(fig_C_im):
+    if len(figs) > 3 and figs[3] is not None:
+        for r, fig in enumerate(figs[3]):
+            title = fig.suptitle(
+                f"Immobile Concentration C_im(r={r}) "
+                f"(kg/m³) at t = {t_hours:.2f} h",
+                fontsize=20,
+                color="#DCCB7F",
+                y=0.95
+            )
+            titles_C_im.append(title)
 
-        title = fig.suptitle(
+    titles.append(titles_C_im)
 
-            f"Immobile Concentration C_im(r={r}) "
-            f"(kg/m³) at t = {t_hours:.2f} h",
-
-            fontsize=20,
-
-            color="#DCCB7F",
-
-            y=0.95
-
-        )
-
-        titles_C_im.append(title)
-
-    return (
-        title_H,
-        title_V,
-        title_C,
-        titles_C_im
-    )
+    return titles
 
 def get_colormaps():
 
@@ -127,11 +118,11 @@ def create_figures():
 
     fig_C_im = []
     axes_C_im = []
-
-    for r in range(p.Nr):
-        fig, axes = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
-        fig_C_im.append(fig)
-        axes_C_im.append(np.atleast_2d(axes))
+    if "mrmt" in p.model:
+        for r in range(p.Nr):
+            fig, axes = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
+            fig_C_im.append(fig)
+            axes_C_im.append(np.atleast_2d(axes))
 
     from matplotlib.colors import LinearSegmentedColormap
     base = plt.cm.get_cmap("turbo")
@@ -212,10 +203,13 @@ def create_visual_arrays():
     im_V = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
     im_C = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
 
-    im_C_im = [
-        [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
-        for _ in range(p.Nr)
-    ]
+    if "mrmt" in p.model:
+        im_C_im = [
+            [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
+            for _ in range(p.Nr)
+        ]
+    else:
+        im_C_im = []
 
     quiv_V = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
 
@@ -242,7 +236,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             extent=[p.xmin, p.xmax, p.ymin, p.ymax]
         )
         axes[0][i,j].set_title(
-                    f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
+                    f"Caudal de extracción Q = {Qout[k][0]:.3e} m³/s",
                     fontsize=12
                 )
 
@@ -277,7 +271,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
         )
 
         axes[1][i,j].set_title(
-                    f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
+                    f"Caudal de extracción Q = {Qout[k][0]:.3e} m³/s",
                     fontsize=12
                 )
 
@@ -292,24 +286,25 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             extent=[p.xmin, p.xmax, p.ymin, p.ymax]
         )
         axes[2][i,j].set_title(
-                    f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
+                    f"Caudal de extracción Q = {Qout[k][0]:.3e} m³/s",
                     fontsize=12
                 )
 
         # MRMT
-        for r in range(p.Nr):
-            Cim = d.I.dot(d.C_im[k][r])
-            Cim[~d.mask] = np.nan
-            Cim = Cim.reshape(d.xy_grid.shape[1:]).T
+        if "mrmt" in p.model:
+            for r in range(p.Nr):
+                Cim = d.I.dot(d.C_im[k][r])
+                Cim[~d.mask] = np.nan
+                Cim = Cim.reshape(d.xy_grid.shape[1:]).T
 
-            im_C_im[r][i][j] = axes[3][r][i,j].imshow(
-                Cim, vmin=0, vmax=7.6e-11,
-                cmap=cmaps[1], origin="lower",
-                extent=[p.xmin, p.xmax, p.ymin, p.ymax]
-            )
+                im_C_im[r][i][j] = axes[3][r][i,j].imshow(
+                    Cim, vmin=0, vmax=7.6e-11,
+                    cmap=cmaps[1], origin="lower",
+                    extent=[p.xmin, p.xmax, p.ymin, p.ymax]
+                )
 
             axes[3][r][i][j].set_title(
-                    f"Caudal de extracción Q = {Qout[k]:.3e} m³/s",
+                    f"Caudal de extracción Q = {Qout[k][0]:.3e} m³/s",
                     fontsize=12
                 )
 
@@ -319,12 +314,12 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             im_V[0][0],
             im_C[0][0]
             ]
-        
-        for r in range(p.Nr):
+        if "mrmt" in p.model:
+            for r in range(p.Nr):
 
-            ims.append(
-                im_C_im[r][0][0]
-            )
+                ims.append(
+                    im_C_im[r][0][0]
+                )
 
 
         figs_flat = [f for item in figs for f in (item if isinstance(item, list) else [item])]

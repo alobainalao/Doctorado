@@ -66,13 +66,13 @@ with st.form("sim_form"):
 
         dt = st.number_input(
             "Paso de tiempo (dt)",
-            value=3600.0,
+            value=36000,
             help="Intervalo temporal de simulación"
         )
 
         T = st.number_input(
             "Tiempo total de simulación",
-            value=2592000.0
+            value=2592000
         )
 
         st.markdown("#### 🌊 Parámetros físicos")
@@ -107,7 +107,7 @@ with st.form("sim_form"):
         st.markdown("#### ▶️ Opciones de ejecución")
 
         pre = st.checkbox("Ejecutar preprocesamiento")
-        postproc = st.checkbox("Ejecutar postproceso", value=True)
+        postproc = st.checkbox("Ejecutar postproceso")
         plot_grid = st.checkbox("Visualizar malla")
 
         a_t = st.number_input(
@@ -166,34 +166,38 @@ if submit:
     st.write("### ⏳ Ejecutando simulación...")
 
     env = os.environ.copy()
-    env.update({
-        "MODEL": model,
-        "DOMAIN": domain,
-        "METODO": metodo,
-        "PRE": str(pre),
-        "POST": str(postproc),
-        "PLOT": str(plot_grid),
-        "FUENTE": str(activate_fuente),
-        "EXT": str(activate_ext),
 
-        "SPACING": str(spacing),
-        "DT": str(dt),
+    env.update({
+        "model": model,
+        "domain": domain,
+        "metodo": metodo,
+
+        "pre": str(pre),
+        "postproc": str(postproc),
+        "plot_grid": str(plot_grid),
+
+        "activate_fuente": str(activate_fuente),
+        "activate_ext": str(activate_ext),
+
+        "spacing": str(spacing),
+        "dt": str(dt),
         "T": str(T),
 
-        "PHI_CONST": str(phi_const),
-        "A_L": str(a_l),
-        "A_T": str(a_t),
-        "D_D": str(D_d),
-        "EPS": str(eps),
+        "phi_const": str(phi_const),
+        "a_l": str(a_l),
+        "a_t": str(a_t),
+        "D_d": str(D_d),
+        "eps": str(eps),
 
-        "NR": str(Nr),
-        "DEFF": Deff,
-        "BETA": beta,
-        "PHI_IM": phi_im,
+        "Nr": str(Nr),
+        "Deff": Deff,
+        "phi_im": phi_im,
+        "beta": beta,
 
-        "SAVE_DAT": str(save_dat),
-        "ANIMATE": str(animate)
+        "save_dat": str(save_dat),
+        "animate": str(animate)
     })
+
 
     process = subprocess.Popen(
         [sys.executable, "run.py"],

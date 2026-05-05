@@ -7,6 +7,7 @@ import funtions.get_phi as gph
 from funtions.mesh import build_nodes_var
 from funtions.utils import *
 from funtions.operators import *
+from scipy.sparse.linalg import splu
 from funtions.runtime import RUNTIME
 p = RUNTIME.params
 
@@ -24,7 +25,7 @@ def run_preprocess():
     eps_arr = np.repeat(eps_arr_[:, None], 1, axis=1)
 
     if p.domain == "benchmark":
-        pho = np.full(len(nodes), phi_const)
+        pho = np.full(len(nodes), p.phi_const)
 
     elif p.domain == "real":
         pho = gph.gen_malla(nodes)
@@ -32,12 +33,6 @@ def run_preprocess():
     else:
         raise ValueError(f"Dominio inválido: {p.domain}")
 
-    lam_im = p.Deff.copy()
-    exp_lam_dt = np.zeros(p.Deff.shape)
-
-    for r in range(p.Nr):
-        lam_im[r] /= (p.R*p.beta[r]*(p.L**2))
-        exp_lam_dt[r] = np.exp(-lam_im[r]*p.dt)
 
     K = K_ope(pho)
     D_f = diffusion_operator(pho)
@@ -60,10 +55,9 @@ def run_preprocess():
 
     U0 = U_vector(H0, K, grad)
 
-    H = [H0.copy() for _ in range(4)]
-    U = [U0.copy() for _ in range(4)]
-    C = [C0.copy() for _ in range(4)]
-    C_im = [np.zeros((p.Nr, len(nodes))) for _ in range(4)]
+    H = [H0 for _ in range(p.K)]
+    U = [U0 for _ in range(p.K)]
+    C = [C0 for _ in range(p.K)]
 
     xy_grid = np.mgrid[p.xmin:p.xmax:400j, p.ymin:p.ymax:80j]
     xy = xy_grid.reshape(2, -1).T
@@ -89,10 +83,26 @@ def run_preprocess():
         eps_arr=eps_arr, pho=pho, K=K, D_f=D_f, grad=grad,
         div_K=div_K, A_left=A_left, A_right=A_right,
         delta_p=delta_p, gauss_p=gauss_p, gauss_f=gauss_f,
-        H=H, C=C, U=U, C_im=C_im,
+        H=H, C=C, U=U,
         xy_grid=xy_grid, xy=xy, I=I, mask=mask,
-        stencils=stencils, exp_lam_dt=exp_lam_dt
+        stencils=stencils
     )
+
+    if "mrmt" in p.model:
+        C_im = [np.zeros((p.Nr, len(nodes))) for _ in range(p.K)]
+        lam_im = list(p.Deff)
+        exp_lam_dt = np.zeros(len(p.Deff))
+
+        for r in range(p.Nr):
+            lam_im[r] /= (p.R*p.beta[r]*(p.L**2))
+            exp_lam_dt[r] = np.exp(-lam_im[r]*p.dt)
+        
+        data["exp_lam_dt"] = exp_lam_dt
+        data["C_im"] = C_im
+    else:
+        data["exp_lam_dt"] = None
+        data["C_im"] = [None for _ in range(p.K)]
+
 
     savefile = f"{p.save_preprocess}/preproceso.pkl"
     with open(savefile, "wb") as f:
@@ -117,6 +127,8 @@ def load_data():
 
     d = Data()
     d.__dict__.update(data)
+    d.A_left = splu(d.A_left)
+
 
     print(">>> Datos listos")
     return d

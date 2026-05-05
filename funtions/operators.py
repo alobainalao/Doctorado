@@ -164,7 +164,7 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K, eps_M,
 
     return A.tocsc()
 
-def build_transport_matrix(V, nodes, groups, normals, pho, D, Div_D, eps_M, 
+def build_transport_matrix(V, nodes, groups, normals, pho, D, Div_D, Qout, eps_M, 
                             gauss_p, sig):
     """
     Construye matrices A_c, B_c para:
@@ -184,7 +184,7 @@ def build_transport_matrix(V, nodes, groups, normals, pho, D, Div_D, eps_M,
     base = pho * p.R
     coef_identity = base * (2. / p.dt) 
     
-    if p.activate_ext:
+    if p.activate_ext and  Qout:
         coef_identity -= sig * gauss_p
 
 
@@ -192,7 +192,7 @@ def build_transport_matrix(V, nodes, groups, normals, pho, D, Div_D, eps_M,
         coef_identity -= base * sig * p.landa
 
     elif p.model == "mrmt_block":
-        coef_identity -= 2 * base * sig * alpha_sum
+        coef_identity -= 2 * base * sig * p.alpha_sum
 
     elif p.model != "mrmt_semi":
         raise ValueError(f"Modelo no válido: {p.model}")
@@ -251,14 +251,14 @@ def build_transport_matrix(V, nodes, groups, normals, pho, D, Div_D, eps_M,
 # ---------------------------
 # 5) RHS builders adapted for two meshes
 # ---------------------------
-def H_vector(H, M_right, gauss_p, groups, nodes, N, operador= None, Qout=0):
+def H_vector(H, M_right, delta_p, groups, nodes, N, operador= None, Qout_n=0, Qout_N=0):
     p = RUNTIME.get()
     idx = np.hstack((groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'], groups['boundary:wall']))
 
     b = np.zeros(N)
     aux = H if operador == "Identity" else M_right @ H
     if p.activate_ext and operador != "Identity":
-        aux -= Qout * gauss_p
+        aux -= ((1-p.theta)*Qout_n + p.theta*Qout_N) * delta_p
 
     b[idx] = aux[idx]
     apply_boundary(b, nodes, groups.get('ghosts:inlet', []),
