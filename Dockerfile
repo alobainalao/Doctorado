@@ -1,14 +1,11 @@
-# Imagen base con Python 3.10 (IMPORTANTE para tu error)
 FROM python:3.10-slim
 
-# Evita problemas de compilación
 ENV PYTHONUNBUFFERED=1
 ENV PIP_NO_CACHE_DIR=1
 
-# Carpeta de trabajo dentro del contenedor
 WORKDIR /app
 
-# Instalar dependencias del sistema (importante para scipy, numpy, etc.)
+# dependencias sistema
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -17,20 +14,22 @@ RUN apt-get update && apt-get install -y \
     liblapack-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements primero (mejor cache)
+# primero pip base (CRÍTICO)
+RUN pip install --upgrade pip
+
+# copia requirements
 COPY requirements.txt .
 
-# Actualizar pip
-RUN pip install --upgrade pip setuptools wheel
+# instala setuptools ANTES (clave para pkg_resources)
+RUN pip install setuptools wheel
 
-# Instalar dependencias Python
-RUN pip install -r requirements.txt
+# instala dependencias python
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el proyecto
+# copia código
 COPY . .
 
-# Puerto (Render lo usa)
 ENV PORT=10000
 
-# Comando de ejecución (AJUSTA ESTO)
-CMD ["python", "app.py"]
+# Streamlit correcto
+CMD ["streamlit", "run", "app.py", "--server.port=10000", "--server.address=0.0.0.0"]
