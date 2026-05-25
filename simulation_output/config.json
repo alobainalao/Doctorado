@@ -1,0 +1,21 @@
+{
+    "method": "rbf",
+    "model": "adr",
+    "domain": "real",
+    "run_type": "standard",
+    "pre": false,
+    "postproc": false,
+    "plot_grid": false,
+    "activate_fuente": true,
+    "activate_ext": true,
+    "spacing": 30.0,
+    "dt": 36000.0,
+    "T": 2592000.0,
+    "phi_const": 0.1,
+    "a_l": 10.0,
+    "a_t": 1.0,
+    "D_d": 1e-19,
+    "eps": 1e-16,
+    "save_dat": true,
+    "animate": true
+}

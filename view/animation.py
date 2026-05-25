@@ -1,11 +1,123 @@
 from contextlib import ExitStack
-from funtions.step_time import step_time
+from funtions.step_time import step_time, step_adjoint
 from funtions.runtime import RUNTIME
 from view.plot import update_supertitles
+
+from postprocessing.create_btc  import create_btc
+from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots
+from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp
+import os
 import numpy as np
 import time
 from matplotlib.animation import FFMpegWriter
 p = RUNTIME.params
+
+
+# =========================================================
+# SOLVE ADJOINT
+# =========================================================
+
+def solve_adjoint(h, U, C, Qout, d, animate=False, save_data=False):
+
+    # ==============================
+    # 🔹 SOLO SI HAY ANIMACIÓN
+    # ==============================
+    figs = None
+    visuals = None
+
+    if animate:
+        figs, axes, cmaps = create_adj_figures()
+        visuals = initialize_adj_plots(d, axes, cmaps, figs)
+
+    # =====================================================
+    # SIMULACIÓN ADJUNTA
+    # =====================================================
+    sim = SimulationAdjoint(d.psi_H, d.psi_C)
+
+    outputs = setup_outputs_adj(
+        figs=figs,
+        save_data=save_data,
+        animate=animate,
+        nodes=d.nodes
+    )
+
+    run_simulation_adj(sim, h, U, C, Qout, p.Nt, outputs, d, figs, visuals)
+
+    finalize_outputs_adj(outputs, sim)
+
+def solve_forward(d, Qout, animate, save_data):
+    # ==============================
+    # 🔹 SOLO SI HAY ANIMACIÓN
+    # ==============================
+    figs = None
+    visuals = None
+
+    if animate:
+        figs, axes, cmaps = create_figures()
+        visuals = initialize_plots(d, Qout, axes, cmaps, figs)
+
+
+    sim = Simulation(d.H, d.C, d.C_im, d.U, Qout)
+
+    outputs = setup_outputs(
+            figs=figs,
+            save_data=save_data,
+            animate=animate,
+            nodes=d.nodes
+        )
+
+    run_simulation(sim, p.Nt, outputs, d, figs, visuals)
+
+    finalize_outputs(outputs, sim)
+
+    if p.postproc:
+        create_btc()
+
+def conjugate_gradient(d, animate, save_data, p, max_iter=20):
+
+    Qout = p.Qout
+    pozo_cor = p.pozo
+
+    g_prev = None
+    dQ = None
+
+    d.psi_H = [np.zeros_like(h) for h in d.H]
+    d.psi_C = [np.zeros_like(c) for c in d.C]
+    d.gamma = 0.5
+
+    for k in range(max_iter):
+        # update_pozo(d, pozo_cor)
+
+        print("conjugate_gradient")
+
+        # FORWARD
+        solve_forward(d, Qout, animate, save_data)
+        h, U, C = get_solucion(["H", "U", "C"], f"{p.save_data}/simulation_results.npz")
+
+        # ADJOINT
+        solve_adjoint(h, U, C, Qout, d, animate, save_data)
+        psi_C, psi_h = get_solucion(["psi_C", "psi_H"], f"{p.save_data}/adjoint_results.npz")
+
+        # GRADIENTES
+        gQ = grad_Q(Qout, pozo_cor, psi_h, psi_C, C, p)
+        gzp = grad_zp(Qout, pozo_cor, psi_h, psi_C, C, p)
+
+        # dirección conjugada
+        if k == 0:
+            dQ = -gQ
+        else:
+            beta = np.dot(gQ, gQ) / np.dot(g_prev, g_prev)
+            dQ = -gQ + beta * dQ
+
+        # step (puedes hacer line search después)
+        alpha = 1e-3
+
+        Q = Q + alpha * dQ
+        zp = zp - alpha * gzp
+
+        g_prev = gQ
+
+    return Q, zp
 
 class Simulation:
 
@@ -28,7 +140,7 @@ class Simulation:
             im_H, im_V, im_C, im_C_im, quiv_V = visuals
 
         for k in range(p.K): 
-            self.H[k], self.U[k], self.C[k], self.C_im[k] = step_time( H=self.H[k], C=self.C[k], C_im=self.C_im[k],
+            self.H[k], self.U[k], self.C[k], self.C_im[k] = step_time( H=self.H[k], U=self.U[k], C=self.C[k], C_im=self.C_im[k],
                                          nodes=d.nodes, groups=d.groups, normals=d.normals, A_solver=d.A_left, 
                                          eps_M=d.eps_M, K=d.K, grad=d.grad, pho=d.pho, D_f=d.D_f, A_right=d.A_right,
                                          delta_p=d.delta_p, gauss_p=d.gauss_p, gauss_f=d.gauss_f, Qout_n=self.Qout[k][step-1],
@@ -79,10 +191,120 @@ class Simulation:
 
                         im_C_im[r][i][j].set_data(SC_im)
 
+            if p.activate_ext and self.Qout[k][step] and p.run_type == "optimization":
+                self.C[k] -= d.gauss_p*self.C[k]
+
         if visuals is not None:
             update_supertitles(figs, self.t)
 
         # print(self.t/3600)
+
+class SimulationAdjoint:
+
+    def __init__(self, psi_H_list, psi_C_list):
+
+        self.psi_H = [h.copy() for h in psi_H_list]
+        self.psi_C = [c.copy() for c in psi_C_list]
+
+        self.t = p.T  # 👈 adjunto inicia al final del tiempo
+        self.dt = p.dt
+
+    def update(self, step, h, U, C, Qout, d, figs=None, visuals=None):
+
+        self.t -= p.dt
+
+        if visuals is not None:
+            im_H, im_C = visuals
+
+        for k in range(p.K):
+        
+            # =====================================================
+            # STEP ADJUNTO
+            # =====================================================
+            self.psi_H[k], self.psi_C[k] = step_adjoint(
+                A_solver=d.A_H,
+                B=d.B_H,
+                # ---------------------------------------------
+                # adjoint state at n+1
+                # ---------------------------------------------
+                psiH_N=self.psi_H[k],
+                psiC_N=self.psi_C[k],
+                
+
+                # ---------------------------------------------
+                # forward states
+                # ---------------------------------------------
+                H_N=h[step][k],
+                H_n=h[step - 1][k],
+
+                # ---------------------------------------------
+                # adjoint state at n+1
+                # ---------------------------------------------
+                V_N=U[step][k],
+                V_n=U[step-1][k],
+
+                C_N=C[step][k],
+                C_n=C[step - 1][k],
+
+                # ---------------------------------------------
+                # hydraulic
+                # ---------------------------------------------
+                S_s=d.pho,
+                K=d.K,
+                Div_K=d.div_K,
+
+                pho=d.pho,
+
+                # ---------------------------------------------
+                # transport
+                # ---------------------------------------------
+                D=d.D_f,
+
+                # ---------------------------------------------
+                # source / pumping
+                # ---------------------------------------------
+                Qout_N=Qout[k][step],
+                Qout_n=Qout[k][step - 1],
+
+                gauss_p=d.gauss_p,
+                gamma=d.gamma,
+                delta_p=d.delta_p,
+
+                # ---------------------------------------------
+                # derivative operators
+                # ---------------------------------------------
+                grad=d.grad,
+                # ---------------------------------------------
+                # geometry
+                # ---------------------------------------------
+                nodes=d.nodes,
+                groups=d.groups,
+                normals=d.normals,
+                eps_M=d.eps_M
+            )
+
+            # =====================================================
+            # VISUALIZATION (optional)
+            # =====================================================
+            if visuals is not None:
+                i, j = divmod(k, p.ncols)
+
+                # ---- ψ_H ----
+                SH = d.I.dot(self.psi_H[k])
+                SH[~d.mask] = np.nan
+                SH = SH.reshape(d.xy_grid.shape[1:]).T
+
+                im_H[i][j].set_data(SH)
+
+                # ---- ψ_C ----
+                SC = d.I.dot(self.psi_C[k])
+                SC[~d.mask] = np.nan
+                SC = SC.reshape(d.xy_grid.shape[1:]).T
+
+                im_C[i][j].set_data(SC)
+
+        # if visuals is not None:
+        #     update_supertitles(figs, self.t)
 
 def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
 
@@ -128,32 +350,64 @@ def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
 
     print(f"Tiempo total: {time.perf_counter() - t_start:.2f} s")
 
+def run_simulation_adj(sim, h, U, C, Qout, frames, outputs, d, figs=None, visuals=None):
 
-def run_simulationOS(sim, frames, writers,
-                   mask_h_cor, d, context, visuals):
+    import time
+    from contextlib import ExitStack
 
-    writer_H, writer_V, writer_C, writer_C_im = writers
-
-    print("Generando MP4...")
     t_start = time.perf_counter()
+    print("Iniciando simulación adjunta...")
 
-    with ExitStack() as stack:
+    maxC=[]
+    maxH=[]
 
-        for c in context:
+    if outputs["animate"]:
+        stack = ExitStack()
+        for c in outputs["context"]:
             stack.enter_context(c)
 
-        for n in range(frames):
-            sim.update(n, mask_h_cor, d, visuals)
+    try:
+        for n in range(frames - 1, -1, -1):
 
-            writer_H.grab_frame()
-            writer_V.grab_frame()
-            writer_C.grab_frame()
+            # =====================================================
+            # UPDATE ADJUNTO
+            # =====================================================
+            sim.update(n, h, U, C, Qout, d, figs, visuals)
+            # =====================================================
+            # DATA STORAGE
+            # =====================================================
 
-            for r in range(Nr):
-                writer_C_im[r].grab_frame()
+            maxC.append(np.max(sim.psi_C))
+            maxH.append(np.max(sim.psi_H))
 
-    print(f"Tiempo total: {time.perf_counter() - t_start:.2f} s")
+            if outputs["save_data"]:
 
+                outputs["psi_H_hist"].appendleft([x.copy() for x in sim.psi_H])
+                outputs["psi_C_hist"].appendleft([x.copy() for x in sim.psi_C])
+
+                if "mrmt" in p.model:
+                    for r in range(p.Nr):
+                        outputs["psi_Ci_hist"][r].append(
+                            sim.psi_C_im[r].copy()
+                        )
+
+            # =====================================================
+            # ANIMATION
+            # =====================================================
+            if outputs["animate"]:
+
+                writer_H, writer_C, writer_psi_Ci = outputs["writers"]
+
+                writer_H.grab_frame()
+                writer_C.grab_frame()
+
+    finally:
+        if outputs["animate"]:
+            stack.close()
+    
+    print(np.max(maxH))
+    print(np.max(maxC))
+    print(f"Tiempo total adjunto: {time.perf_counter() - t_start:.2f} s")
 
 def create_writers(figs):
     fig_H, fig_V, fig_C, fig_C_im = figs
@@ -191,6 +445,65 @@ def create_writers(figs):
 
     return [writer_H, writer_V, writer_C, writer_C_im], context
 
+from matplotlib.animation import FFMpegWriter
+
+def create_writers_adj(figs):
+
+    os.makedirs(f"{p.save_video}/adjoin", exist_ok=True)
+
+    fig_psi_H, fig_psi_C = figs[:2]
+
+    writer_kwargs = dict(
+        fps=20,
+        codec="libx264",
+        bitrate=3000,
+        extra_args=["-pix_fmt", "yuv420p"]
+    )
+
+    # =====================================================
+    # MAIN WRITERS
+    # =====================================================
+    writer_psi_H = FFMpegWriter(**writer_kwargs)
+    writer_psi_C = FFMpegWriter(**writer_kwargs)
+
+    # =====================================================
+    # MRMT (optional)
+    # =====================================================
+    if "mrmt" in p.model:
+        writer_psi_Ci = [
+            FFMpegWriter(**writer_kwargs)
+            for _ in range(p.Nr)
+        ]
+    else:
+        writer_psi_Ci = []
+
+    # =====================================================
+    # CONTEXT MANAGERS
+    # =====================================================
+    context = [
+        writer_psi_H.saving(
+            fig_psi_H,
+            f"{p.save_video}/adjoin/psi_H.mp4",
+            dpi=150
+        ),
+        writer_psi_C.saving(
+            fig_psi_C,
+            f"{p.save_video}/adjoin/psi_C.mp4",
+            dpi=150
+        )
+    ]
+
+    if "mrmt" in p.model:
+        for r in range(p.Nr):
+            context.append(
+                writer_psi_Ci[r].saving(
+                    figs[2][r],  # fig_Ci list
+                    f"{p.save_video}/adjoin/psi_Ci_r{r}.mp4",
+                    dpi=150
+                )
+            )
+
+    return [writer_psi_H, writer_psi_C, writer_psi_Ci], context
 
 def setup_outputs(figs=None, save_data=False, animate=False, nodes=None):
 
@@ -207,6 +520,30 @@ def setup_outputs(figs=None, save_data=False, animate=False, nodes=None):
 
     if animate:
         writers, context = create_writers(figs)
+        outputs["writers"] = writers
+        outputs["context"] = context
+
+    return outputs
+
+def setup_outputs_adj(figs=None, save_data=False, animate=False, nodes=None):
+    from collections import deque
+
+    outputs = {
+        "save_data": save_data,
+        "animate": animate,
+
+        # histories adjuntos
+        "psi_H_hist": deque([]),
+        "psi_C_hist": deque([]),
+
+        "nodes": nodes
+    }
+
+    if "mrmt" in p.model:
+        outputs["psi_Ci_hist"] = [[] for _ in range(p.Nr)]
+
+    if animate:
+        writers, context = create_writers_adj(figs)
         outputs["writers"] = writers
         outputs["context"] = context
 
@@ -234,3 +571,26 @@ def finalize_outputs(outputs, sim):
 
 
         print("Datos guardados ✔")
+
+def finalize_outputs_adj(outputs, sim):
+
+    if outputs["save_data"]:
+
+        save_dict = {
+            "psi_H": np.array(outputs["psi_H_hist"]),
+            "psi_C": np.array(outputs["psi_C_hist"]),
+            "nodes": outputs["nodes"],
+            "dt": sim.dt
+        }
+
+        if "mrmt" in p.model:
+            save_dict["psi_Ci"] = np.array([
+                np.array(hist) for hist in outputs["psi_Ci_hist"]
+            ])
+
+        np.savez(
+            f"{p.save_data}/adjoint_results.npz",
+            **save_dict
+        )
+
+        print("Datos adjuntos guardados ✔")

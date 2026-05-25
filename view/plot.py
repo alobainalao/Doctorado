@@ -109,6 +109,78 @@ def get_colormaps():
 
     return cmap_main, cmap_h
 
+# =========================================================
+# FIGURAS ADJUNTO
+# =========================================================
+def create_adj_figures():
+
+    p = RUNTIME.get()
+
+    # -----------------------------------------------------
+    # ψ_H
+    # -----------------------------------------------------
+    fig_psiH, axes_psiH = plt.subplots(
+        p.nrows, p.ncols,
+        figsize=(18, 7)
+    )
+
+    # -----------------------------------------------------
+    # ψ_C
+    # -----------------------------------------------------
+    fig_psiC, axes_psiC = plt.subplots(
+        p.nrows, p.ncols,
+        figsize=(18, 7)
+    )
+
+    # -----------------------------------------------------
+    # MRMT adjunto (si aplica)
+    # -----------------------------------------------------
+    fig_psiC_im = []
+    axes_psiC_im = []
+
+    if "mrmt" in p.model:
+        for r in range(p.Nr):
+            fig, axes = plt.subplots(
+                p.nrows, p.ncols,
+                figsize=(18, 7)
+            )
+            fig_psiC_im.append(fig)
+            axes_psiC_im.append(np.atleast_2d(axes))
+
+    # =====================================================
+    # COLORMAPS (ADJUNTO)
+    # =====================================================
+
+    from matplotlib.colors import LinearSegmentedColormap
+
+    # -----------------------------------------------------
+    # colormap principal (psi)
+    # -----------------------------------------------------
+    base = plt.cm.get_cmap("viridis")
+    colors = base(np.linspace(0, 1.0, 256))
+
+    cmap_psi = LinearSegmentedColormap.from_list(
+        "psi_cmap",
+        colors
+    )
+
+    # -----------------------------------------------------
+    # colormap alterno (sensibilidades / flujo adjunto)
+    # -----------------------------------------------------
+    base = plt.cm.get_cmap("coolwarm")
+    colors = base(np.linspace(0, 1.0, 256))
+
+    cmap_flux = LinearSegmentedColormap.from_list(
+        "flux_cmap",
+        colors
+    )
+
+    return (
+        [fig_psiH, fig_psiC, fig_psiC_im],
+        [np.atleast_2d(axes_psiH), np.atleast_2d(axes_psiC), axes_psiC_im],
+        [cmap_psi, cmap_flux]
+    )
+
 def create_figures():
 
     fig_H, axes_H = plt.subplots(p.nrows, p.ncols, figsize=(18, 7))
@@ -214,6 +286,26 @@ def create_visual_arrays():
     quiv_V = [[None for _ in range(p.ncols)] for _ in range(p.nrows)]
 
     return im_H, im_V, im_C, im_C_im, quiv_V
+
+def create_adjoint_visual_arrays():
+
+    # =====================================================
+    # ψ_h
+    # =====================================================
+    im_psiH = [
+        [None for _ in range(p.ncols)]
+        for _ in range(p.nrows)
+    ]
+
+    # =====================================================
+    # ψ_C
+    # =====================================================
+    im_psiC = [
+        [None for _ in range(p.ncols)]
+        for _ in range(p.nrows)
+    ]
+
+    return im_psiH, im_psiC
 
 def initialize_plots(d, Qout, axes, cmaps, figs):
 
@@ -337,3 +429,104 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
             cbar.ax.tick_params(colors='red')
 
     return im_H, im_V, im_C, im_C_im, quiv_V
+
+# =========================================================
+# INITIALIZE ADJOINT PLOTS
+# =========================================================
+def initialize_adj_plots(d, axes, cmaps, figs):
+
+    im_psiH, im_psiC  = create_adjoint_visual_arrays()
+
+    p = RUNTIME.get()
+
+    X = d.xy_grid[0].T
+    Y = d.xy_grid[1].T
+
+    for k in range(p.K):
+        i, j = divmod(k, p.ncols)
+
+        # =================================================
+        # ψ_H
+        # =================================================
+        psiH0 = d.I.dot(d.psi_H[k])
+        psiH0[~d.mask] = np.nan
+        psiH0 = psiH0.reshape(d.xy_grid.shape[1:]).T
+
+        im_psiH[i][j] = axes[0][i, j].imshow(
+            psiH0,
+            vmin=-0.0006, vmax=0.0006,   # adjuntos suelen ser pequeños y con signo
+            cmap=cmaps[0],
+            origin="lower",
+            extent=[p.xmin, p.xmax, p.ymin, p.ymax]
+        )
+
+        axes[0][i, j].set_title(r"$\psi_h$")
+
+        # =================================================
+        # ψ_C
+        # =================================================
+        psiC0 = d.I.dot(d.psi_C[k])
+        psiC0[~d.mask] = np.nan
+        psiC0 = psiC0.reshape(d.xy_grid.shape[1:]).T
+
+        im_psiC[i][j] = axes[1][i, j].imshow(
+            psiC0,
+            vmin=-0.0006, vmax=0.0006,
+            cmap=cmaps[0],
+            origin="lower",
+            extent=[p.xmin, p.xmax, p.ymin, p.ymax]
+        )
+
+        axes[1][i, j].set_title(r"$\psi_C$")
+
+        # =================================================
+        # MRMT adjunto (si aplica)
+        # =================================================
+        # if "mrmt" in p.model:
+        #     for r in range(p.Nr):
+
+        #         psiCim = d.I.dot(d.psiC_im[k][r])
+        #         psiCim[~d.mask] = np.nan
+        #         psiCim = psiCim.reshape(d.xy_grid.shape[1:]).T
+
+        #         im_psiC_im[r][i][j] = axes[2][r][i, j].imshow(
+        #             psiCim,
+        #             vmin=-1e-6, vmax=1e-6,
+        #             cmap=cmaps[0],
+        #             origin="lower",
+        #             extent=[p.xmin, p.xmax, p.ymin, p.ymax]
+        #         )
+
+        #     axes[2][r][i][j].set_title(r"$\psi_C^{im}$")
+
+        # =================================================
+        # flatten images for colorbars
+        # =================================================
+        ims = [
+            im_psiH[0][0],
+            im_psiC[0][0],
+        ]
+
+        # if "mrmt" in p.model:
+        #     for r in range(p.Nr):
+        #         ims.append(im_psiC_im[r][0][0])
+
+        # =================================================
+        # COLORBARS
+        # =================================================
+        figs_flat = [
+            f for item in figs
+            for f in (item if isinstance(item, list) else [item])
+        ]
+
+        y_pos = 0.94
+
+        for fig, im in zip(figs_flat, ims):
+
+            cax = fig.add_axes([0.15, y_pos, 0.70, 0.02])
+
+            cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
+
+            cbar.ax.tick_params(colors='black')
+    # , im_psiC_im, quiv
+    return im_psiH, im_psiC

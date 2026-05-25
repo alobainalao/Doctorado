@@ -30,7 +30,7 @@ class Parameters:
 
                 "Nr", "Deff", "phi_im", "beta",
 
-                "save_dat", "animate"
+                "save_dat", "animate", "run_type"
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -182,7 +182,8 @@ class Parameters:
         self.beta = getattr(self, "beta", 1.0)
         self.z0 = getattr(self, "z0", 0.0)
 
-        self.run_type = getattr(self, "run_type", "forward")
+        self.run_type = getattr(self, "run_type", "standard")
+        print(self.run_type)
 
         # =========================
         # MRMT DERIVADOS

@@ -87,13 +87,11 @@ def update_pozo(d, pozo_cor):
 
     return d
 
-def get_solucion(prop1, prop2,filepath):
-    data = np.load(filepath)
+def get_solucion(props, filepath):
 
-    H = data[prop1]   # shape: (K, N)
-    C = data[prop2]   # shape: (K, N)
+    with np.load(filepath, allow_pickle=True) as data:
 
-    return H, C
+        return [data[prop] for prop in props]
 
 
 

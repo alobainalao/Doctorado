@@ -42,6 +42,45 @@ def run_preprocess():
 
     A_left = build_H_matrix(nodes, groups, normals, p.theta, pho, K, div_K, eps_M, -1)
     A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, pho, K, div_K, eps_M, 1)
+    
+    if p.run_type == "optimization":
+           # =====================================================
+        # ψ_H
+        # =====================================================
+
+        # -----------------------------------------------------
+        # A ψ_H^n
+        # -----------------------------------------------------
+        A_H = build_adj_H_matrix(
+            nodes=nodes,
+            groups=groups,
+            normals=normals,
+            theta =p.theta,
+            S_s=pho,
+            K=K,
+            Div_K=div_K,
+            eps_M=eps_M,
+
+            sig=-1
+        )
+
+        # -----------------------------------------------------
+        # B ψ_H^{n+1}
+        # -----------------------------------------------------
+        B_H = build_adj_H_matrix(
+            nodes=nodes,
+            groups=groups,
+            normals=normals,
+            theta =1-p.theta,
+            S_s=pho,
+            K=K,
+            Div_K=div_K,
+
+            eps_M=eps_M,
+
+            sig=+1
+        )
+
 
     delta_p = delta_char(nodes, pozo_cor, 1e-6)
     gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_y)
@@ -103,10 +142,15 @@ def run_preprocess():
         data["exp_lam_dt"] = None
         data["C_im"] = [None for _ in range(p.K)]
 
+    if p.run_type == "optimization":
+        data["A_H"]= A_H
+        data["B_H"]= B_H
 
+        
     savefile = f"{p.save_preprocess}/preproceso.pkl"
     with open(savefile, "wb") as f:
         pickle.dump(data, f)
+
 
     print(">>> Preprocesamiento guardado en", savefile)
 
@@ -128,6 +172,8 @@ def load_data():
     d = Data()
     d.__dict__.update(data)
     d.A_left = splu(d.A_left)
+    if p.run_type == "optimization":
+        d.A_H = splu(d.A_H)
 
 
     print(">>> Datos listos")
