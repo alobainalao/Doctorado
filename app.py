@@ -31,9 +31,10 @@ st.markdown("""
 ===================================================== */
 
 header {
-    visibility: hidden;
-    height: 0px;
+    visibility: visible !important;
+    height: auto !important;
 }
+
 
 .block-container {
     padding-top: 0.8rem !important;
@@ -86,6 +87,10 @@ div[data-baseweb="select"] > div {
     border-radius: 10px;
     min-height: 44px;
     font-weight: 600;
+    white-space: nowrap;   /* 👈 evita salto de línea */
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 }
 
 /* =====================================================
