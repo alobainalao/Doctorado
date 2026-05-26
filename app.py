@@ -1,7 +1,6 @@
 import streamlit as st
 import subprocess
 import sys
-import os
 import json
 import threading
 import queue
@@ -21,20 +20,60 @@ st.set_page_config(
 )
 
 # =========================================================
-# CUSTOM CSS
+# MODERN RESPONSIVE CSS
 # =========================================================
 
 st.markdown("""
 <style>
 
 /* =====================================================
-   MAIN LAYOUT
+   GLOBAL
+===================================================== */
+
+html, body, [class*="css"] {
+    font-family: "Inter", sans-serif;
+}
+
+/* =====================================================
+   MAIN CONTAINER
 ===================================================== */
 
 .main .block-container{
-    max-width: 1200px;
-    padding-top: 1.5rem;
+    max-width: 1450px;
+    padding-top: 1.2rem;
     padding-bottom: 2rem;
+    padding-left: 2rem;
+    padding-right: 2rem;
+}
+
+/* =====================================================
+   TITLES
+===================================================== */
+
+h1 {
+    font-size: 2.2rem !important;
+    font-weight: 700 !important;
+    margin-bottom: 0.2rem !important;
+}
+
+h2 {
+    font-size: 1.6rem !important;
+    font-weight: 650 !important;
+}
+
+h3 {
+    font-size: 1.15rem !important;
+    font-weight: 650 !important;
+}
+
+/* =====================================================
+   CAPTION
+===================================================== */
+
+[data-testid="stCaptionContainer"] {
+    font-size: 0.95rem;
+    opacity: 0.75;
+    margin-bottom: 1rem;
 }
 
 /* =====================================================
@@ -42,25 +81,25 @@ st.markdown("""
 ===================================================== */
 
 label {
-    font-size: 0.90rem !important;
-    font-weight: 500 !important;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
 }
 
 /* =====================================================
    INPUTS
 ===================================================== */
 
+div[data-baseweb="input"] > div,
 div[data-baseweb="select"] > div {
-    min-height: 42px;
-    border-radius: 10px;
-}
-
-div[data-baseweb="input"] > div {
-    border-radius: 10px;
+    border-radius: 12px !important;
+    min-height: 48px;
+    border: 1px solid rgba(128,128,128,0.20);
 }
 
 div[data-baseweb="input"] input {
-    font-size: 0.92rem;
+    font-size: 0.96rem !important;
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
 }
 
 /* =====================================================
@@ -68,20 +107,16 @@ div[data-baseweb="input"] input {
 ===================================================== */
 
 .stButton > button {
-    width: auto !important;
-    min-width: 200px;
-    border-radius: 10px;
-    height: 44px;
-    font-weight: 600;
-    font-size: 0.95rem;
+    width: 100%;
+    border-radius: 12px;
+    min-height: 48px;
+    font-size: 0.98rem;
+    font-weight: 650;
+    transition: 0.2s ease;
 }
 
-/* =====================================================
-   CHECKBOX
-===================================================== */
-
-.stCheckbox {
-    margin-bottom: 0.2rem;
+.stButton > button:hover {
+    transform: translateY(-1px);
 }
 
 /* =====================================================
@@ -89,34 +124,12 @@ div[data-baseweb="input"] input {
 ===================================================== */
 
 button[data-baseweb="tab"] {
-    font-size: 0.95rem;
-    padding-top: 0.6rem;
-    padding-bottom: 0.6rem;
-}
-
-/* =====================================================
-   EXPANDERS
-===================================================== */
-
-.streamlit-expanderHeader {
-    font-size: 0.95rem;
+    font-size: 0.96rem;
     font-weight: 600;
-}
-
-/* =====================================================
-   CODE
-===================================================== */
-
-pre {
-    border-radius: 12px !important;
-}
-
-/* =====================================================
-   DATA EDITOR
-===================================================== */
-
-[data-testid="stDataEditor"] {
-    border-radius: 12px;
+    padding-top: 0.8rem;
+    padding-bottom: 0.8rem;
+    border-radius: 10px 10px 0 0;
+    white-space: nowrap;
 }
 
 /* =====================================================
@@ -124,16 +137,60 @@ pre {
 ===================================================== */
 
 [data-testid="metric-container"] {
-    border-radius: 12px;
-    padding: 0.8rem;
+    border-radius: 16px;
+    padding: 1rem;
+    border: 1px solid rgba(128,128,128,0.15);
+    background-color: rgba(250,250,250,0.02);
+}
+
+/* Metric label */
+[data-testid="metric-container"] label {
+    font-size: 0.88rem !important;
+    font-weight: 600 !important;
+}
+
+/* Metric value */
+[data-testid="stMetricValue"] {
+    font-size: 1.55rem !important;
+    font-weight: 700 !important;
 }
 
 /* =====================================================
-   REDUCE VERTICAL SPACING
+   EXPANDERS
 ===================================================== */
 
-.element-container {
-    margin-bottom: 0.35rem;
+.streamlit-expanderHeader {
+    font-size: 0.98rem;
+    font-weight: 650;
+}
+
+/* =====================================================
+   CODE BLOCKS
+===================================================== */
+
+pre {
+    border-radius: 14px !important;
+    padding: 1rem !important;
+    font-size: 0.84rem !important;
+    overflow-x: auto !important;
+}
+
+/* =====================================================
+   DATA EDITOR
+===================================================== */
+
+[data-testid="stDataEditor"] {
+    border-radius: 14px;
+    border: 1px solid rgba(128,128,128,0.15);
+    overflow-x: auto;
+}
+
+/* =====================================================
+   ALERTS
+===================================================== */
+
+[data-testid="stAlert"] {
+    border-radius: 14px;
 }
 
 /* =====================================================
@@ -142,26 +199,114 @@ pre {
 
 section[data-testid="stSidebar"] {
     width: 320px !important;
+    min-width: 320px !important;
+}
+
+section[data-testid="stSidebar"] .block-container {
+    padding-top: 1rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
 }
 
 /* =====================================================
-   HEADERS
+   SPACING
 ===================================================== */
 
-h1 {
-    margin-bottom: 0.3rem;
-}
-
-h2, h3 {
-    margin-top: 0.3rem;
+.element-container {
+    margin-bottom: 0.55rem !important;
 }
 
 /* =====================================================
-   INFO BOXES
+   MOBILE
 ===================================================== */
 
-[data-testid="stAlert"] {
-    border-radius: 12px;
+@media (max-width: 1024px){
+
+    .main .block-container{
+        padding-left: 1.2rem;
+        padding-right: 1.2rem;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.35rem !important;
+    }
+}
+
+@media (max-width: 768px){
+
+    .main .block-container{
+        padding-top: 0.7rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+
+    h1 {
+        font-size: 1.7rem !important;
+    }
+
+    h2 {
+        font-size: 1.3rem !important;
+    }
+
+    h3 {
+        font-size: 1.05rem !important;
+    }
+
+    label {
+        font-size: 0.85rem !important;
+    }
+
+    div[data-baseweb="input"] input {
+        font-size: 0.9rem !important;
+    }
+
+    button[data-baseweb="tab"] {
+        font-size: 0.82rem;
+        padding-left: 0.4rem;
+        padding-right: 0.4rem;
+    }
+
+    [data-testid="metric-container"] {
+        padding: 0.8rem;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1.15rem !important;
+    }
+
+    .stButton > button {
+        min-height: 44px;
+        font-size: 0.9rem;
+    }
+
+    section[data-testid="stSidebar"] {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+}
+
+@media (max-width: 480px){
+
+    .main .block-container{
+        padding-left: 0.45rem;
+        padding-right: 0.45rem;
+    }
+
+    h1 {
+        font-size: 1.45rem !important;
+    }
+
+    [data-testid="metric-container"] {
+        padding: 0.65rem;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-size: 1rem !important;
+    }
+
+    pre {
+        font-size: 0.74rem !important;
+    }
 }
 
 </style>
@@ -242,7 +387,7 @@ with st.sidebar:
         )
 
 # =========================================================
-# MAIN TABS
+# TABS
 # =========================================================
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -254,7 +399,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # =========================================================
-# TAB 1 - NUMERICAL
+# TAB 1
 # =========================================================
 
 with tab1:
@@ -305,11 +450,11 @@ with tab1:
 
     m1.metric("dt", f"{dt:.2e}")
     m2.metric("T", f"{T:.2e}")
-    m3.metric("Spacing", spacing)
+    m3.metric("Spacing", f"{spacing:.2f}")
     m4.metric("Timesteps", f"{Nt:,}")
 
 # =========================================================
-# TAB 2 - PHYSICS
+# TAB 2
 # =========================================================
 
 with tab2:
@@ -330,7 +475,7 @@ with tab2:
     with col2:
 
         a_l = st.number_input(
-            "a_l",
+            "Longitudinal Dispersion",
             min_value=0.0,
             value=st.session_state.a_l
         )
@@ -338,7 +483,7 @@ with tab2:
     with col3:
 
         a_t = st.number_input(
-            "a_t",
+            "Transversal Dispersion",
             min_value=0.0,
             value=st.session_state.a_t
         )
@@ -352,14 +497,8 @@ with tab2:
             format="%.2e"
         )
 
-    with st.expander("Advanced Physics"):
-
-        st.write(
-            "Additional physical models can be added here."
-        )
-
 # =========================================================
-# TAB 3 - MRMT
+# TAB 3
 # =========================================================
 
 with tab3:
@@ -383,14 +522,13 @@ with tab3:
         mrmt_df = st.data_editor(
             default_df,
             num_rows="dynamic",
-            height=220,
-            use_container_width=False
+            height=260,
+            use_container_width=True
         )
 
     else:
 
         Nr = 0
-
         mrmt_df = pd.DataFrame()
 
         st.info(
@@ -398,7 +536,7 @@ with tab3:
         )
 
 # =========================================================
-# TAB 4 - OUTPUT
+# TAB 4
 # =========================================================
 
 with tab4:
@@ -427,7 +565,7 @@ with tab4:
     )
 
 # =========================================================
-# TAB 5 - RUN
+# TAB 5
 # =========================================================
 
 with tab5:
@@ -436,10 +574,10 @@ with tab5:
 
     c1, c2, c3, c4 = st.columns(4)
 
-    c1.metric("Model", model)
-    c2.metric("Method", metodo)
-    c3.metric("Domain", domain)
-    c4.metric("Run", run_type)
+    c1.metric("Model", model.upper())
+    c2.metric("Method", metodo.upper())
+    c3.metric("Domain", domain.upper())
+    c4.metric("Run", run_type.upper())
 
     st.divider()
 
@@ -531,10 +669,6 @@ if run_button:
     with open(config_path, "w") as f:
         json.dump(config, f, indent=4)
 
-    # =====================================================
-    # SAVE UPLOADED FILE
-    # =====================================================
-
     if uploaded_file is not None:
 
         save_path = output_dir / uploaded_file.name
@@ -568,10 +702,6 @@ if run_button:
 
     q = queue.Queue()
 
-    # =====================================================
-    # THREAD
-    # =====================================================
-
     def enqueue_output(pipe, q):
 
         for line in iter(pipe.readline, ''):
@@ -586,10 +716,6 @@ if run_button:
 
     t.daemon = True
     t.start()
-
-    # =====================================================
-    # LIVE LOGGING
-    # =====================================================
 
     while process.poll() is None:
 
@@ -618,10 +744,6 @@ if run_button:
             )
 
         time.sleep(0.05)
-
-    # =====================================================
-    # FINALIZATION
-    # =====================================================
 
     stderr = process.stderr.read()
 
