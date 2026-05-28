@@ -530,3 +530,190 @@ def initialize_adj_plots(d, axes, cmaps, figs):
             cbar.ax.tick_params(colors='black')
     # , im_psiC_im, quiv
     return im_psiH, im_psiC
+
+
+
+
+def create_optimization_figures():
+
+    fig = plt.figure(figsize=(14, 10))
+
+    # =====================================================
+    # GRID
+    # =====================================================
+
+    gs = fig.add_gridspec(
+        nrows=2,
+        ncols=2,
+
+        # alturas
+        height_ratios=[0.3, 0.6],
+
+        # anchos
+        width_ratios=[0.3, 0.7],
+
+        hspace=0.25,
+        wspace=0.20
+    )
+
+    # =====================================================
+    # AXES
+    # =====================================================
+
+    # arriba izquierda -> J
+    ax_J = fig.add_subplot(gs[0, 0])
+
+    # arriba derecha -> Q(t)
+    ax_Q = fig.add_subplot(gs[0, 1])
+
+    # abajo -> xp/zp
+    ax_zp = fig.add_subplot(gs[1, :])
+
+    axes = {
+        "J": ax_J,
+        "Q": ax_Q,
+        "zp": ax_zp
+    }
+
+    return fig, axes
+
+def create_optimization_visuals():
+
+    visuals = {
+        "Q": None,
+        "zp": None,
+        "J": None
+    }
+
+    return visuals
+
+def initialize_optimization_plots(history, fig, axes):
+
+    visuals = create_optimization_visuals()
+
+    Nt = len(history["Q"][0])
+
+    t = np.arange(Nt)
+
+    # -----------------------------------------------------
+    # Q(t)
+    # -----------------------------------------------------
+
+    visuals["Q"], = axes[1].plot(
+        t,
+        history["Q"][0],
+        lw=2
+    )
+
+    qmin = np.min([np.min(q) for q in history["Q"]])
+    qmax = np.max([np.max(q) for q in history["Q"]])
+
+    axes[1].set_xlim(0, Nt-1)
+    axes[1].set_ylim(qmin, qmax)
+
+    axes[1].set_title("Control Q(t)")
+    axes[1].set_xlabel("Tiempo")
+    axes[1].set_ylabel("Q")
+
+    # -----------------------------------------------------
+    # zp
+    # -----------------------------------------------------
+
+    visuals["zp"], = axes[2].plot([], [], lw=2)
+
+    axes[2].set_xlim(0, len(history["zp"]))
+    axes[2].set_ylim(
+        np.min(history["zp"]),
+        np.max(history["zp"])
+    )
+
+    axes[2].set_title("Posición del pozo z_p")
+    axes[2].set_xlabel("Iteración")
+    axes[2].set_ylabel("z_p")
+
+    # -----------------------------------------------------
+    # funcional
+    # -----------------------------------------------------
+
+    visuals["J"], = axes[0].plot([], [], lw=2)
+
+    axes[0].set_xlim(0, len(history["J"]))
+    axes[0].set_ylim(
+        np.min(history["J"]),
+        np.max(history["J"])
+    )
+
+    axes[0].set_title("Funcional J")
+    axes[0].set_xlabel("Iteración")
+    axes[0].set_ylabel("J")
+
+    plt.tight_layout()
+
+    return visuals
+
+def update_optimization_frame(frame, history, visuals, fig):
+
+    Nt = len(history["Q"][0])
+
+    t = np.arange(Nt)
+
+    # -----------------------------------------------------
+    # Q
+    # -----------------------------------------------------
+
+    visuals["Q"].set_data(
+        t,
+        history["Q"][frame]
+    )
+
+    # -----------------------------------------------------
+    # zp
+    # -----------------------------------------------------
+
+    visuals["zp"].set_data(
+        np.arange(frame + 1),
+        history["zp"][:frame + 1]
+    )
+
+    # -----------------------------------------------------
+    # J
+    # -----------------------------------------------------
+
+    visuals["J"].set_data(
+        np.arange(frame + 1),
+        history["J"][:frame + 1]
+    )
+
+    fig.suptitle(
+        f"Iteración de optimización {frame}",
+        fontsize=14
+    )
+
+    return list(visuals.values())
+
+def animate_optimization(history, save_path="optimization.mp4"):
+
+    fig, axes = create_optimization_figures()
+
+    visuals = initialize_optimization_plots(
+        history,
+        fig,
+        axes
+    )
+
+    anim = FuncAnimation(
+        fig,
+        lambda frame: update_optimization_frame(
+            frame,
+            history,
+            visuals,
+            fig
+        ),
+        frames=len(history["Q"]),
+        interval=300,
+        blit=False
+    )
+
+    anim.save(save_path)
+
+    plt.close(fig)

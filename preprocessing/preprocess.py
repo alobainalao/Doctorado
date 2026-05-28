@@ -43,6 +43,14 @@ def run_preprocess():
     A_left = build_H_matrix(nodes, groups, normals, p.theta, pho, K, div_K, eps_M, -1)
     A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, pho, K, div_K, eps_M, 1)
     
+
+    delta_p = discrete_delta(nodes, pozo_cor, 2.5*p.spacing)
+    # delta_p = delta_char(nodes, pozo_cor, 1e-6)
+    gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_y)
+    gauss_f = gaussian_2d(nodes, p.fnte, 1, p.epsilon_x, p.epsilon_y)
+
+    
+    
     if p.run_type == "optimization":
            # =====================================================
         # ψ_H
@@ -81,10 +89,7 @@ def run_preprocess():
             sig=+1
         )
 
-
-    delta_p = delta_char(nodes, pozo_cor, 1e-6)
-    gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_y)
-    gauss_f = gaussian_2d(nodes, p.fnte, 1, p.epsilon_x, p.epsilon_y)
+        wi=rbf_integration_weights(nodes, 2.0)
 
     N = nodes.shape[0]
 
@@ -145,8 +150,13 @@ def run_preprocess():
     if p.run_type == "optimization":
         data["A_H"]= A_H
         data["B_H"]= B_H
+        data["wi"]= wi
+        data["z0"]= 300
+        data["beta"]= 0.2
+        data["gamma"] = 0.5
 
-        
+
+
     savefile = f"{p.save_preprocess}/preproceso.pkl"
     with open(savefile, "wb") as f:
         pickle.dump(data, f)

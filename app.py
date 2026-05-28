@@ -261,7 +261,11 @@ if submit:
         "Nr": str(Nr),
 
         "save_dat": str(save_dat),
-        "animate": str(animate)
+        "animate": str(animate),
+
+        "run_type": run_type
+
+        
     })
 
     process = subprocess.Popen(

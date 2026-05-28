@@ -1,11 +1,11 @@
 from contextlib import ExitStack
 from funtions.step_time import step_time, step_adjoint
 from funtions.runtime import RUNTIME
-from view.plot import update_supertitles
+from view.plot import update_supertitles, update_optimization_frame, create_optimization_figures, setup_optimization_outputs
 
 from postprocessing.create_btc  import create_btc
-from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots
-from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp
+from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots, initialize_optimization_plots
+from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp, chi_eps, compute_functional
 import os
 import numpy as np
 import time
@@ -75,6 +75,28 @@ def solve_forward(d, Qout, animate, save_data):
 
 def conjugate_gradient(d, animate, save_data, p, max_iter=20):
 
+    fig = None
+    axes = None
+    visuals = None
+
+    if animate:
+        fig, axes = create_optimization_figures()
+
+        visuals = initialize_optimization_plots(
+            history={"Q": [], "zp": [], "J": []},
+            fig=fig,
+            axes=axes
+        )
+
+    outputs = setup_optimization_outputs(
+        fig=fig,
+        save_data=save_data,
+        animate=animate
+    )
+
+    # =====================================================
+    # VARIABLES
+    # =====================================================
     Qout = p.Qout
     pozo_cor = p.pozo
 
@@ -83,41 +105,124 @@ def conjugate_gradient(d, animate, save_data, p, max_iter=20):
 
     d.psi_H = [np.zeros_like(h) for h in d.H]
     d.psi_C = [np.zeros_like(c) for c in d.C]
-    d.gamma = 0.5
 
-    for k in range(max_iter):
-        # update_pozo(d, pozo_cor)
+    # =====================================================
+    
+    # TIMER
+    # =====================================================
+    t_start = time.perf_counter()
 
-        print("conjugate_gradient")
+    print("Iniciando optimización...")
 
-        # FORWARD
-        solve_forward(d, Qout, animate, save_data)
-        h, U, C = get_solucion(["H", "U", "C"], f"{p.save_data}/simulation_results.npz")
 
-        # ADJOINT
-        solve_adjoint(h, U, C, Qout, d, animate, save_data)
-        psi_C, psi_h = get_solucion(["psi_C", "psi_H"], f"{p.save_data}/adjoint_results.npz")
+    if outputs["animate"]:
+        stack = ExitStack()
+        stack.enter_context(outputs["context"])
 
-        # GRADIENTES
-        gQ = grad_Q(Qout, pozo_cor, psi_h, psi_C, C, p)
-        gzp = grad_zp(Qout, pozo_cor, psi_h, psi_C, C, p)
+    try:
 
-        # dirección conjugada
-        if k == 0:
-            dQ = -gQ
-        else:
-            beta = np.dot(gQ, gQ) / np.dot(g_prev, g_prev)
-            dQ = -gQ + beta * dQ
+        for k in range(max_iter):
 
-        # step (puedes hacer line search después)
-        alpha = 1e-3
+            # =================================================
+            # GEOMETRÍA
+            # =================================================
 
-        Q = Q + alpha * dQ
-        zp = zp - alpha * gzp
+            d = update_pozo(d, pozo_cor)
 
-        g_prev = gQ
+            # =================================================
+            # FORWARD
+            # =================================================
 
-    return Q, zp
+            solve_forward(d, Qout, animate, save_data)
+
+            h, U, C = get_solucion(
+                ["H", "U", "C"],
+                f"{p.save_data}/simulation_results.npz"
+            )
+
+            # =================================================
+            # ADJOINT
+            # =================================================
+
+            solve_adjoint(h, U, C, Qout, d, animate, save_data)
+
+            psi_C, psi_h = get_solucion(
+                ["psi_C", "psi_H"],
+                f"{p.save_data}/adjoint_results.npz"
+            )
+
+            # =================================================
+            # GRADIENTES
+            # =================================================
+
+            gQ = grad_Q(Qout[0], psi_h, psi_C, C, d)
+            gzp = grad_zp(Qout[0], psi_h, psi_C, C, d)
+
+            # =================================================
+            # DIRECCIÓN CONJUGADA
+            # =================================================
+
+            if k == 0:
+                dQ = -gQ
+            else:
+                beta = np.dot(gQ, gQ) / (np.dot(g_prev, g_prev) + 1e-14)
+                dQ = -gQ + beta * dQ
+
+            # =================================================
+            # STEP
+            # =================================================
+
+            alpha = 1e-3
+
+            Qout[0] += alpha * dQ
+            pozo_cor[1] -= alpha * gzp
+
+            # =================================================
+            # FUNCIONAL
+            # =================================================
+
+            J = compute_functional(Qout[0], pozo_cor[1], C, d)
+
+            # =================================================
+            # HISTORIAL
+            # =================================================
+
+            if outputs["save_data"]:
+
+                outputs["Q_hist"].append(Qout[0].copy())
+                outputs["zp_hist"].append(pozo_cor[1].copy())
+                outputs["J_hist"].append(J)
+
+            # =================================================
+            # ANIMACIÓN
+            # =================================================
+
+            if outputs["animate"]:
+
+                update_optimization_frame(
+                    k,
+                    {
+                        "Q": outputs["Q_hist"],
+                        "zp": outputs["zp_hist"],
+                        "J": outputs["J_hist"]
+                    },
+                    visuals,
+                    fig
+                )
+
+                outputs["writer"].grab_frame()
+
+            g_prev = gQ.copy()
+
+    finally:
+
+        if outputs["animate"]:
+            stack.close()
+
+    print(f"Tiempo total: {time.perf_counter() - t_start:.2f} s")
+
+    return Qout, pozo_cor, outputs
+
 
 class Simulation:
 
@@ -191,8 +296,11 @@ class Simulation:
 
                         im_C_im[r][i][j].set_data(SC_im)
 
-            if p.activate_ext and self.Qout[k][step] and p.run_type == "optimization":
-                self.C[k] -= d.gauss_p*self.C[k]
+            # if p.activate_ext and self.Qout[k][step] and p.run_type == "optimization":
+            #     self.C[k] -= d.gauss_p*self.C[k]
+
+            if p.activate_ext:
+                self.C[k] -= d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
 
         if visuals is not None:
             update_supertitles(figs, self.t)
@@ -303,6 +411,12 @@ class SimulationAdjoint:
 
                 im_C[i][j].set_data(SC)
 
+            # if p.activate_ext and self.Qout[k][step]:
+            #     self.C[k] -= d.gauss_p*self.C[k]
+
+            if p.activate_ext:
+                self.psi_C[k] -= d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
+
         # if visuals is not None:
         #     update_supertitles(figs, self.t)
 
@@ -409,6 +523,7 @@ def run_simulation_adj(sim, h, U, C, Qout, frames, outputs, d, figs=None, visual
     print(np.max(maxC))
     print(f"Tiempo total adjunto: {time.perf_counter() - t_start:.2f} s")
 
+
 def create_writers(figs):
     fig_H, fig_V, fig_C, fig_C_im = figs
 
@@ -445,7 +560,24 @@ def create_writers(figs):
 
     return [writer_H, writer_V, writer_C, writer_C_im], context
 
-from matplotlib.animation import FFMpegWriter
+def create_optimization_writers(fig):
+
+    writer_kwargs = dict(
+        fps=10,
+        codec="libx264",
+        bitrate=3000,
+        extra_args=["-pix_fmt", "yuv420p"]
+    )
+
+    writer = FFMpegWriter(**writer_kwargs)
+
+    context = writer.saving(
+        fig,
+        f"{p.save_video}/optimization.mp4",
+        dpi=150
+    )
+
+    return writer, context
 
 def create_writers_adj(figs):
 
@@ -505,6 +637,8 @@ def create_writers_adj(figs):
 
     return [writer_psi_H, writer_psi_C, writer_psi_Ci], context
 
+
+
 def setup_outputs(figs=None, save_data=False, animate=False, nodes=None):
 
     outputs = {
@@ -521,6 +655,27 @@ def setup_outputs(figs=None, save_data=False, animate=False, nodes=None):
     if animate:
         writers, context = create_writers(figs)
         outputs["writers"] = writers
+        outputs["context"] = context
+
+    return outputs
+
+def setup_outputs_optimization(figs=None, save_data=False, animate=False):
+
+    outputs = {
+        "save_data": save_data,
+        "animate": animate,
+
+        # historial optimización
+        "Q_hist": [],
+        "zp_hist": [],
+        "J_hist": [],
+
+        "frames": []
+    }
+
+    if animate:
+        writer, context = create_optimization_writers(figs)
+        outputs["writer"] = writer
         outputs["context"] = context
 
     return outputs
@@ -549,6 +704,8 @@ def setup_outputs_adj(figs=None, save_data=False, animate=False, nodes=None):
 
     return outputs
 
+
+
 def finalize_outputs(outputs, sim):
 
     if outputs["save_data"]:
@@ -571,6 +728,24 @@ def finalize_outputs(outputs, sim):
 
 
         print("Datos guardados ✔")
+
+def finalize_optimization_outputs(history):
+
+    # -----------------------------------------------------
+    # guardar historial
+    # -----------------------------------------------------
+
+    np.savez(
+        f"{p.save_data}/optimization_history.npz",
+
+        Q=np.array(history["Q"]),
+
+        zp=np.array(history["zp"]),
+
+        J=np.array(history["J"])
+    )
+
+    print("Historial de optimización guardado ✔")
 
 def finalize_outputs_adj(outputs, sim):
 

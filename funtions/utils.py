@@ -76,10 +76,59 @@ def fuente_C(t, T):
 
     return 1e-11 * t/T * np.exp(-8*t/T) + 1e-12 * (1 - np.exp(-8*t/T))
 
+def discrete_delta(nodes, x_p, radius):
+    """
+    Delta discreta compacta sobre nube de puntos.
+
+    Parameters
+    ----------
+    nodes : (N,2)
+    x_p   : (2,)
+    radius: radio de soporte
+
+    Returns
+    -------
+    delta : (N,)
+    """
+
+    # --------------------------------------------
+    # distancia al punto fuente
+    # --------------------------------------------
+
+    diff = nodes - x_p
+
+    r = np.linalg.norm(diff, axis=1)
+
+    q = r / radius
+
+    # --------------------------------------------
+    # kernel compacto Wendland C2
+    # --------------------------------------------
+
+    delta = np.zeros(len(nodes))
+
+    mask = q < 1.0
+
+    qm = q[mask]
+
+    delta[mask] = ((1.0 - qm)**4) * (4.0*qm + 1.0)
+
+    # --------------------------------------------
+    # normalización
+    # --------------------------------------------
+
+    s = np.sum(delta)
+
+    if s > 0:
+        delta /= s
+
+    return delta
+
 def update_pozo(d, pozo_cor):
+
     p = RUNTIME.get()
 
-    d.delta_p = delta_char(d.nodes, pozo_cor, 1e-6)
+    d.delta_p = discrete_delta(d.nodes, pozo_cor, 2.5*p.spacing)
 
     d.gauss_p = gaussian_2d(
         d.nodes, pozo_cor, 1, p.epsilon_y
@@ -94,60 +143,196 @@ def get_solucion(props, filepath):
         return [data[prop] for prop in props]
 
 
+# ============================================================
+# χε(Q)
+# ============================================================
+
+def chi_eps(Q, eps=1e-6):
+
+    return 0.5 * (
+        1.0 + np.tanh(Q / eps)
+    )
 
 
-def dC_dz(C, p):
-    dz = p.spacing  # o p.dz si lo tienes
-    dC = np.zeros_like(C)
+def dchi_eps(Q, eps=1e-6):
 
-    # diferencia central (interior)
-    dC[1:-1] = (C[2:] - C[:-2]) / (2 * dz)
+    return (
+        0.5 / eps
+        *
+        (1.0 - np.tanh(Q / eps)**2)
+    )
 
-    # bordes
-    dC[0] = (C[1] - C[0]) / dz
-    dC[-1] = (C[-1] - C[-2]) / dz
 
-    return dC
-def d_g_dz(zp, p):
-    z = p.nodes[:, 1]
-    sigma = p.spacing
+# ============================================================
+# ∂g/∂zp
+# ============================================================
 
-    g = np.exp(-((z - zp) ** 2) / (2 * sigma**2))
-    return g * ((z - zp) / (sigma**2))
-def well_distribution(p, zp):
-    z = p.nodes[:, 1]
-    sigma = p.spacing
+def d_g_dz(d):
+    p = RUNTIME.get()
+    dz = d.nodes[:, 1]-d.pozo_cor[1]
 
-    return np.exp(-((z - zp) ** 2) / (2 * sigma**2))
-def grad_zp(Q, zp, psi_h, psi_C, C, p):
+    return d.gauss_p * (
+        dz/(p.epsilon_y**2)
+    )
 
-    term1 = 2 * p.gamma * np.sum(C * dC_dz(C, p))
-    term2 = -np.sum(Q**2)
-    term3 = 2 * p.beta * (zp - p.z0)
 
-    g_z = d_g_dz(zp, p)
+# ============================================================
+# Gradientes
+# ============================================================
 
-    term4 = 0
-    for n in range(len(Q)):
-        term4 += np.sum(
-            Q[n] * g_z * (psi_C[n] * C[n] / p.Q_ref + psi_h[n])
+def grad_Q(
+    Q,
+    psi_h,
+    psi_C,
+    C,
+    d
+):
+
+    Nt = len(Q)
+
+    grad = np.zeros(Nt)
+
+    g = d.gauss_p
+
+    for n in range(Nt):
+
+        chi_n = chi_eps(Q[n])
+
+        dchi_n = dchi_eps(Q[n])
+
+        integrand = (
+            psi_h[n].squeeze()
+            *
+            (
+                chi_n
+                +
+                Q[n] * dchi_n
+            )
+            +
+            psi_C[n].squeeze()
+            *
+            C[n].squeeze()
+            *
+            dchi_n
         )
 
-    return term1 + term2 + term3 - term4
-def grad_Q(Q, zp, psi_h, psi_C, C, p):
+        integral = np.sum(g * integrand* d.wi) 
 
-    grad = np.zeros_like(Q)
-
-    g = well_distribution(p, zp)
-
-    for n in range(len(Q)):
         grad[n] = (
-            2 * abs(zp - p.z0) * Q[n]
-            - np.sum(psi_h[n] * g)
-            - np.sum(psi_C[n] * (C[n] / p.Q_ref) * g)
+            2.0
+            *
+            abs(d.pozo_cor[1] - d.z0)
+            *
+            Q[n]
+            -
+            integral
         )
 
     return grad
+
+def grad_zp(
+    Q,
+    psi_h,
+    psi_C,
+    C,
+    d
+):
+
+    p = RUNTIME.get()
+    Nt = len(Q)
+
+    # --------------------------------------------------------
+    # 2γ ∫ C ∂C/∂z dt
+    # --------------------------------------------------------
+
+    term1 = 0.0
+    for n in range(Nt):
+        C_n = C[n].squeeze()
+        dCdz = d.grad[1]@C_n
+
+        term1 += np.sum(dCdz *C_n * d.delta_p* d.wi)* p.dt
+
+    term1 *= 2.0 * d.gamma
+
+    # --------------------------------------------------------
+    # - ∫ Q² dt
+    # --------------------------------------------------------
+
+    term2 = -np.sum(
+        Q**2
+    ) * p.dt
+
+    # --------------------------------------------------------
+    # 2β(zp-z0)
+    # --------------------------------------------------------
+    term3 = 2.0*d.beta*abs(d.pozo_cor[1] - d.z0)
+
+    # --------------------------------------------------------
+    # ∂g/∂zp
+    # --------------------------------------------------------
+
+    dgdzp = d_g_dz(d)
+
+    # --------------------------------------------------------
+    # Integral adjunta
+    # --------------------------------------------------------
+
+    term4 = 0.0
+
+    for n in range(Nt):
+
+        chi_n = chi_eps(Q[n])
+
+        integrand = (
+
+            Q[n]
+            *
+            psi_h[n].squeeze()
+            +
+            chi_n
+            *
+            psi_C[n].squeeze()
+            *
+            C[n].squeeze()
+
+        )
+
+        term4 += np.sum(
+            dgdzp * integrand * d.wi
+        )* p.dt
+
+    return (
+        term1
+        +
+        term2
+        +
+        term3
+        -
+        term4
+    )
+
+
+def compute_functional(Q, zp, C, d):
+
+    # -----------------------------------------------------
+    # ejemplo basado en tu funcional
+    # -----------------------------------------------------
+
+    Nt = len(Q)
+
+    J1 = 0.0
+
+    for n in range(Nt):
+
+        Cp = d.delta_p @ C[n]
+
+        J1 += d.gamma * np.sum(Cp**2* d.wi) * d.dt
+
+    J2 = d.beta * abs(zp - d.z0)**2
+
+    J3 = np.sum(Q**2) * d.dt * abs(zp - d.z0)
+
+    return J1 + J2 + J3
 
 # ====================================================
 # Utilidades para calcular eps local

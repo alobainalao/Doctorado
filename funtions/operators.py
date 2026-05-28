@@ -3,8 +3,10 @@ from scipy.sparse.linalg import splu
 from rbf.pde.fd import weight_matrix
 from rbf.sputils import expand_rows
 from scipy.sparse import csr_matrix, csc_matrix
+from scipy.linalg import solve
 from funtions.runtime import RUNTIME
 from funtions.utils import In_h, apply_boundary, fuente_C
+from scipy.spatial.distance import cdist
 
 # ---------------------------
 # 3) Operadores RBF-FD entre mallas
@@ -46,6 +48,72 @@ def build_operators(nodes, eps_arr):
 
     return grad
 
+
+
+def phi(r, eps):
+    return np.exp(-(eps * r)**2)
+
+def rbf_matrix(nodes, eps):
+    D = cdist(nodes, nodes)
+    return phi(D, eps)
+
+def rbf_integration_weights(nodes, eps):
+    """
+    Compatible con librería rbf (consistente con RBF-FD)
+    """
+
+    N = len(nodes)
+
+    A = rbf_matrix(nodes, eps)
+
+    b = np.ones(N)
+
+    # estabilidad numérica
+    A += 1e-12 * np.eye(N)
+
+    w = solve(A, b, assume_a='sym')
+
+    return w
+
+
+# ============================================================
+# Delta discreta RBF
+# ============================================================
+
+def rbf_delta(nodes, x_p, eps):
+    """
+    Construye delta discreta/interpolante cardinal.
+
+    Resultado:
+        u(x_p) ≈ Σ delta_i u_i
+    """
+
+    # --------------------------------------------------------
+    # matriz RBF entre nodos
+    # --------------------------------------------------------
+
+    D = cdist(nodes, nodes)
+
+    A = phi(D, eps)
+
+    # regularización
+    A += 1e-12 * np.eye(len(nodes))
+
+    # --------------------------------------------------------
+    # evaluación en x_p
+    # --------------------------------------------------------
+
+    r_p = np.linalg.norm(nodes - x_p, axis=1)
+
+    b = phi(r_p, eps)
+
+    # --------------------------------------------------------
+    # pesos cardinales
+    # --------------------------------------------------------
+
+    delta = solve(A, b, assume_a='sym')
+
+    return delta
 
 # =========================================================
 # 1. ENSAMBLADOR GLOBAL
@@ -286,8 +354,8 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
     base = pho * p.R
     coef_identity = base * (2. / p.dt)
 
-    if p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= sig * gauss_p
+    # if p.activate_ext and Qout and p.run_type != "optimization":
+    #     coef_identity -= sig * gauss_p
 
     if p.model == "adr":
         coef_identity -= base * sig * p.landa
@@ -384,8 +452,6 @@ def make_adj_C_operator(
 
     base = -2.0 * pho * R / p.dt
 
-    if p.activate_ext and Qout:
-        base += sig * gauss_p
 
     return dict(
 
