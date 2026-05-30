@@ -1,8 +1,7 @@
 from contextlib import ExitStack
 from funtions.step_time import step_time, step_adjoint
 from funtions.runtime import RUNTIME
-from view.plot import update_supertitles, update_optimization_frame, create_optimization_figures, setup_optimization_outputs
-
+from view.plot import update_supertitles, update_optimization_frame, create_optimization_figures
 from postprocessing.create_btc  import create_btc
 from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots, initialize_optimization_plots
 from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp, chi_eps, compute_functional
@@ -733,7 +732,7 @@ class SimulationAdjoint:
                 Qout_n=Qout[k][step - 1],
 
                 gauss_p=d.gauss_p,
-                gamma=d.gamma,
+                gamma=p.gamma,
                 delta_p=d.delta_p,
 
                 # ---------------------------------------------
@@ -798,9 +797,15 @@ def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
                 outputs["H_hist"].append(sim.H.copy())
                 outputs["C_hist"].append(sim.C.copy())
                 outputs["U_hist"].append(sim.U.copy())
+
+                print(np.array(outputs["Ci_hist"]).shape)
+                
                 if "mrmt" in p.model:
                     for r in range(p.Nr):
-                        outputs["Ci_hist"][r].append(sim.C_im[r].copy())
+                        print(np.array(sim.C_im[:][r][:]).shape)
+                        print(np.array(sim.C_im[:][:][r]).shape)
+                        print(np.array(sim.C_im[r][:][:]).shape)
+                        outputs["Ci_hist"][r].append(sim.C_im[:][r][:])
 
 
 

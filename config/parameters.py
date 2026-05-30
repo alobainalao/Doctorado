@@ -179,11 +179,10 @@ class Parameters:
         # OPTIMIZACIÓN
         # =========================
         self.gamma = getattr(self, "gamma", 1.0)
-        self.beta = getattr(self, "beta", 1.0)
+        self.koppa = getattr(self, "koppa", 1.0)
         self.z0 = getattr(self, "z0", 0.0)
 
         self.run_type = getattr(self, "run_type", "standard")
-        print(self.run_type)
 
         # =========================
         # MRMT DERIVADOS

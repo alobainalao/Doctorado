@@ -12,7 +12,7 @@ from pathlib import Path
 # =========================================================
 
 params = st.query_params
-theme = params.get("theme", "light")
+theme = params.get("theme", "dark")
 
 # =========================================================
 # STREAMLIT THEME
@@ -136,11 +136,12 @@ with st.sidebar:
 # TABS UI
 # =========================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🧮 Numerical",
     "🌊 Physics",
     "🧩 MRMT",
     "💾 Output",
+    "⚙️ Optimization",
     "🚀 Run"
 ])
 
@@ -206,11 +207,38 @@ with tab4:
 
     uploaded_file = st.file_uploader("Upload domain", type=["vtk", "msh", "csv"])
 
+
+with tab5:
+
+    st.subheader("Optimization parameters")
+
+    optimize = st.checkbox("Enable optimization", value=False)
+
+    if optimize:
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            gamma = st.number_input("gamma", value=1.0, format="%.4f")
+
+        with col2:
+            koppa = st.number_input("koppa", value=1.0, format="%.4f")
+
+        with col3:
+            z0 = st.number_input("z0", value=0.0, format="%.4f")
+
+    else:
+        gamma = 1.0
+        koppa = 1.0
+        z0 = 0.0
+
+        st.info("Optimization disabled")
+
 # =========================================================
 # TAB 5 - RUN
 # =========================================================
 
-with tab5:
+with tab6:
 
     st.subheader("Summary")
 
@@ -278,9 +306,11 @@ if submit:
         "save_dat": str(save_dat),
         "animate": str(animate),
 
-        "run_type": run_type
+        "run_type": run_type,
 
-        
+        "gamma": str(gamma),
+        "koppa": str(koppa),
+        "z0": str(z0),
     })
 
     process = subprocess.Popen(

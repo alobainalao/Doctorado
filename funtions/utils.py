@@ -252,7 +252,7 @@ def grad_zp(
 
         term1 += np.sum(dCdz *C_n * d.delta_p* d.wi)* p.dt
 
-    term1 *= 2.0 * d.gamma
+    term1 *= 2.0 * p.gamma
 
     # --------------------------------------------------------
     # - ∫ Q² dt
@@ -265,7 +265,7 @@ def grad_zp(
     # --------------------------------------------------------
     # 2β(zp-z0)
     # --------------------------------------------------------
-    term3 = 2.0*d.beta*abs(d.pozo_cor[1] - d.z0)
+    term3 = 2.0*p.koppa*abs(d.pozo_cor[1] - d.z0)
 
     # --------------------------------------------------------
     # ∂g/∂zp
@@ -313,6 +313,7 @@ def grad_zp(
 
 
 def compute_functional(Q, zp, C, d):
+    p = RUNTIME.get()
 
     # -----------------------------------------------------
     # ejemplo basado en tu funcional
@@ -326,9 +327,9 @@ def compute_functional(Q, zp, C, d):
 
         Cp = d.delta_p @ C[n]
 
-        J1 += d.gamma * np.sum(Cp**2* d.wi) * d.dt
+        J1 += p.gamma * np.sum(Cp**2* d.wi) * d.dt
 
-    J2 = d.beta * abs(zp - d.z0)**2
+    J2 = p.koppa * abs(zp - d.z0)**2
 
     J3 = np.sum(Q**2) * d.dt * abs(zp - d.z0)
 
