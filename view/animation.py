@@ -224,6 +224,364 @@ def conjugate_gradient(d, animate, save_data, p, max_iter=20):
     return Qout, pozo_cor, outputs
 
 
+
+def pack_controls(Q, zp):
+
+    return np.concatenate([
+        Q.ravel(),
+        np.array([zp])
+    ])
+
+def unpack_controls(x):
+
+    Q = x[:-1]
+
+    zp = x[-1]
+
+    return Q, zp
+
+def functional(
+    x,
+    d,
+    p,
+    animate=False,
+    save_data=True
+):
+
+    # -----------------------------------------------------
+    # controles
+    # -----------------------------------------------------
+
+    Q, zp = unpack_controls(x)
+
+    Qout = [Q.copy()]
+
+    pozo_cor = p.pozo.copy()
+
+    pozo_cor[1] = zp
+
+    # -----------------------------------------------------
+    # actualizar pozo
+    # -----------------------------------------------------
+
+    d = update_pozo(d, pozo_cor)
+
+    # -----------------------------------------------------
+    # forward
+    # -----------------------------------------------------
+
+    solve_forward(
+        d,
+        Qout,
+        animate,
+        save_data
+    )
+
+    h, U, C = get_solucion(
+        ["H", "U", "C"],
+        f"{p.save_data}/simulation_results.npz"
+    )
+
+    # -----------------------------------------------------
+    # funcional
+    # -----------------------------------------------------
+
+    J = compute_functional(
+        Q,
+        zp,
+        C,
+        d
+    )
+
+    return J
+
+def gradient(
+    x,
+    d,
+    p,
+    animate=False,
+    save_data=True
+):
+
+    # -----------------------------------------------------
+    # controles
+    # -----------------------------------------------------
+
+    Q, zp = unpack_controls(x)
+
+    Qout = [Q.copy()]
+
+    pozo_cor = p.pozo.copy()
+
+    pozo_cor[1] = zp
+
+    # -----------------------------------------------------
+    # actualizar pozo
+    # -----------------------------------------------------
+
+    d = update_pozo(d, pozo_cor)
+
+    # -----------------------------------------------------
+    # FORWARD
+    # -----------------------------------------------------
+
+    solve_forward(
+        d,
+        Qout,
+        animate,
+        save_data
+    )
+
+    h, U, C = get_solucion(
+        ["H", "U", "C"],
+        f"{p.save_data}/simulation_results.npz"
+    )
+
+    # -----------------------------------------------------
+    # ADJOINT
+    # -----------------------------------------------------
+
+    solve_adjoint(
+        h,
+        U,
+        C,
+        Qout,
+        d,
+        animate,
+        save_data
+    )
+
+    psi_C, psi_h = get_solucion(
+        ["psi_C", "psi_H"],
+        f"{p.save_data}/adjoint_results.npz"
+    )
+
+    # -----------------------------------------------------
+    # gradientes parciales
+    # -----------------------------------------------------
+
+    gQ = grad_Q(
+        Q,
+        psi_h,
+        psi_C,
+        C,
+        d
+    )
+
+    gzp = grad_zp(
+        Q,
+        psi_h,
+        psi_C,
+        C,
+        d
+    )
+
+    # -----------------------------------------------------
+    # gradiente global
+    # -----------------------------------------------------
+
+    g = pack_controls(gQ, gzp)
+
+    return g
+
+def line_search(
+    f,
+    x,
+    ddir,
+    g,
+    d,
+    p,
+    alpha0=1.0,
+    c=1e-4,
+    tau=0.5,
+    max_ls=20
+):
+
+    fx = f(x, d, p)
+
+    alpha = alpha0
+
+    gd = np.dot(g, ddir)
+
+    for _ in range(max_ls):
+
+        x_trial = x + alpha * ddir
+
+        f_trial = f(x_trial, d, p)
+
+        # Armijo
+        if f_trial <= fx + c * alpha * gd:
+
+            return alpha
+
+        alpha *= tau
+
+    return alpha
+
+
+# =========================================================
+# NONLINEAR CONJUGATE GRADIENT
+# =========================================================
+
+def nonlinear_cg(
+    d,
+    p,
+    maxiter=50,
+    tol=1e-6,
+    animate=False,
+    save_data=True
+):
+
+    # -----------------------------------------------------
+    # control inicial
+    # -----------------------------------------------------
+
+    Q0 = p.Qout[0]
+
+    zp0 = p.pozo[1]
+
+    x = pack_controls(Q0, zp0)
+
+    # -----------------------------------------------------
+    # gradiente inicial
+    # -----------------------------------------------------
+
+    g = gradient(
+        x,
+        d,
+        p,
+        animate=False,
+        save_data=save_data
+    )
+
+    # dirección inicial
+    ddir = -g
+
+    # historial
+    history = {
+        "J": [],
+        "grad_norm": [],
+        "Q": [],
+        "zp": []
+    }
+
+    # =====================================================
+    # ITERACIONES
+    # =====================================================
+
+    for k in range(maxiter):
+
+        # -------------------------------------------------
+        # funcional actual
+        # -------------------------------------------------
+
+        J = functional(
+            x,
+            d,
+            p,
+            animate=False,
+            save_data=save_data
+        )
+
+        # -------------------------------------------------
+        # norma gradiente
+        # -------------------------------------------------
+
+        gnorm = np.linalg.norm(g)
+
+        # guardar
+        Qk, zpk = unpack_controls(x)
+
+        history["J"].append(J)
+        history["grad_norm"].append(gnorm)
+        history["Q"].append(Qk.copy())
+        history["zp"].append(zpk)
+
+        # print
+        print(
+            f"Iter {k:03d} | "
+            f"J={J:.6e} | "
+            f"||g||={gnorm:.3e} | "
+            f"zp={zpk:.4f}"
+        )
+
+        # -------------------------------------------------
+        # stopping
+        # -------------------------------------------------
+
+        if gnorm < tol:
+
+            print("Convergencia alcanzada ✔")
+
+            break
+
+        # -------------------------------------------------
+        # line search
+        # -------------------------------------------------
+
+        alpha = line_search(
+            functional,
+            x,
+            ddir,
+            g,
+            d,
+            p
+        )
+
+        # -------------------------------------------------
+        # update variables
+        # -------------------------------------------------
+
+        x_new = x + alpha * ddir
+
+        # -------------------------------------------------
+        # nuevo gradiente
+        # -------------------------------------------------
+
+        g_new = gradient(
+            x_new,
+            d,
+            p,
+            animate=False,
+            save_data=save_data
+        )
+
+        # -------------------------------------------------
+        # Polak-Ribiere
+        # -------------------------------------------------
+
+        y = g_new - g
+
+        beta = np.dot(g_new, y) / (
+            np.dot(g, g) + 1e-14
+        )
+
+        # restart automático
+        beta = max(beta, 0.0)
+
+        # -------------------------------------------------
+        # nueva dirección conjugada
+        # -------------------------------------------------
+
+        ddir = -g_new + beta * ddir
+
+        # -------------------------------------------------
+        # update variables
+        # -------------------------------------------------
+
+        x = x_new
+        g = g_new
+
+    # =====================================================
+    # RESULTADO FINAL
+    # =====================================================
+
+    Q_opt, zp_opt = unpack_controls(x)
+
+    return Q_opt, zp_opt, history
+
+
+
 class Simulation:
 
     def __init__(self, H_list, C_list, C_im_list, U_list, Qout):
