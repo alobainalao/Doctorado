@@ -44,8 +44,8 @@ def update_supertitles(figs, t):
     title_H = figs[0].suptitle(
         f"Spatial Distribution of Hydraulic Head H (m) at t = {t_hours:.2f} h",
         fontsize=20,
-        color="#DCCB7F",
-        y=0.95
+        color="#0000FF",
+        y=0.99
     )
     titles.append(title_H)
 
@@ -53,8 +53,8 @@ def update_supertitles(figs, t):
     title_V = figs[1].suptitle(
         f"Velocity Magnitude Field |U| (m/s) at t = {t_hours:.2f} h",
         fontsize=20,
-        color="#DCCB7F",
-        y=0.95
+        color="#0000FF",
+        y=0.99
     )
     titles.append(title_V)
 
@@ -62,8 +62,8 @@ def update_supertitles(figs, t):
     title_C = figs[2].suptitle(
         f"Solute Concentration Field C (kg/m³) at t = {t_hours:.2f} h",
         fontsize=20,
-        color="#DCCB7F",
-        y=0.95
+        color="#0000FF",
+        y=0.99
     )
     titles.append(title_C)
 
@@ -76,8 +76,8 @@ def update_supertitles(figs, t):
                 f"Immobile Concentration C_im(r={r}) "
                 f"(kg/m³) at t = {t_hours:.2f} h",
                 fontsize=20,
-                color="#DCCB7F",
-                y=0.95
+                color="#0000FF",
+                y=0.99
             )
             titles_C_im.append(title)
 
@@ -415,7 +415,7 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
 
 
         figs_flat = [f for item in figs for f in (item if isinstance(item, list) else [item])]
-        y_pos  = 0.94   # misma altura para las 3 colorbars (puedes cambiarlo)
+        y_pos  = 0.90   # misma altura para las 3 colorbars (puedes cambiarlo)
 
         for fig, im in zip(figs_flat, ims):
 

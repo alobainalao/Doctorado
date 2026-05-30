@@ -798,14 +798,17 @@ def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
                 outputs["C_hist"].append(sim.C.copy())
                 outputs["U_hist"].append(sim.U.copy())
 
-                print(np.array(outputs["Ci_hist"]).shape)
-                
+
                 if "mrmt" in p.model:
+
                     for r in range(p.Nr):
-                        print(np.array(sim.C_im[:][r][:]).shape)
-                        print(np.array(sim.C_im[:][:][r]).shape)
-                        print(np.array(sim.C_im[r][:][:]).shape)
-                        outputs["Ci_hist"][r].append(sim.C_im[:][r][:])
+                        temp = []
+
+                        for k in range(p.K):
+                            temp.append(sim.C_im[k][r].copy())
+
+                        outputs["Ci_hist"][r].append(np.array(temp))
+
 
 
 

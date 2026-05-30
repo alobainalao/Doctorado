@@ -13,7 +13,7 @@
   "metodo": "bfr",
   "domain": "real",
 
-  "K": 1,
+  "K": 4,
   "spacing": 30,
   "dt": 36000,
   "T": 2592000,
