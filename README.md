@@ -1,37 +1,43 @@
-<<<<<<< HEAD
-# Simulation Project
+# Simulador ADR / MRMT
 
-Simulación numérica basada en RBF, flujo y transporte con MRMT.
+Simulación numérica de flujo y transporte en medios porosos (contaminación en
+acuíferos), con:
+
+- ADR clásico
+- MRMT (multi-rate mass transfer)
+- Control óptimo por método adjunto
+
+## Características
+
+- Discretización espacial con RBF-FD
+- Interfaz web con Streamlit
+- Comparación de curvas de llegada (BTCs)
 
 ## Estructura
 
 - `preprocessing/`: generación de matrices y malla
-- `pipeline/`: ejecución de simulación
-- `view/`: visualización
+- `pipeline/`: ejecución de la simulación
+- `funtions/`: operadores matemáticos y runtime
+- `view/`: visualización y animación
 - `io/`: carga/guardado
-- `functions/`: operadores matemáticos
-=======
-# Simulador ADR / MRMT
-
-Modelo de transporte en medios porosos con:
-- ADR clásico
-- MRMT (multi-rate mass transfer)
-
-## Características
-
-- Discretización con RBF-FD
-- Interfaz web con Streamlit
-- Comparación de BTCs
->>>>>>> 069576309ee4bfbee2e7c5fb448084c9ed566375
+- `postprocessing/`: curvas de llegada (BTCs)
+- `config/`: parámetros (`default.json`) y geometría
+- `scripts/`: variantes usadas para figuras/datos de la tesis
 
 ## Uso
 
-```bash
-<<<<<<< HEAD
-python scripts/main.py
+CLI (parámetros desde `config/default.json`):
 
-=======
+```bash
+python run.py
+```
+
+Interfaz web:
+
+```bash
 conda activate bfr_env
 streamlit run app.py
-# Doctorado
->>>>>>> 069576309ee4bfbee2e7c5fb448084c9ed566375
+```
+
+`run_type` en la configuración selecciona `standard` (simulación directa) u
+`optimization` (control óptimo adjunto).
