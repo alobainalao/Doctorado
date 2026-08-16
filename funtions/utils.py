@@ -196,18 +196,10 @@ def grad_Q(
 
     for n in range(Nt):
 
-        chi_n = chi_eps(Q[n])
-
         dchi_n = dchi_eps(Q[n])
 
         integrand = (
             psi_h[n].squeeze()
-            *
-            (
-                chi_n
-                +
-                Q[n] * dchi_n
-            )
             +
             psi_C[n].squeeze()
             *
@@ -216,7 +208,7 @@ def grad_Q(
             dchi_n
         )
 
-        integral = np.sum(g * integrand* d.wi) 
+        integral = np.sum(g * integrand* d.wi)
 
         grad[n] = (
             2.0
@@ -224,7 +216,7 @@ def grad_Q(
             abs(d.pozo_cor[1] - d.z0)
             *
             Q[n]
-            -
+            +
             integral
         )
 
@@ -265,7 +257,7 @@ def grad_zp(
     # --------------------------------------------------------
     # 2β(zp-z0)
     # --------------------------------------------------------
-    term3 = 2.0*p.koppa*abs(d.pozo_cor[1] - d.z0)
+    term3 = 2.0*p.koppa*(d.pozo_cor[1] - d.z0)
 
     # --------------------------------------------------------
     # ∂g/∂zp
@@ -307,7 +299,7 @@ def grad_zp(
         term2
         +
         term3
-        -
+        +
         term4
     )
 
