@@ -62,21 +62,38 @@ from funtions.utils import chi_eps, get_init_values
 from fenicsx.mesh import build_mesh
 
 # ---------------------------------------------------------------------------
-# Parámetros físicos calibrados para el dominio real (acuífero profundo),
-# tomados tal cual de TesisCode/maintesis.py — específicos del backend FEM,
-# no viven en config/parameters.py (que está orientado al backend bfr).
+# Parámetros ESPECÍFICOS del backend FEM (geometría de los perfiles de
+# frontera, markers de la malla y anchos de los sumideros gaussianos), tomados
+# de TesisCode/maintesis.py. No existen en la config de bfr, así que se quedan
+# aquí. El resto de parámetros físicos/numéricos —los que sí comparte con bfr
+# (theta, g, nu, d_z, alpha, R, landa, a_l, a_t, D_d, eps)— se leen de la
+# config `p` en solve_forward_fenicsx (ver _config_phys), para que la app
+# controle ambos backends por igual y no queden valores horneados divergentes.
 # ---------------------------------------------------------------------------
-PHYSICAL_DEFAULTS = dict(
-    theta=0.9, theta_C=0.9,
+FEM_DEFAULTS = dict(
     zi_max=308, zo_max=250, z_min=-2691,
     inlet_z_t=-760, outlet_z_t=-2690.5, inlet_a=-2e-4,
     C_0=0.0,
     inlet_marker=1, outlet_marker=3,
-    g=9.81, nu=1.055e-6, d_z=1e-3, alpha=2.0,
-    tol=1e-6, R=1, landa=1e-10,
-    a_l=10, a_t=1, D_d=1.2e-5, eps=1e-16,
-    epsilon_sink=30,
+    tol=1e-6,           # tolerancia del nodo-pozo del sumidero de flujo (no p.tol)
+    epsilon_sink=30,    # ancho del sumidero gaussiano de transporte
 )
+
+# Parámetros con el MISMO significado y fórmula que en bfr: se toman de la
+# config `p` para que la app los controle. Ver funtions/utils.py (dispersión,
+# difusión) y funtions/operators.py (flujo) en el backend bfr.
+_SHARED_WITH_BFR = ("theta", "g", "nu", "d_z", "alpha",
+                    "R", "landa", "a_l", "a_t", "D_d", "eps")
+
+
+def _config_phys(p):
+    """Mezcla los defaults propios del FEM con los parámetros compartidos que
+    vienen de la config `p` (misma fuente que usa bfr)."""
+    phys = dict(FEM_DEFAULTS)
+    for k in _SHARED_WITH_BFR:
+        phys[k] = getattr(p, k)
+    phys["theta_C"] = phys["theta"]   # bfr usa un único theta para flujo y transporte
+    return phys
 
 
 class Out_h:
@@ -300,7 +317,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     dominio en cada paso — análogas a lo que guarda maintesis.py en
     int_c/C_s_out.
     """
-    phys = dict(PHYSICAL_DEFAULTS)
+    phys = _config_phys(p)
     Nt = len(Qout)
     dt = p.dt
     T_total = Nt * dt
@@ -380,19 +397,26 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     C_out = np.zeros(Nt)
     C_total = np.zeros(Nt)
 
+    # Flags de la config (mismo criterio que bfr): activate_ext gatea la
+    # extracción del pozo (término QOut del flujo y sumidero de transporte);
+    # activate_fuente gatea la fuente de contaminante.
+    ext_on = bool(getattr(p, "activate_ext", True))
+    fuente_on = bool(getattr(p, "activate_fuente", True))
+
     t = 0.0
     for step in range(Nt):
         t += dt
-        QOut_const.value = float(Qout[step])
+        QOut_const.value = float(Qout[step]) if ext_on else 0.0
 
         h_ = _solve_step(L_h, a_h, [], solver1, h_)
         h_n.x.array[:] = h_.x.array[:]
 
         u.interpolate(fem.Expression(expr_u, V.element.interpolation_points))
 
-        Src.interpolate(lambda x: _gaussian_2d(x, pozo_ext, _fuente_C(t, T_total)))
+        src_amp = _fuente_C(t, T_total) if fuente_on else 0.0
+        Src.interpolate(lambda x: _gaussian_2d(x, pozo_ext, src_amp))
 
-        gate = float(chi_eps(np.array(Qout[step])))
+        gate = float(chi_eps(np.array(Qout[step]))) if ext_on else 0.0
         delta_C.interpolate(lambda x: gate / (2 * np.pi * phys["epsilon_sink"] ** 2) * np.exp(
             -((x[0] - pozo_ext[0]) ** 2 + (x[1] - pozo_ext[1]) ** 2) / (2 * phys["epsilon_sink"] ** 2)
         ))

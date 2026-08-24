@@ -21,6 +21,28 @@ El default del proyecto sigue siendo `bfr`.
   (el script de 7 etapas de la maestría, con spin-up y `funcion.h5`). Se
   conservan como referencia/provenance, no se usan desde el pipeline nuevo.
 
+## Configuración desde la app (unificada con bfr)
+
+`fenicsx` lee su física de la **misma config `p`** que `bfr` (la que arma la
+app / `run.py` desde env vars, ver `config/parameters.py`), no de valores
+horneados. `_config_phys(p)` en `forward.py` toma de `p` los parámetros
+compartidos —`theta, g, nu, d_z, alpha, R, landa, a_l, a_t, D_d, eps`— con el
+mismo significado y fórmula que `bfr`. En `FEM_DEFAULTS` quedan sólo los
+específicos del FEM (geometría de fronteras, markers de malla, anchos de los
+sumideros), que no existen en la config de `bfr`.
+
+También honra los flags `activate_ext` (gatea la extracción del pozo: término
+`QOut` del flujo y sumidero de transporte) y `activate_fuente` (gatea la
+fuente de contaminante), igual criterio que `bfr`. `dt`, `T`/`Nt`, `spacing`,
+`domain`, `pozo` y `Qout` ya venían de `p`.
+
+`main.py` valida lo no soportado por este backend: `domain='real'` (la malla
+usa datos de pozos reales) y `model='adr'` (MRMT no está portado) — error
+claro si la app pide otra cosa.
+
+Corrige una divergencia real: antes `D_d` estaba horneado en `1.2e-5`, 14
+órdenes de magnitud distinto del `p.D_d` de `bfr` (`1.2e-19`).
+
 ## Estado (verificado 2026-08-24)
 
 Forward corriendo end-to-end (Docker `dolfinx/dolfinx:stable` + `pip install

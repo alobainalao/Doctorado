@@ -23,7 +23,19 @@ def main():
         if p.run_type != "standard":
             raise NotImplementedError(
                 "El backend fenicsx todavía no implementa optimización/adjunto "
-                "(ver fenicsx/README.md, punto 4). Usa run_type='standard'."
+                "(ver fenicsx/README.md, punto 2). Usa run_type='standard'."
+            )
+
+        if p.domain != "real":
+            raise NotImplementedError(
+                "El backend fenicsx sólo soporta domain='real' (la malla se "
+                "genera con los datos de pozos reales, ver fenicsx/mesh.py)."
+            )
+
+        if p.model != "adr":
+            raise NotImplementedError(
+                f"El backend fenicsx sólo soporta model='adr', no '{p.model}' "
+                "(MRMT no está portado al FEM)."
             )
 
         return solve_forward_fenicsx(p.Qout[0], p.pozo, p)
