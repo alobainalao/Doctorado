@@ -43,6 +43,33 @@ claro si la app pide otra cosa.
 Corrige una divergencia real: antes `D_d` estaba horneado en `1.2e-5`, 14
 órdenes de magnitud distinto del `p.D_d` de `bfr` (`1.2e-19`).
 
+### Etapas pre / run / post y salidas (como bfr)
+
+Las mismas etapas configurables que `bfr`, controladas por los flags de la app:
+
+- **pre** (`p.pre`): `fenicsx/mesh.py:get_mesh` — si `pre=True` (o no hay
+  cache) genera la malla; si no, reusa `data/fenicsx/malla_generada.msh`
+  (análogo a `load_data()` de bfr: reejecutar preproceso vs cargar cache).
+- **run**: `solve_forward_fenicsx` (siempre).
+- **save_dat** (`p.save_dat`): guarda `{save_data}/simulation_results.npz` con
+  la historia `H, C, U` + `nodes` + `dt`, **mismo formato que bfr**
+  (`finalize_outputs`): `H`/`C` con eje de realización `K=1`, `U` con sus dos
+  componentes. `C` (Lagrange-2) y `u` (vectorial) se interpolan a `G`
+  (Lagrange-1) para compartir un único `nodes` con `H`.
+- **animate** (`p.animate`): `fenicsx/io.py:animate_results` renderiza `H`,
+  `|U|` y `C` sobre la malla a lo largo del tiempo (análogo a los
+  `H.mp4/V.mp4/C.mp4` de bfr). Usa **mp4 si hay ffmpeg** (añadido al
+  `Dockerfile`) y cae a **gif** si no; robusto (no tumba la corrida si falla el
+  render).
+- **postproc** (`p.postproc`): `fenicsx/postprocess.py:create_btc` — BTC en los
+  puntos de control, `{save_video}/btc.png`. A diferencia del `create_btc` de
+  bfr (que compara dos corridas adr vs mrmt en disco), aquí grafica la BTC de
+  la propia corrida.
+
+Verificado en Docker end-to-end: `pre=True/False`, `save_dat`, `animate`
+(→ gif sin ffmpeg), `postproc` generan sus archivos; `activate_ext=False`
+→ `C_out=[0,0,0]`; el `.npz` sale con formato `(Nt, 1, N)` como bfr.
+
 ## Estado (verificado 2026-08-24)
 
 Forward corriendo end-to-end (Docker `dolfinx/dolfinx:stable` + `pip install

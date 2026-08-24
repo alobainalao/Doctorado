@@ -38,7 +38,13 @@ def main():
                 "(MRMT no está portado al FEM)."
             )
 
-        return solve_forward_fenicsx(p.Qout[0], p.pozo, p)
+        # Etapa de preprocesamiento configurable (flag `pre`): regenera la malla
+        # o reusa la cacheada. Guardado/animación/postproceso los maneja el
+        # forward según save_dat/animate/postproc (ver solve_forward_fenicsx).
+        from fenicsx.mesh import get_mesh
+        mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
+
+        return solve_forward_fenicsx(p.Qout[0], p.pozo, p, mesh_cache=mesh_cache)
 
     from view.animation import solve_forward, conjugate_gradient
     from preprocessing.preprocess import load_data

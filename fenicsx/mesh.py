@@ -12,8 +12,6 @@ duplica aquí.
 
 Requiere un entorno con dolfinx + gmsh + mpi4py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
-
-NO EJECUTADO/VERIFICADO: no hay entorno dolfinx disponible en este sandbox.
 """
 import os
 
@@ -111,3 +109,41 @@ def build_mesh(pozo, spacing=80.0, output_file="data/fenicsx/malla_generada.msh"
     porosidad = interpolar_bidimensional(malla_points, puntos_dados, porosidad_n)
 
     return domain, facet_tags, porosidad
+
+
+def load_cached_mesh(output_file="data/fenicsx/malla_generada.msh"):
+    """
+    Carga una malla ya generada (.msh) sin volver a mallar — etapa de
+    preprocesamiento con `pre=False`, análoga a load_data() de bfr cuando no
+    reejecuta el preproceso. La porosidad se recomputa sobre los nodos (barato).
+    Asume que el .msh se generó con el mismo `pozo` embebido.
+    """
+    if not os.path.exists(output_file):
+        raise FileNotFoundError(
+            f"No hay malla cacheada en '{output_file}'. Corre al menos una vez "
+            f"con pre=True (o activa 'Preprocessing' en la app) para generarla."
+        )
+
+    result = gmshio.read_from_msh(output_file, MPI.COMM_WORLD, 0, gdim=2)
+    # DOLFINx >=0.11 devuelve MeshData; versiones previas, una tupla.
+    if hasattr(result, "mesh"):
+        domain, facet_tags = result.mesh, result.facet_tags
+    else:
+        domain, _cell_tags, facet_tags = result
+
+    puntos_dados, porosidad_n, _, _ = well_layer_data()
+    porosidad = interpolar_bidimensional(domain.geometry.x[:, :2], puntos_dados, porosidad_n)
+
+    return domain, facet_tags, porosidad
+
+
+def get_mesh(pozo, spacing, regenerate, output_file="data/fenicsx/malla_generada.msh"):
+    """
+    Etapa de preprocesamiento configurable (flag `pre`): si `regenerate` (o no
+    existe cache), genera la malla desde cero; si no, reusa la .msh cacheada.
+    """
+    if regenerate or not os.path.exists(output_file):
+        print(">>> [fenicsx] preprocesamiento: generando malla...")
+        return build_mesh(pozo, spacing=spacing, output_file=output_file)
+    print(">>> [fenicsx] preprocesamiento: reusando malla cacheada", output_file)
+    return load_cached_mesh(output_file=output_file)

@@ -403,6 +403,20 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     ext_on = bool(getattr(p, "activate_ext", True))
     fuente_on = bool(getattr(p, "activate_fuente", True))
 
+    # Historia temporal para guardado/animación (etapa "save_dat"/"animate" de
+    # la app), sólo si se pide. H ya vive en G; C (Q/Lagrange-2) y las
+    # componentes de u (V/vectorial) se interpolan a G para compartir el mismo
+    # conjunto de nodos que H — así el .npz tiene un único `nodes`, como bfr.
+    collect = bool(getattr(p, "save_dat", False)) or bool(getattr(p, "animate", False))
+    H_hist, C_hist, U_hist = [], [], []
+    if collect:
+        cG = fem.Function(G)
+        uGx, uGy = fem.Function(G), fem.Function(G)
+        expr_cG = fem.Expression(C_n, G.element.interpolation_points)
+        expr_uGx = fem.Expression(u[0], G.element.interpolation_points)
+        expr_uGy = fem.Expression(u[1], G.element.interpolation_points)
+        nodes_G = G.tabulate_dof_coordinates()[:, :2]
+
     t = 0.0
     for step in range(Nt):
         t += dt
@@ -443,5 +457,31 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
         C_total[step] = fem.assemble_scalar(fem.form(inner(1, C_n) * dx))
         C_out[step] = fem.assemble_scalar(fem.form(inner(delta_C, C_n) * dx))
+
+        if collect:
+            cG.interpolate(expr_cG)
+            uGx.interpolate(expr_uGx)
+            uGy.interpolate(expr_uGy)
+            H_hist.append(h_n.x.array.copy())
+            C_hist.append(cG.x.array.copy())
+            U_hist.append(np.column_stack([uGx.x.array, uGy.x.array]))
+
+    # --- Salidas configurables (mismas etapas que bfr: save_dat / animate /
+    #     postproc). Se hacen aquí, con la historia ya recogida. ---
+    if collect and domain.comm.rank == 0:
+        from fenicsx import io as fx_io
+        if getattr(p, "save_dat", False):
+            fx_io.save_results(p.save_data, nodes_G, H_hist, C_hist, U_hist, dt)
+        if getattr(p, "animate", False):
+            fx_io.animate_results(p.save_video, G, H_hist, C_hist, U_hist, dt)
+    if getattr(p, "postproc", False) and domain.comm.rank == 0:
+        from fenicsx import postprocess as fx_post
+        # si no se recogió C_hist (postproc sin save/animate), se arma al vuelo
+        if not collect:
+            cG = fem.Function(G)
+            cG.interpolate(fem.Expression(C_n, G.element.interpolation_points))
+            C_hist = [cG.x.array.copy()]
+            nodes_G = G.tabulate_dof_coordinates()[:, :2]
+        fx_post.create_btc(p.save_video, nodes_G, C_hist, dt)
 
     return h_n, C_n, C_out, C_total

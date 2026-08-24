@@ -8,4 +8,9 @@
 #   docker run --rm -it -v "$(pwd):/workspace" -w /workspace fenicsx-dev bash
 FROM dolfinx/dolfinx:stable
 
-RUN pip install --no-cache-dir pandas matplotlib scikit-learn h5py
+# ffmpeg: para exportar las animaciones en mp4 (como el backend bfr). Si falta,
+# fenicsx/io.py cae a gif automáticamente.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir pandas matplotlib scikit-learn h5py gmsh
