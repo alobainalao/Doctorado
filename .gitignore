@@ -29,8 +29,10 @@ venv/
 # OUTPUT (NO subir)
 # =========================
 data/output/
+data/fenicsx/
 *.npz
 *.npy
+*.msh
 
 # =========================
 # VIDEOS / FIGURAS

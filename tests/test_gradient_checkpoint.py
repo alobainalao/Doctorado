@@ -51,7 +51,12 @@ CHECKPOINT_ENV = {
     "pre": True,
 }
 
-DELTAS = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+# Fracciones relativas del valor de cada control, no deltas absolutos: Q (~1e-3
+# a 1e-5, ver Q_base en config/parameters.py) y z_p (~O(1-10) m) difieren en
+# varios órdenes de magnitud, así que un delta absoluto fijo dejaría a uno de
+# los dos fuera del régimen local donde la diferencia finita centrada aproxima
+# bien la derivada.
+DELTA_FRACTIONS = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 TOL_RELATIVE_ERROR = 1e-3
 TIME_INDICES_TO_CHECK = None  # se definen tras conocer Nt (inicio/medio/fin)
 
@@ -72,14 +77,17 @@ def checkpoint_component(label, x0, i, g_adjoint_i, d, p):
     print(f"\n--- {label} (índice {i}) ---")
     print(f"grad adjunto = {g_adjoint_i: .6e}")
 
+    scale = abs(x0[i]) if abs(x0[i]) > 1e-14 else 1.0
+
     errors = []
-    for delta in DELTAS:
+    for frac in DELTA_FRACTIONS:
+        delta = frac * scale
         fd = central_difference(x0, i, delta, d, p)
         rel_err = (
             abs(fd - g_adjoint_i) / max(abs(g_adjoint_i), 1e-14)
         )
         errors.append(rel_err)
-        print(f"  delta={delta:.0e}  FD={fd: .6e}  err_rel={rel_err:.3e}")
+        print(f"  delta={delta:.3e} (frac={frac:.0e})  FD={fd: .6e}  err_rel={rel_err:.3e}")
 
     return errors
 
@@ -122,9 +130,9 @@ def main():
     # -----------------------------------------------------
     fig, ax = plt.subplots(figsize=(6, 5))
     for label, errors in results.items():
-        ax.loglog(DELTAS, errors, marker="o", label=label)
+        ax.loglog(DELTA_FRACTIONS, errors, marker="o", label=label)
 
-    ax.set_xlabel(r"$\delta$")
+    ax.set_xlabel(r"$\delta$ relativo ($\delta / |x_i|$)")
     ax.set_ylabel("error relativo")
     ax.set_title("Checkpoint del gradiente adjunto")
     ax.axhline(TOL_RELATIVE_ERROR, color="k", linestyle="--",

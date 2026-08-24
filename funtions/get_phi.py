@@ -74,8 +74,13 @@ def plotear_campo_interpolado(malla, campo, nombre_archivo):
     # Crear conectividad si no existe (se asegura que la conectividad esté disponible)
 
 
-# Bloque principal
-def gen_malla(malla = None):
+def well_layer_data():
+    """
+    Coordenadas (X, ZM) y porosidad por capa de los pozos reales
+    (ver datos_pozos.csv). Extraído de gen_malla para reutilizarse también
+    en la generación de malla FEM (fenicsx/mesh.py) sin triplicar estos
+    datos crudos — misma fuente de verdad para ambos backends (bfr/fenicsx).
+    """
     pozos = [1, 2, 3, 4]
     capas = ['A', 'B', 'C', 'D', 'E']
 
@@ -122,16 +127,20 @@ def gen_malla(malla = None):
     porosidad_x = df["Porosidad_x"].tolist()
 
     puntos_dados = generar_puntos(x, z_m)
-    ext_points, int_points = split_point(puntos_dados)
-    
+
+    return puntos_dados, porosidad_n, porosidad_m, porosidad_x
+
+
+# Bloque principal
+def gen_malla(malla=None):
+    puntos_dados, porosidad_n, porosidad_m, porosidad_x = well_layer_data()
 
     # Interpolar valores sobre la malla
     por_min = interpolar_bidimensional(malla, puntos_dados, porosidad_n)
-    
+
     # plotear_campo_interpolado(malla, por_min, "campo_interpolado.png")
     por_mean = interpolar_bidimensional(malla, puntos_dados, porosidad_m)
     por_max = interpolar_bidimensional(malla, puntos_dados, porosidad_x)
-
 
     #return  malla, [por_min, por_mean, por_max], facet_tags, x_p
     return  por_min

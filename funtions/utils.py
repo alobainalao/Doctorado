@@ -128,6 +128,8 @@ def update_pozo(d, pozo_cor):
 
     p = RUNTIME.get()
 
+    d.pozo_cor = pozo_cor
+
     d.delta_p = discrete_delta(d.nodes, pozo_cor, 2.5*p.spacing)
 
     d.gauss_p = gaussian_2d(
