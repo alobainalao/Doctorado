@@ -95,13 +95,36 @@ construcción, y el forward de `fenicsx` es sólo **una etapa final** aplicada
 con los datos de la interfaz (Q(t), pozo), no un spin-up propio.
 
 Verificado en el contenedor: `H=[307.5, 310.6]` (idéntico al `h` de
-`funcion.h5`: 307.5-310.64, media 308.3) y `C` con el campo inicial real
-(≠0). **Corrige un dato previo de este README**: el rango de `bfr` no es
-"260-439" — la CI real de `bfr` (el `H` de `funcion.h5`) es 307.5-310.6; ese
-"260-439" era incorrecto.
+`funcion.h5`: 307.5-310.64, media 308.3) y `C` con el campo inicial real (≠0).
+Matiz sobre el "260-439" de `bfr`: **no** es su CI (el `h` de `funcion.h5` es
+307-310), sino su `H` **tras el time-stepping** — `new_H_init` lleva 307-310 a
+307-342 y luego los pasos de tiempo (drawdown del pozo + acumulación en la
+salida) lo abren a 260-439. Ver la sección siguiente.
 
-Queda pendiente la verificación cruzada cuantitativa `u(x,t)`/`C(x,t)` entre
-backends para el mismo escenario (ver "Lo que falta").
+### Reconciliación de las BCs de flujo con bfr (2026-08-24)
+
+Comparación cruzada `bfr ↔ fenicsx` (mismo escenario: real/adr, spacing 200,
+dt=1e5, mismo pozo y Q). Diagnóstico y ajustes:
+
+- **Constantes de frontera**: `fenicsx` ahora toma de `p` (config/geometry.py)
+  los mismos valores que usa `bfr` al aplicar `In_h`/`Out_h` — `zi_max,
+  zo_max, z_min, inlet_z_t, inlet_a` (`_config_phys`). Corrige un bug real:
+  `zi_max` estaba horneado en 308 vs 250 en `bfr`, lo que además descuadraba
+  `outlet_a` (depende de `zi_max`).
+- **Sumidero de flujo del pozo**: se reemplazó el delta "duro" por la **réplica
+  del `discrete_delta` de `bfr`** (Wendland C2, Σ=1, radio 2.5·spacing). Con
+  esto el **cono de abatimiento del pozo coincide en forma y ubicación** con
+  `bfr`.
+
+Resultado (`data/output/comparison_bfr_fenicsx.png`): **acuerdo cualitativo**
+(cono del pozo, gradiente hacia la salida). **Gap cuantitativo que persiste**:
+el rango global de `H` es ~9× menor en `fenicsx` (288-311 vs 260-439) porque
+`bfr` aplica `In_h`/`Out_h` por **colocación con nodos fantasma** (RBF-FD),
+que impone gradientes de carga fuertes, mientras `fenicsx` los aplica como
+**flujo Neumann débil** (`inner(h_inlet, g)·ds`). Esa diferencia es de
+discretización (colocación vs forma débil FEM), no de constantes — cerrarla
+requeriría reformular la imposición de frontera en FEM (p.ej. Dirichlet de
+carga en vez de Neumann de flujo), fuera del alcance de "reconciliar BCs".
 
 ## Cómo correrlo
 
@@ -121,17 +144,12 @@ las dependencias en cada run.
 
 ## Lo que falta (en orden)
 
-1. **Limitación conocida sin resolver** (documentada también en
-   `forward.py`): el sumidero de la ecuación de **flujo** (`delta`) es una
-   aproximación "dura" que solo es distinta de cero en el nodo de malla
-   exactamente en `pozo` — depende de que `pozo` haya sido embebido al
-   generar la malla. El sumidero de **transporte** (`delta_C`) sí usa un
-   gaussiano suave, evaluado directamente en `pozo`, así que ese sí
-   responde a z_p sin remallar. Mover z_p sin remallar deja el sumidero de
-   flujo desactualizado. Antes de intentar optimizar z_p con este backend
-   hay que decidir: remallar en cada evaluación (caro; el adjunto
-   necesitaría derivada de forma), o sustituir `delta` por un gaussiano
-   suave igual que `delta_C`/`Src` (mismo criterio que ya usa `bfr`).
+1. **Cerrar el gap cuantitativo de `H` con bfr** (ver "Reconciliación de las
+   BCs"): el acuerdo es cualitativo, pero el rango global de carga es ~9× menor
+   por aplicar las BCs de flujo como Neumann débil (FEM) vs colocación con
+   nodos fantasma (bfr). Requiere reformular la imposición de frontera (p.ej.
+   Dirichlet de carga). Conviene además comparar en horizonte largo (aquí sólo
+   Nt=3, transporte muy temprano).
 
 2. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
    implementación de ψ_h/ψ_C/gradiente para este backend. Es el siguiente
@@ -139,12 +157,6 @@ las dependencias en cada run.
    patrón de [Optimal control in DOLFINx interfacing with scipy](http://jsdokken.com/FEniCS-workshop/src/applications/optimal_control.html)
    (Dokken), coherente con que el gradiente ya se compara con scipy en el
    backend `bfr`.
-
-3. **Sin verificación cruzada bfr↔fenicsx**: con el forward ya corriendo,
-   el resultado más valioso es comparar `C(x,t)`/`h(x,t)` de ambos backends
-   para el mismo escenario (mismo dominio, mismo Q(t), mismo pozo) — es la
-   verificación de robustez numérica (RBF-FD vs FEM) mencionada en
-   ROADMAP.md.
 
 ## Ya corregido (no verificado en runtime todavía)
 

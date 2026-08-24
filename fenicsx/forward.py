@@ -27,25 +27,16 @@ necesarias para Q(t) variable — documentadas aquí para que se revisen):
    criterio de gateo (on/off según si se extrae), pero continuo en vez de
    0/1 — necesario para que el gradiente adjunto (a derivar) sea suave.
 
-LIMITACIÓN CONOCIDA, no resuelta aquí: el término fuente/sumidero de la
-ecuación de FLUJO (`delta`, vía approximate_dirac_delta) es una
-aproximación "dura" que solo da un valor distinto de cero si hay un nodo de
-malla exactamente en `pozo` (tol=1e-6) — depende de que `pozo` haya sido
-embebido al generar la malla (fenicsx/mesh.py:build_mesh). Mover z_p sin
-remallar NO mueve este término. El sumidero de TRANSPORTE (delta_C) sí usa
-un perfil gaussiano suave (epsilon=30) evaluado directamente en `pozo`, así
-que ese sí responde a z_p sin remallar. Antes de optimizar z_p con este
-backend hay que decidir: (a) remallar en cada evaluación de z_p (caro, y el
-adjunto tendría que incluir derivada de forma), o (b) sustituir `delta` por
-un gaussiano suave igual que delta_C/Src, igualando el criterio ya usado en
-bfr. No se tomó esa decisión aquí — hace falta antes de intentar
-gradiente adjunto respecto a z_p en este backend.
+Sumidero de flujo del pozo (`delta`): réplica del discrete_delta de bfr —
+kernel Wendland C2 normalizado a Σ=1 sobre los DOF de G, radio 2.5·spacing,
+centrado en `pozo` (misma convención de pesos que bfr para que el drawdown
+tenga la misma escala). Se evalúa directamente en `pozo`, así que responde a
+z_p sin remallar (el embebido del pozo en la malla ya sólo sirve de
+refinamiento local, no lo necesita el término). El sumidero de TRANSPORTE
+(delta_C) usa un gaussiano suave normalizado, mismo criterio.
 
 Requiere dolfinx + gmsh + mpi4py + petsc4py + h5py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
-
-NO EJECUTADO/VERIFICADO: no hay entorno dolfinx disponible en este sandbox.
-Falta correrlo en un entorno real antes de confiar en los resultados.
 """
 import numpy as np
 from mpi4py import MPI
@@ -93,6 +84,17 @@ def _config_phys(p):
     for k in _SHARED_WITH_BFR:
         phys[k] = getattr(p, k)
     phys["theta_C"] = phys["theta"]   # bfr usa un único theta para flujo y transporte
+
+    # Geometría de las fronteras de flujo: tomar de `p` (config/geometry.py) los
+    # mismos valores que usa bfr al aplicar In_h/Out_h (ver H_vector), en vez de
+    # los horneados de maintesis. Clave: zi_max era 308 aquí vs 250 en bfr, lo
+    # que además descuadraba outlet_a (que depende de zi_max). Así las BCs de
+    # flujo quedan idénticas a las de bfr.
+    for k in ("zi_max", "zo_max", "z_min", "inlet_z_t", "inlet_a"):
+        if hasattr(p, k):
+            phys[k] = getattr(p, k)
+    if hasattr(p, "zo_min"):          # bfr llama zo_min a lo que aquí es outlet_z_t
+        phys["outlet_z_t"] = getattr(p, "zo_min")
     return phys
 
 
@@ -336,11 +338,17 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     D, D_m, Dm_n = _diffusion_operator(V, phys["D_d"], phi, phys["alpha"])
 
-    # --- sumidero/fuente puntuales, ver limitación documentada arriba ---
+    # Sumidero de flujo del pozo: kernel Wendland C2 normalizado a Σ=1 sobre los
+    # DOF de G, réplica del discrete_delta de bfr (funtions/utils.py) — misma
+    # convención de pesos que bfr para que el drawdown del pozo tenga la misma
+    # escala. Radio de soporte 2.5·spacing, igual que bfr.
     delta = fem.Function(G)
-    delta.interpolate(lambda x: np.where(
-        np.sqrt((x[0] - pozo[0]) ** 2 + (x[1] - pozo[1]) ** 2) < phys["tol"], 1.0, 0.0
-    ))
+    _gc = G.tabulate_dof_coordinates()[:, :2]
+    _q = np.sqrt((_gc[:, 0] - pozo[0]) ** 2 + (_gc[:, 1] - pozo[1]) ** 2) / (2.5 * float(p.spacing))
+    _w = np.where(_q < 1.0, (1.0 - np.minimum(_q, 1.0)) ** 4 * (4.0 * _q + 1.0), 0.0)
+    if _w.sum() > 0:
+        _w = _w / _w.sum()
+    delta.x.array[:] = _w
     delta_C = fem.Function(Q)
 
     h = TrialFunction(G)
