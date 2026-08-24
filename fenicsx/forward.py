@@ -58,7 +58,7 @@ from ufl import (
     sqrt, lhs, rhs, dx, Measure,
 )
 
-from funtions.utils import chi_eps
+from funtions.utils import chi_eps, get_init_values
 from fenicsx.mesh import build_mesh
 
 # ---------------------------------------------------------------------------
@@ -70,17 +70,12 @@ PHYSICAL_DEFAULTS = dict(
     theta=0.9, theta_C=0.9,
     zi_max=308, zo_max=250, z_min=-2691,
     inlet_z_t=-760, outlet_z_t=-2690.5, inlet_a=-2e-4,
-    C_0=0.0, h_0=308,
+    C_0=0.0,
     inlet_marker=1, outlet_marker=3,
     g=9.81, nu=1.055e-6, d_z=1e-3, alpha=2.0,
     tol=1e-6, R=1, landa=1e-10,
     a_l=10, a_t=1, D_d=1.2e-5, eps=1e-16,
     epsilon_sink=30,
-    # Spin-up de flujo: relaja H hasta el estacionario antes del transporte
-    # (equivalente a new_H_init de bfr). Ver _spinup_flow. dt grande y dedicado
-    # (~orden del tiempo de relajación S_s·L²/K) para que converja en pocas
-    # iteraciones; no busca precisión temporal, sólo el punto fijo estacionario.
-    spinup_dt=1e10, spinup_max_iter=500, spinup_tol=1e-8,
 )
 
 
@@ -182,39 +177,6 @@ def _solve_step(L, a, bc, solver, sol):
     solver(b, sol.x.petsc_vec)
     b.destroy()
     return sol
-
-
-def _spinup_flow(a_h, L_h, solver1, h_, h_n, comm, h_ref, max_iter, tol):
-    """
-    Inicializa H en estado estacionario iterando el propio solver θ-implícito
-    del flujo (con QOut=0) hasta que la FORMA de h deja de cambiar.
-
-    Equivale al new_H_init del backend bfr: resolver la ecuación de flujo en
-    estado estacionario antes de arrancar el transporte. Sin esto, h_n arranca
-    plano en h_ref, así que u_n = −K·∇h_n ≈ 0 (gradiente de una constante) y H
-    se queda pegado cerca de h_ref en simulaciones cortas — la discrepancia
-    con bfr documentada en fenicsx/README.md.
-
-    Por qué iterar el operador transitorio en vez de un solve estacionario
-    directo: el problema de flujo sólo tiene condiciones de flujo (Neumann) en
-    las fronteras, así que su operador estacionario es singular (h queda
-    determinado salvo una constante) — un solve directo falla (se intentó y se
-    revirtió, ver README). El operador transitorio en cambio es no-singular
-    por el término de masa S_s/dt, y su punto fijo (h = h_n) es exactamente el
-    estacionario, porque ahí S_s·(h−h_n)/dt = 0. El modo constante se fija
-    re-anclando la media a h_ref en cada iteración, de modo que el residuo mide
-    sólo el cambio de forma (lo único que afecta a la velocidad).
-    """
-    h_n.x.array[:] += h_ref - h_n.x.array.mean()
-    for k in range(max_iter):
-        h_ = _solve_step(L_h, a_h, [], solver1, h_)
-        h_.x.array[:] += h_ref - h_.x.array.mean()
-        shape_norm = np.linalg.norm(h_n.x.array - h_n.x.array.mean()) + 1e-30
-        rel = np.linalg.norm(h_.x.array - h_n.x.array) / shape_norm
-        h_n.x.array[:] = h_.x.array[:]
-        if rel < tol:
-            break
-    return k + 1, rel
 
 
 def _diffusion_operator(V, D_d, phi, alpha):
@@ -375,10 +337,17 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     Src = fem.Function(Q)
     Src_n = fem.Function(Q)
 
-    # h_n arranca plano en h_0 sólo como semilla; el spin-up de flujo (más
-    # abajo) lo relaja al estacionario antes del transporte.
-    h_n.x.array[:] = phys["h_0"]
-    C_n.x.array[:] = phys["C_0"]
+    # Condición inicial = MISMO estado precedente que carga bfr (funcion.h5,
+    # generado por las etapas iniciales del FEM de la maestría), interpolado a
+    # los DOF de la malla de fenicsx con el mismo get_init_values que usa bfr.
+    # Así ambos backends arrancan de idéntico (H, C) y este forward es sólo una
+    # etapa final aplicada con los datos de la interfaz — no un spin-up propio.
+    # H vive en G (Lagrange-1) y C en Q (Lagrange-2): DOF en coords distintas,
+    # se evalúa el interpolador sobre cada espacio por separado.
+    h0, _ = get_init_values(G.tabulate_dof_coordinates()[:, :2])
+    _, c0 = get_init_values(Q.tabulate_dof_coordinates()[:, :2])
+    h_n.x.array[:] = h0
+    C_n.x.array[:] = np.nan_to_num(c0, nan=phys["C_0"])
     Src_n.x.array[:] = 0.0
 
     K_z = fem.Function(G)
@@ -403,31 +372,10 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     A1.assemble()
     solver1 = _create_solver(A1, domain.comm)
 
-    # Estado estacionario de flujo antes del transporte (equiv. new_H_init de
-    # bfr): sin esto H arranca plano y u_n≈0. Se itera con un dt grande y
-    # dedicado (spinup_dt) — el operador A1 del run usa el dt físico, con el
-    # que el flujo tardaría miles de pasos en relajar. Ver _spinup_flow y README.
-    a_h_s, L_h_s = _flow_forms(
-        G, phi, h, h_n, phys["spinup_dt"], phys["theta"], K_z, phys["alpha"],
-        h_inlet, h_outlet, ds_in, ds_out, QOut_const, delta,
-    )
-    A_s = assemble_matrix(a_h_s, bcs=[])
-    A_s.assemble()
-    solver_s = _create_solver(A_s, domain.comm)
-
-    QOut_const.value = 0.0
-    n_spin, res_spin = _spinup_flow(
-        a_h_s, L_h_s, solver_s, h_, h_n, domain.comm, phys["h_0"],
-        phys["spinup_max_iter"], phys["spinup_tol"],
-    )
-    A_s.destroy()
     if domain.comm.rank == 0:
-        print(f"[fenicsx] spin-up de flujo: {n_spin} iters, "
-              f"residuo de forma={res_spin:.2e}, "
-              f"H=[{h_n.x.array.min():.4g}, {h_n.x.array.max():.4g}]")
-    # u_n del H equilibrado (expr_un referencia h_n, se reevalúa al interpolar)
-    u_n.interpolate(fem.Expression(expr_un, V.element.interpolation_points))
-    QOut_const.value = float(Qout[0])
+        print(f"[fenicsx] CI desde funcion.h5: "
+              f"H=[{h_n.x.array.min():.4g}, {h_n.x.array.max():.4g}], "
+              f"C=[{C_n.x.array.min():.3g}, {C_n.x.array.max():.3g}]")
 
     C_out = np.zeros(Nt)
     C_total = np.zeros(Nt)

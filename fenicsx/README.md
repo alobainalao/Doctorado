@@ -28,29 +28,31 @@ pandas matplotlib scikit-learn h5py gmsh`, ver `Dockerfile`), wireado a
 `main.py`. `fenicsx/test_forward_smoke.py` **pasa** — ejecutado dentro del
 contenedor.
 
-### Inicialización de H en estacionario (resuelto 2026-08-24)
+### Inicialización de H y C (resuelto 2026-08-24)
 
 Antes, `fenicsx` arrancaba `H` de una constante uniforme (heredado de
-`maintesis.py`), así que `u_n = −K·∇H ≈ 0` y el campo se quedaba plano
-(307.9-308.1). Ahora hace un **spin-up de flujo** (`_spinup_flow` en
-`forward.py`): itera el propio solver θ-implícito del flujo con un `dt` grande
-dedicado (`spinup_dt`) hasta relajar al estacionario antes de arrancar el
-transporte — equivalente al `new_H_init` de `bfr`. El solve estacionario
-directo no se usa porque el problema de flujo es Neumann puro (singular); el
-operador transitorio sí es no-singular (término de masa `S_s/dt`) y su punto
-fijo es el estacionario. El modo constante se fija re-anclando la media.
-Converge en ~10 iteraciones a residuo ~1e-9, robusto en malla (spacing
-200/80/50). `H` ya tiene estructura espacial (~306-310.5) y `u_n` arranca
-equilibrado.
+`maintesis.py`), así que `u_n = −K·∇H ≈ 0`, el campo se quedaba plano
+(307.9-308.1) y `C` partía de cero — condiciones iniciales distintas de `bfr`,
+que hacía imposible comparar los dos backends.
 
-**Nota sobre el rango vs bfr**: el rango de `bfr` (260-439) *no* es el
-estacionario de sus BCs — `bfr` **carga `H0` desde `funcion.h5`**, el campo
-del spin-up de 7 etapas de la maestría, y `new_H_init` sólo lo refina un paso.
-Ese rango absoluto viene de un setup distinto (maestría) y no es reproducible
-desde las BCs de `fenicsx`. Lo que sí es comparable —y lo que importa para el
-transporte— es el campo de velocidad `u = −K·∇H` (invariante a una constante
-aditiva en `H`), no el nivel absoluto. Esa verificación cruzada de `u`/`C`
-sigue pendiente (ver "Lo que falta").
+Ahora `fenicsx` arranca del **mismo estado precedente que carga `bfr`**:
+`data/input/funcion.h5` (los campos `H`, `C` generados por las etapas
+iniciales del FEM de la maestría), leído con el **mismo `get_init_values`**
+(`funtions/utils.py`) que usa `bfr` e interpolado a los DOF de la malla de
+`fenicsx` (Clough-Tocher + vecino más cercano). `H` vive en `G` (Lagrange-1) y
+`C` en `Q` (Lagrange-2), así que el interpolador se evalúa sobre cada espacio
+por separado. Con esto ambos backends parten de idéntico `(H, C)` por
+construcción, y el forward de `fenicsx` es sólo **una etapa final** aplicada
+con los datos de la interfaz (Q(t), pozo), no un spin-up propio.
+
+Verificado en el contenedor: `H=[307.5, 310.6]` (idéntico al `h` de
+`funcion.h5`: 307.5-310.64, media 308.3) y `C` con el campo inicial real
+(≠0). **Corrige un dato previo de este README**: el rango de `bfr` no es
+"260-439" — la CI real de `bfr` (el `H` de `funcion.h5`) es 307.5-310.6; ese
+"260-439" era incorrecto.
+
+Queda pendiente la verificación cruzada cuantitativa `u(x,t)`/`C(x,t)` entre
+backends para el mismo escenario (ver "Lo que falta").
 
 ## Cómo correrlo
 
