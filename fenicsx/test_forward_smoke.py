@@ -1,14 +1,13 @@
 """
-Prueba de humo del forward FEM (fenicsx) — Fase 1 de ROADMAP-FENICSX.md.
+Prueba de humo del forward FEM (fenicsx).
 
 Objetivo: solo confirmar que solve_forward_fenicsx corre sin crashear, con
 malla gruesa, pocos pasos de tiempo y Qout=0 (sin extracción). No verifica
-resultados físicos todavía — eso es un paso posterior (ver roadmap, "primera
-verificación cruzada barata").
+resultados físicos todavía — eso es un paso posterior (ver fenicsx/README.md,
+"Lo que falta": verificación cruzada bfr<->fenicsx).
 
-Uso:
-    conda activate fenicsx_env
-    cd codigo
+Uso (dentro del contenedor dolfinx, ver fenicsx/README.md "Cómo correrlo"):
+    cd /workspace
     python -m fenicsx.test_forward_smoke
 """
 import numpy as np

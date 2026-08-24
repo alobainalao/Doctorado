@@ -2,8 +2,9 @@
 
 Backend FEM alternativo al RBF-FD (`bfr`), portado desde
 [TesisCode](https://github.com/alobainalao/TesisCode) (script de la maestría).
-Seleccionable en `app.py` (`metodo = "fenicsx"`), pero **no está conectado
-todavía** a `main.py`/`run.py` — falta el paso de wiring (ver Pendientes).
+Seleccionable con `metodo = "fenicsx"` (en `app.py` o `config/default.json`);
+`main.py`/`run.py` ya despachan a `solve_forward_fenicsx` con import perezoso.
+El default del proyecto sigue siendo `bfr`.
 
 ## Qué hay aquí
 
@@ -20,12 +21,12 @@ todavía** a `main.py`/`run.py` — falta el paso de wiring (ver Pendientes).
   (el script de 7 etapas de la maestría, con spin-up y `funcion.h5`). Se
   conservan como referencia/provenance, no se usan desde el pipeline nuevo.
 
-## Estado (2026-08-16)
+## Estado (verificado 2026-08-24)
 
 Forward corriendo end-to-end (Docker `dolfinx/dolfinx:stable` + `pip install
-pandas matplotlib scikit-learn h5py`, ver `Dockerfile`), wireado a `main.py`.
-`fenicsx/test_forward_smoke.py` pasa (`h_n`≈308±0.1, `C_n` creciendo desde 0,
-sin crashear).
+pandas matplotlib scikit-learn h5py gmsh`, ver `Dockerfile`), wireado a
+`main.py`. `fenicsx/test_forward_smoke.py` **pasa** (`h_n`≈308±0.1, `C_n`
+creciendo desde 0, sin crashear) — ejecutado dentro del contenedor.
 
 Primera comparación contra `bfr` hecha, con causa raíz identificada (no
 resuelta): **`H` da rangos muy distintos entre backends** (bfr: 260-439;
@@ -33,33 +34,30 @@ fenicsx: 307.9-308.1) porque `bfr` inicializa `H0` resolviendo la ecuación de
 flujo en estado estacionario (`new_H_init`), mientras que `fenicsx` arranca
 de una constante uniforme (heredado de `maintesis.py`). Se intentó portar
 ese fix a DOLFINx y produjo un resultado roto (sistema Neumann puro,
-singular) — se revirtió. Detalle completo, por qué falló, y la alternativa
-más simple pendiente de intentar en `ROADMAP-FENICSX.md`, sección Fase 1.
+singular) — se revirtió. La alternativa más simple pendiente de intentar:
+imponer una Dirichlet de referencia al resolver el estado estacionario de
+flujo, en vez de dejarlo puramente Neumann.
 **No confiar en resultados físicos de este backend hasta resolver eso.**
+
+## Cómo correrlo
+
+No hay entorno pip-only con `dolfinx` (`bfr_env` no lo tiene, y DOLFINx no
+se instala confiablemente por pip ni por conda en esta máquina — el solver
+`libmamba` falla con `sqlite3.OperationalError: database is locked` y el
+`classic` es impracticable). Se usa **Docker con la imagen oficial** (ya
+descargada localmente):
+
+```
+docker run --rm -v "$(pwd):/workspace" -w /workspace dolfinx/dolfinx:stable bash -c \
+  "pip install -q pandas matplotlib scikit-learn h5py gmsh; python -m fenicsx.test_forward_smoke"
+```
+
+o construyendo la imagen del `Dockerfile` (`fenicsx-dev`) para no reinstalar
+las dependencias en cada run.
 
 ## Lo que falta (en orden)
 
-1. **Entorno**: no hay ningún entorno con `dolfinx` en este proyecto —
-   `bfr_env` es pip-only (`requirements.txt`) y DOLFINx no se instala
-   confiablemente por pip. **Se intentó vía conda (`conda create -c
-   conda-forge fenics-dolfinx ...`) y no funcionó en esta máquina**: el
-   solver `libmamba` tiene un bug reproducible con su caché de "shards"
-   (`sqlite3.OperationalError: database is locked`, persiste incluso
-   borrando la caché), y el solver `classic` de respaldo es impracticable
-   para un paquete tan pesado (>20 min sin converger, varios GB de RAM).
-   En su lugar se usa **Docker con la imagen oficial**:
-   ```
-   docker pull dolfinx/dolfinx:stable
-   docker run -it --rm -v "$(pwd):/workspace" -w /workspace dolfinx/dolfinx:stable bash
-   # dentro del contenedor:
-   pip install h5py gmsh pyvista pandas scipy   # lo que falte, ver abajo
-   python -m fenicsx.test_forward_smoke
-   ```
-   Ninguno de los archivos de este módulo se ha ejecutado ni verificado —
-   solo se comprobó sintaxis (`py_compile`). Antes de confiar en algo de
-   aquí, hay que correrlo.
-
-2. **Limitación conocida sin resolver** (documentada también en
+1. **Limitación conocida sin resolver** (documentada también en
    `forward.py`): el sumidero de la ecuación de **flujo** (`delta`) es una
    aproximación "dura" que solo es distinta de cero en el nodo de malla
    exactamente en `pozo` — depende de que `pozo` haya sido embebido al
@@ -71,17 +69,18 @@ más simple pendiente de intentar en `ROADMAP-FENICSX.md`, sección Fase 1.
    necesitaría derivada de forma), o sustituir `delta` por un gaussiano
    suave igual que `delta_C`/`Src` (mismo criterio que ya usa `bfr`).
 
-3. **Wiring a `main.py`**: falta el `if p.metodo == "fenicsx":` que llame a
-   `solve_forward_fenicsx` en vez del pipeline `bfr` actual.
+2. **Discrepancia de `H` con `bfr`** (ver sección Estado): resolver la
+   inicialización de `H0` para que ambos backends arranquen del mismo estado
+   antes de confiar en resultados físicos.
 
-4. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
+3. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
    implementación de ψ_h/ψ_C/gradiente para este backend. Es el siguiente
    paso natural una vez verificado el forward — candidato para seguir el
    patrón de [Optimal control in DOLFINx interfacing with scipy](http://jsdokken.com/FEniCS-workshop/src/applications/optimal_control.html)
    (Dokken), coherente con que el gradiente ya se compara con scipy en el
    backend `bfr`.
 
-5. **Sin verificación cruzada bfr↔fenicsx**: una vez que el forward corra,
+4. **Sin verificación cruzada bfr↔fenicsx**: con el forward ya corriendo,
    el resultado más valioso es comparar `C(x,t)`/`h(x,t)` de ambos backends
    para el mismo escenario (mismo dominio, mismo Q(t), mismo pozo) — es la
    verificación de robustez numérica (RBF-FD vs FEM) mencionada en

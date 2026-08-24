@@ -226,7 +226,7 @@ def _boundaries_elements(domain, facet_tags, phys):
 
     C_inlet = fem.Function(Q)
     C_inlet.interpolate(lambda x: np.full(x.shape[1], 0.0))
-    # Fix respecto a maintesis.py (ROADMAP-FENICSX.md, Fase 1): el original
+    # Fix respecto a maintesis.py (ver fenicsx/README.md, "Ya corregido"): el original
     # usaba el mapa de dofs de V (espacio vectorial) para una condición de
     # frontera sobre C_inlet, que vive en Q (espacio escalar) — dofmaps de
     # espacios distintos. Aquí se usa Q, el espacio correcto de C_inlet.
