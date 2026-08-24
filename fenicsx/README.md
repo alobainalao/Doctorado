@@ -25,19 +25,32 @@ El default del proyecto sigue siendo `bfr`.
 
 Forward corriendo end-to-end (Docker `dolfinx/dolfinx:stable` + `pip install
 pandas matplotlib scikit-learn h5py gmsh`, ver `Dockerfile`), wireado a
-`main.py`. `fenicsx/test_forward_smoke.py` **pasa** (`h_n`≈308±0.1, `C_n`
-creciendo desde 0, sin crashear) — ejecutado dentro del contenedor.
+`main.py`. `fenicsx/test_forward_smoke.py` **pasa** — ejecutado dentro del
+contenedor.
 
-Primera comparación contra `bfr` hecha, con causa raíz identificada (no
-resuelta): **`H` da rangos muy distintos entre backends** (bfr: 260-439;
-fenicsx: 307.9-308.1) porque `bfr` inicializa `H0` resolviendo la ecuación de
-flujo en estado estacionario (`new_H_init`), mientras que `fenicsx` arranca
-de una constante uniforme (heredado de `maintesis.py`). Se intentó portar
-ese fix a DOLFINx y produjo un resultado roto (sistema Neumann puro,
-singular) — se revirtió. La alternativa más simple pendiente de intentar:
-imponer una Dirichlet de referencia al resolver el estado estacionario de
-flujo, en vez de dejarlo puramente Neumann.
-**No confiar en resultados físicos de este backend hasta resolver eso.**
+### Inicialización de H en estacionario (resuelto 2026-08-24)
+
+Antes, `fenicsx` arrancaba `H` de una constante uniforme (heredado de
+`maintesis.py`), así que `u_n = −K·∇H ≈ 0` y el campo se quedaba plano
+(307.9-308.1). Ahora hace un **spin-up de flujo** (`_spinup_flow` en
+`forward.py`): itera el propio solver θ-implícito del flujo con un `dt` grande
+dedicado (`spinup_dt`) hasta relajar al estacionario antes de arrancar el
+transporte — equivalente al `new_H_init` de `bfr`. El solve estacionario
+directo no se usa porque el problema de flujo es Neumann puro (singular); el
+operador transitorio sí es no-singular (término de masa `S_s/dt`) y su punto
+fijo es el estacionario. El modo constante se fija re-anclando la media.
+Converge en ~10 iteraciones a residuo ~1e-9, robusto en malla (spacing
+200/80/50). `H` ya tiene estructura espacial (~306-310.5) y `u_n` arranca
+equilibrado.
+
+**Nota sobre el rango vs bfr**: el rango de `bfr` (260-439) *no* es el
+estacionario de sus BCs — `bfr` **carga `H0` desde `funcion.h5`**, el campo
+del spin-up de 7 etapas de la maestría, y `new_H_init` sólo lo refina un paso.
+Ese rango absoluto viene de un setup distinto (maestría) y no es reproducible
+desde las BCs de `fenicsx`. Lo que sí es comparable —y lo que importa para el
+transporte— es el campo de velocidad `u = −K·∇H` (invariante a una constante
+aditiva en `H`), no el nivel absoluto. Esa verificación cruzada de `u`/`C`
+sigue pendiente (ver "Lo que falta").
 
 ## Cómo correrlo
 
@@ -69,18 +82,14 @@ las dependencias en cada run.
    necesitaría derivada de forma), o sustituir `delta` por un gaussiano
    suave igual que `delta_C`/`Src` (mismo criterio que ya usa `bfr`).
 
-2. **Discrepancia de `H` con `bfr`** (ver sección Estado): resolver la
-   inicialización de `H0` para que ambos backends arranquen del mismo estado
-   antes de confiar en resultados físicos.
-
-3. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
+2. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
    implementación de ψ_h/ψ_C/gradiente para este backend. Es el siguiente
    paso natural una vez verificado el forward — candidato para seguir el
    patrón de [Optimal control in DOLFINx interfacing with scipy](http://jsdokken.com/FEniCS-workshop/src/applications/optimal_control.html)
    (Dokken), coherente con que el gradiente ya se compara con scipy en el
    backend `bfr`.
 
-4. **Sin verificación cruzada bfr↔fenicsx**: con el forward ya corriendo,
+3. **Sin verificación cruzada bfr↔fenicsx**: con el forward ya corriendo,
    el resultado más valioso es comparar `C(x,t)`/`h(x,t)` de ambos backends
    para el mismo escenario (mismo dominio, mismo Q(t), mismo pozo) — es la
    verificación de robustez numérica (RBF-FD vs FEM) mencionada en
