@@ -276,11 +276,12 @@ def functional(
     # forward
     # -----------------------------------------------------
 
+    # functional() carga h/U/C desde el npz justo después: siempre guardar.
     solve_forward(
         d,
         Qout,
         animate,
-        save_data
+        save_data=True
     )
 
     h, U, C = get_solucion(
@@ -331,11 +332,13 @@ def gradient(
     # FORWARD
     # -----------------------------------------------------
 
+    # El forward siempre guarda: el adjunto carga h/U/C desde el npz
+    # independientemente de save_data (que controla el historial del optimizador).
     solve_forward(
         d,
         Qout,
         animate,
-        save_data
+        save_data=True
     )
 
     h, U, C = get_solucion(
@@ -347,6 +350,7 @@ def gradient(
     # ADJOINT
     # -----------------------------------------------------
 
+    # El adjunto siempre guarda: gradient() carga psi desde el npz.
     solve_adjoint(
         h,
         U,
@@ -354,7 +358,7 @@ def gradient(
         Qout,
         d,
         animate,
-        save_data
+        save_data=True
     )
 
     psi_C, psi_h = get_solucion(

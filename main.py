@@ -67,4 +67,7 @@ def main():
 
 
 if __name__ == "__main__":
+    from config.parameters import Parameters
+    if RUNTIME.params is None:
+        RUNTIME.params = Parameters()
     main()

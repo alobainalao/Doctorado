@@ -1,5 +1,5 @@
 {
-  "pre": true,
+  "pre": false,
   "postproc": false,
   "plot_grid": false,
 
@@ -9,7 +9,7 @@
   "save_dat": true,
   "animate": false,
 
-  "gamma": 0.12,
+  "gamma": 2e17,
   "koppa": 1.0,
   "z0": 220.0,
   "Q_max": 1e-2,
