@@ -142,6 +142,55 @@ docker run --rm -v "$(pwd):/workspace" -w /workspace dolfinx/dolfinx:stable bash
 o construyendo la imagen del `Dockerfile` (`fenicsx-dev`) para no reinstalar
 las dependencias en cada run.
 
+## Optimización por método adjunto (`adjoint.py`)
+
+Implementada en `fenicsx/adjoint.py` — contraparte del adjunto de `bfr`
+(`view/animation.py`), pero derivando el adjunto de las **mismas formas débiles
+FEM vía diferenciación automática de UFL** (`ufl.derivative`/`ufl.adjoint`), en
+vez de a mano (enfoque discretize-then-optimize, patrón de Dokken *Optimal
+control in DOLFINx interfacing with scipy*).
+
+- **Controles**: `x = [Q_0, …, Q_{Nt−1}, z_p]` (tasas de extracción por paso +
+  profundidad del pozo), misma convención que `pack_controls` de `bfr`.
+- **Adjunto**: recursión hacia atrás resolviendo ψ_C (transporte) y ψ_h (flujo)
+  con las transpuestas de los Jacobianos del forward. El acople h→C (advección
+  u=−K∇h y dispersión D(u)) es **exacto** porque el residual se escribe con la
+  velocidad simbólica en `h`; la sensibilidad ∂/∂z_p es analítica porque los
+  kernels del pozo se escriben simbólicos en `zp_const` (gaussiano·(x_z−z_p)/ε²).
+- **Optimizador**: `scipy.optimize.minimize` (L-BFGS-B) con cotas físicas en Q y
+  z_p (sin cotas, L-BFGS-B saca a z_p del dominio por diferencia de escala de
+  gradientes). Se selecciona con `run_type='optimization'` (ver `main.py`);
+  guarda el historial en `{save_data}/optimization_results.npz`.
+- **γ (peso de la contaminación)**: con el default `γ=1` la concentración
+  (~1e−11) hace despreciable el objetivo de contaminación frente a los términos
+  económicos; conviene subir `p.gamma` para que el pozo persiga minimizar la
+  concentración observada.
+
+**Desviación deliberada** respecto al forward estándar: el sumidero de FLUJO del
+pozo usa aquí un gaussiano (como el de transporte) en vez del Wendland C2 del
+`forward.py`, para que toda la dependencia en z_p sea diferenciable en forma
+cerrada. Además, todas las formas fijan `quadrature_degree=8`: los kernels son
+gaussianos NO polinómicos y muy estrechos (ε∼5–30) frente a la malla, y sin grado
+fijo DOLFINx estima cuadraturas distintas para una forma y su derivada, rompiendo
+la consistencia gradiente↔funcional.
+
+### Checkpoint del gradiente (`test_gradient_checkpoint.py`)
+
+Espejo del de `bfr`: compara el gradiente adjunto contra diferencias finitas
+centradas del MISMO funcional (consistencia interna, no comparación con `bfr`).
+Auto-escala γ y pone κ=0 para que la observación domine y ψ_C/ψ_h queden
+realmente ejercitados. Correr en Docker:
+
+```
+docker build -t fenicsx-dev -f fenicsx/Dockerfile .   # una vez
+docker run --rm -v "$(pwd):/workspace" -w /workspace fenicsx-dev \
+  python -m fenicsx.test_gradient_checkpoint
+```
+
+Verificado (2026-08-25): `grad_Q[·]` err.rel. mín ~1e−7 y `grad_zp` ~1e−8, con
+forma de "V" en log-log. Forward smoke test y una optimización corta
+(z_p migra a mayor profundidad, J decrece) también verificados en el contenedor.
+
 ## Lo que falta (en orden)
 
 1. **Cerrar el gap cuantitativo de `H` con bfr** (ver "Reconciliación de las
@@ -151,12 +200,8 @@ las dependencias en cada run.
    Dirichlet de carga). Conviene además comparar en horizonte largo (aquí sólo
    Nt=3, transporte muy temprano).
 
-2. **Sin adjunto**: no existe (ni en el original ni aquí) derivación ni
-   implementación de ψ_h/ψ_C/gradiente para este backend. Es el siguiente
-   paso natural una vez verificado el forward — candidato para seguir el
-   patrón de [Optimal control in DOLFINx interfacing with scipy](http://jsdokken.com/FEniCS-workshop/src/applications/optimal_control.html)
-   (Dokken), coherente con que el gradiente ya se compara con scipy en el
-   backend `bfr`.
+2. **MRMT en el adjunto**: el adjunto cubre el modelo `adr`; portar MRMT
+   (transferencia de masa multirate) al forward y su adjunto sigue pendiente.
 
 ## Ya corregido (no verificado en runtime todavía)
 

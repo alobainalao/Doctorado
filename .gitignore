@@ -45,9 +45,10 @@ data/fenicsx/
 # =========================
 # INPUT (IMPORTANTE)
 # =========================
-# Ignorar todo input EXCEPTO .h5
+# Ignorar todo input EXCEPTO .h5 y el cache de preprocesamiento (.pkl)
 data/input/*
 !data/input/**/*.h5
+!data/input/**/*.pkl
 
 # =========================
 # OTROS

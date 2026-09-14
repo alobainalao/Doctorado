@@ -1,19 +1,32 @@
 {
   "pre": true,
-  "postproc": true,
+  "postproc": false,
   "plot_grid": false,
 
   "activate_fuente": true,
   "activate_ext": true,
 
   "save_dat": true,
-  "animate": true,
+  "animate": false,
+
+  "gamma": 0.12,
+  "koppa": 1.0,
+  "z0": 220.0,
+  "Q_max": 1e-2,
+  "opt_maxiter": 25,
+
+  "Vscale": 1.0,
+  "demand_day": 80.0,
+  "S0": 0.0,
+  "S_max": 200.0,
+
+  "run_type": "optimization",
 
   "model": "adr",
   "metodo": "bfr",
   "domain": "real",
 
-  "K": 4,
+  "K": 1,
   "spacing": 30,
   "dt": 36000,
   "T": 2592000,

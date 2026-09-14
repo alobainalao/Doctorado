@@ -30,7 +30,15 @@ class Parameters:
 
                 "Nr", "Deff", "phi_im", "beta",
 
-                "save_dat", "animate", "run_type"
+                "save_dat", "animate", "run_type",
+
+                # Optimización: pesos del funcional (los controla la app, tab
+                # Optimization) y cotas/iteraciones del optimizador.
+                "gamma", "koppa", "z0",
+                "Q_max", "zp_min", "zp_max", "opt_maxiter",
+                # Balance de agua / suministro (funtions/water_supply.py):
+                # el pozo debe cubrir un consumo diario con un tanque acotado.
+                "Vscale", "demand_day", "S0", "S_max",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -181,6 +189,15 @@ class Parameters:
         self.gamma = getattr(self, "gamma", 1.0)
         self.koppa = getattr(self, "koppa", 1.0)
         self.z0 = getattr(self, "z0", 0.0)
+
+        # Balance de agua / suministro (funtions/water_supply.py). Defaults
+        # elegidos para que el problema sea no trivial con el escenario base
+        # (Q~1e-3, dt=3.6e4): el pozo arranca con tanque vacío (S0=0) y debe
+        # bombear para cubrir el consumo sin exceder S_max. Tunables por la app.
+        self.Vscale = getattr(self, "Vscale", 1.0)
+        self.demand_day = getattr(self, "demand_day", 120.0)
+        self.S0 = getattr(self, "S0", 0.0)
+        self.S_max = getattr(self, "S_max", 500.0)
 
         self.run_type = getattr(self, "run_type", "standard")
 

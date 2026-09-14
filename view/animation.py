@@ -18,6 +18,13 @@ p = RUNTIME.params
 
 def solve_adjoint(h, U, C, Qout, d, animate=False, save_data=False):
 
+    # Condición terminal del adjunto ψ(T)=0. Se inicializa aquí si el llamador
+    # no lo hizo (p.ej. gradient()/optimize_bfr/checkpoint), no sólo dentro de
+    # conjugate_gradient — así cualquier ruta que resuelva el adjunto funciona.
+    if getattr(d, "psi_H", None) is None:
+        d.psi_H = [np.zeros_like(hk) for hk in d.H]
+        d.psi_C = [np.zeros_like(ck) for ck in d.C]
+
     # ==============================
     # 🔹 SOLO SI HAY ANIMACIÓN
     # ==============================
@@ -579,6 +586,128 @@ def nonlinear_cg(
 
     return Q_opt, zp_opt, history
 
+
+# =========================================================
+# OPTIMIZACIÓN CON scipy L-BFGS-B (paridad con el backend fenicsx)
+# =========================================================
+
+def optimize_bfr(d, p, max_iter=None):
+    """Optimización adjunta MULTIOBJETIVO (Pareto) sobre x=[Q(t), z_p].
+
+    Minimiza J = gamma*J_m + J_e con:
+      J_m = ∫ C(x_p,z_p,t)² dt        (calidad: contaminación en el pozo)
+      J_e = kappa*|z_p-z0|² + |z_p-z0|*∫Q²dt  (costo: profundidad + bombeo)
+
+    z0 = posición de referencia del pozo (costo cero), típicamente la profundidad
+    inicial z0 = p.pozo[1]. Así J_e=0 en la posición actual y crece al moverlo.
+    gamma controla el punto de la frontera de Pareto: gamma grande → pozo más
+    superficial (menor J_m pero mayor J_e); gamma pequeño → pozo profundo.
+
+    Escalado por gradiente inicial: escala_i = 1/|∂J/∂x_i|, igualando magnitudes
+    de ∂J/∂Q (~10³) y ∂J/∂z_p (~10¹⁶) que de otro modo paralizan a SLSQP.
+    Restricción lineal DURA de suministro 0 ≤ S_n ≤ S_max (water_supply.py)."""
+    import time, json, sys
+    from scipy.optimize import minimize, LinearConstraint
+    from funtions.water_supply import supply_constraint, storage_trajectory
+
+    Q0  = np.asarray(p.Qout[0], float)
+    zp0 = float(p.pozo[1])
+    x0  = pack_controls(Q0, zp0)
+    n   = len(x0)
+
+    Q_max = float(getattr(p, "Q_max", 1e-2))
+    z_lo  = float(d.nodes[:, 1].min()) + float(p.spacing)
+    z_hi  = float(d.nodes[:, 1].max()) - float(p.spacing)
+    zp_lo = float(getattr(p, "zp_min", z_lo))
+    zp_hi = float(getattr(p, "zp_max", z_hi))
+
+    # --- Gradiente inicial para escalar variables ---
+    print("[bfr-opt] Calculando gradiente inicial para escalado...", flush=True)
+    g0    = gradient(x0, d, p, animate=False, save_data=False)
+    abs_g = np.abs(g0)
+    med   = np.median(abs_g[abs_g > 0]) if np.any(abs_g > 0) else 1.0
+    abs_g = np.where(abs_g < 1e-30 * med, med, abs_g)
+    # u = (x - x0) * abs_g  →  x = x0 + u/abs_g  →  ∂J/∂u_i|u0 = ±1
+    u0 = np.zeros(n)
+
+    def to_phys(u):  return x0 + u / abs_g
+
+    lo_phys  = np.concatenate([np.zeros(len(Q0)), [zp_lo]])
+    hi_phys  = np.concatenate([np.full(len(Q0), Q_max), [zp_hi]])
+    bounds_u = list(zip((lo_phys - x0) * abs_g, (hi_phys - x0) * abs_g))
+
+    A_phys, clb, cub = supply_constraint(p, n)
+    A_u   = A_phys / abs_g
+    clb_u = clb - A_phys @ x0
+    cub_u = cub - A_phys @ x0
+    cons  = LinearConstraint(A_u, clb_u, cub_u)
+
+    history   = {"Q": [], "zp": [], "J": []}
+    save_dir  = p.save_data
+    os.makedirs(save_dir, exist_ok=True)
+    prog_path = os.path.join(save_dir, "progress.jsonl")
+    open(prog_path, "w").close()
+
+    n_fun  = [0]
+    t0_opt = time.time()
+    max_it = int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20))
+
+    def _log(msg):  print(msg, flush=True)
+
+    def _write(rec):
+        with open(prog_path, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+
+    def fun(u):
+        x     = to_phys(u)
+        t_s   = time.time()
+        J     = functional(x, d, p, animate=False, save_data=True)
+        dt_s  = time.time() - t_s
+        tot   = time.time() - t0_opt
+        n_fun[0] += 1
+        history["Q"].append(x[:-1].copy())
+        history["zp"].append(float(x[-1]))
+        history["J"].append(float(J))
+        eta = (tot / n_fun[0]) * max(0, max_it - n_fun[0])
+        rec = {"eval": n_fun[0], "J": float(J), "zp": float(x[-1]),
+               "Q_mean": float(x[:-1].mean()), "Q_min": float(x[:-1].min()),
+               "Q_max": float(x[:-1].max()),
+               "elapsed_s": round(tot,1), "iter_s": round(dt_s,1),
+               "eta_s": round(eta,1)}
+        _write(rec)
+        _log(f"[bfr-opt #{n_fun[0]:>3d}/{max_it}] J={J:.4e}  z_p={x[-1]:.1f}m  "
+             f"Q̄={x[:-1].mean():.3e}  iter={dt_s:.0f}s  ETA≈{int(eta//60)}m{int(eta%60):02d}s")
+        return J
+
+    def jac(u):
+        x = to_phys(u)
+        _log(f"[bfr-opt grad #{n_fun[0]}] adjunto en z_p={x[-1]:.1f}m ...")
+        return gradient(x, d, p, animate=False, save_data=False) / abs_g
+
+    _log(f"[bfr-opt] z_p inicial={zp0:.1f}m  z0={getattr(p,'z0',0.0):.1f}m  "
+         f"max_iter={max_it}  progress→{prog_path}")
+    res = minimize(fun, u0, jac=jac, method="SLSQP",
+                   bounds=bounds_u, constraints=[cons],
+                   options={"maxiter": max_it, "ftol": 1e-12})
+
+    x_opt = to_phys(res.x)
+    S_opt = storage_trajectory(x_opt[:-1], p)
+    _log(f"[bfr-opt] TERMINADO: J={res.fun:.6e}  success={res.success}  "
+         f"nit={res.nit}  msg={res.message}")
+    _log(f"[bfr-opt] z_p*={x_opt[-1]:.2f}m  "
+         f"Q*: min={x_opt[:-1].min():.3e}  max={x_opt[:-1].max():.3e}  "
+         f"mean={x_opt[:-1].mean():.3e}")
+    _log(f"[bfr-opt] S∈[{S_opt.min():.2f}, {S_opt.max():.2f}] m³  "
+         f"(S_max={getattr(p,'S_max',200.0)})")
+    _write({"status": "done", "J_opt": float(res.fun),
+            "zp_opt": float(x_opt[-1]), "success": bool(res.success),
+            "nit": int(res.nit)})
+    np.savez(f"{save_dir}/optimization_results.npz",
+             Q=np.asarray(history["Q"]), zp=np.asarray(history["zp"]),
+             J=np.asarray(history["J"]),
+             x_opt=x_opt, J_opt=res.fun, S_opt=S_opt)
+    _log(f"[bfr-opt] historial guardado ✔  {save_dir}/optimization_results.npz")
+    return res
 
 
 class Simulation:

@@ -13,4 +13,7 @@ FROM dolfinx/dolfinx:stable
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir pandas matplotlib scikit-learn h5py gmsh
+# streamlit: para correr la app (app.py) DENTRO de este contenedor cuando se
+# usa el backend fenicsx (que requiere dolfinx, ausente en bfr_env). La app
+# lanza run.py como subproceso, que despacha a fenicsx.adjoint:optimize_fenicsx.
+RUN pip install --no-cache-dir pandas matplotlib scikit-learn h5py gmsh streamlit

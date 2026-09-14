@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pickle
 from sklearn.neighbors import KDTree
@@ -13,6 +14,11 @@ p = RUNTIME.params
 
 
 def run_preprocess():
+
+    # p fresco desde RUNTIME (no el global de módulo, que puede haber quedado
+    # ligado a None si este módulo se importó antes de fijar RUNTIME.params —
+    # p.ej. desde tests/test_gradient_checkpoint.py).
+    p = RUNTIME.get()
 
     print(">>> Ejecutando preprocesamiento...")
 
@@ -151,9 +157,10 @@ def run_preprocess():
         data["A_H"]= A_H
         data["B_H"]= B_H
         data["wi"]= wi
-        data["z0"]= 300
-        data["beta"]= 0.2
-        data["gamma"] = 0.5
+        # z0 (profundidad de referencia del término económico): fuente única en
+        # `p` para que la app lo controle y coincida con el backend fenicsx
+        # (antes estaba hardcodeado a 300, distinto de p.z0 usado por grad_zp).
+        data["z0"]= p.z0
 
 
 
@@ -169,11 +176,17 @@ def run_preprocess():
 
 def load_data():
     p = RUNTIME.params
-    if p.pre:
+    savefile = f"{p.save_preprocess}/preproceso.pkl"
+
+    # `data/input/*` está en .gitignore (salvo .h5): en un entorno fresco
+    # (deploy, contenedor sin volumen persistente) el .pkl cacheado no existe
+    # aunque `pre` no se haya marcado. En ese caso hay que generarlo sí o sí,
+    # no solo cuando el usuario pide preprocesamiento explícito.
+    if p.pre or not os.path.exists(savefile):
         data = run_preprocess()
     else:
         print(">>> Cargando datos...")
-        with open(f"{p.save_preprocess}/preproceso.pkl", "rb") as f:
+        with open(savefile, "rb") as f:
             data = pickle.load(f)
 
     class Data:

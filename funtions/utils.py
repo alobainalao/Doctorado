@@ -190,6 +190,8 @@ def grad_Q(
     d
 ):
 
+    p = RUNTIME.get()
+
     Nt = len(Q)
 
     grad = np.zeros(Nt)
@@ -212,12 +214,17 @@ def grad_Q(
 
         integral = np.sum(g * integrand* d.wi)
 
+        # Término económico ∂J3/∂Q_n con J3 = Σ Q² dt |z_p−z0|: lleva el factor
+        # p.dt (faltaba — grad_zp sí lo incluye; el checkpoint lo delató como un
+        # desfase exacto de dt entre gradiente adjunto y diferencias finitas).
         grad[n] = (
             2.0
             *
             abs(d.pozo_cor[1] - d.z0)
             *
             Q[n]
+            *
+            p.dt
             +
             integral
         )
@@ -319,13 +326,16 @@ def compute_functional(Q, zp, C, d):
 
     for n in range(Nt):
 
-        Cp = d.delta_p @ C[n]
+        # C[n] llega con eje de realización K (forma (1, N) cuando K=1); se
+        # aplana como en grad_Q/grad_zp para que delta_p @ C_n sea la
+        # concentración en el pozo (escalar), no un producto mal formado.
+        Cp = d.delta_p @ np.asarray(C[n]).squeeze()
 
-        J1 += p.gamma * np.sum(Cp**2* d.wi) * d.dt
+        J1 += p.gamma * np.sum(Cp**2* d.wi) * p.dt
 
     J2 = p.koppa * abs(zp - d.z0)**2
 
-    J3 = np.sum(Q**2) * d.dt * abs(zp - d.z0)
+    J3 = np.sum(Q**2) * p.dt * abs(zp - d.z0)
 
     return J1 + J2 + J3
 

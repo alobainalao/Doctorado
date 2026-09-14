@@ -20,11 +20,8 @@ def main():
         # se podría ni importar en ninguno de los dos entornos por separado.
         from fenicsx.forward import solve_forward_fenicsx
 
-        if p.run_type != "standard":
-            raise NotImplementedError(
-                "El backend fenicsx todavía no implementa optimización/adjunto "
-                "(ver fenicsx/README.md, punto 2). Usa run_type='standard'."
-            )
+        if p.run_type not in ("standard", "optimization"):
+            raise ValueError(f"run_type desconocido: {p.run_type}")
 
         if p.domain != "real":
             raise NotImplementedError(
@@ -44,9 +41,14 @@ def main():
         from fenicsx.mesh import get_mesh
         mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
 
+        if p.run_type == "optimization":
+            # Adjunto discreto (AD de UFL) + scipy L-BFGS-B sobre x=[Q(t), z_p].
+            from fenicsx.adjoint import optimize_fenicsx
+            return optimize_fenicsx(p, mesh_cache=mesh_cache)
+
         return solve_forward_fenicsx(p.Qout[0], p.pozo, p, mesh_cache=mesh_cache)
 
-    from view.animation import solve_forward, conjugate_gradient
+    from view.animation import solve_forward, optimize_bfr
     from preprocessing.preprocess import load_data
 
     d = load_data()
@@ -56,7 +58,9 @@ def main():
         solve_forward(d, Qout, animate, save_data)
 
     elif p.run_type == "optimization":
-        conjugate_gradient(d, animate, save_data, p)
+        # Adjunto (ψ_h/ψ_C validados por tests/test_gradient_checkpoint.py) +
+        # scipy L-BFGS-B, mismo optimizador que el backend fenicsx.
+        return optimize_bfr(d, p)
 
     else:
         raise ValueError(f"run_type desconocido: {p.run_type}")

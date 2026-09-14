@@ -29,8 +29,9 @@ import matplotlib.pyplot as plt
 
 from funtions.runtime import RUNTIME
 from config.parameters import Parameters
-from preprocessing.preprocess import load_data
-from view.animation import gradient, functional, pack_controls, unpack_controls
+# NOTA: preprocessing.preprocess y view.animation fijan `p = RUNTIME.params` a
+# nivel de módulo al importarse. Se importan DENTRO de main(), después de fijar
+# RUNTIME.params, para que `p` no quede ligado a None (igual que hace run.py).
 
 
 # =========================================================
@@ -95,6 +96,10 @@ def checkpoint_component(label, x0, i, g_adjoint_i, d, p):
 def main():
     RUNTIME.params = Parameters(env=CHECKPOINT_ENV)
     p = RUNTIME.get()
+
+    global gradient, functional, pack_controls, unpack_controls
+    from preprocessing.preprocess import load_data
+    from view.animation import gradient, functional, pack_controls, unpack_controls
 
     d = load_data()
 
