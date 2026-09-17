@@ -612,7 +612,8 @@ def optimize_bfr(d, p, max_iter=None):
     Restricción lineal DURA de suministro 0 ≤ S_n ≤ S_max (water_supply.py)."""
     import time, json, sys
     from scipy.optimize import minimize, LinearConstraint
-    from funtions.water_supply import supply_constraint, storage_trajectory
+    from funtions.water_supply import (supply_constraint, storage_trajectory,
+                                       pump_upper_bounds, pump_duty_constraint)
 
     Q0  = np.asarray(p.Qout[0], float)
     zp0 = float(p.pozo[1])
@@ -634,17 +635,29 @@ def optimize_bfr(d, p, max_iter=None):
     # u = (x - x0) * abs_g  →  x = x0 + u/abs_g  →  ∂J/∂u_i|u0 = ±1
     u0 = np.zeros(n)
 
+    # --- Evaluar J₀ para logging ---
+    print("[bfr-opt] Evaluando J₀...", flush=True)
+    J0_raw = functional(x0, d, p, animate=False, save_data=False)
+    print(f"[bfr-opt] J₀={J0_raw:.4e}  (abs_g ya da |dJ/du|=±1)", flush=True)
+
     def to_phys(u):  return x0 + u / abs_g
 
     lo_phys  = np.concatenate([np.zeros(len(Q0)), [zp_lo]])
-    hi_phys  = np.concatenate([np.full(len(Q0), Q_max), [zp_hi]])
+    hi_phys  = np.concatenate([pump_upper_bounds(p, len(Q0), Q_max), [zp_hi]])
     bounds_u = list(zip((lo_phys - x0) * abs_g, (hi_phys - x0) * abs_g))
 
     A_phys, clb, cub = supply_constraint(p, n)
     A_u   = A_phys / abs_g
     clb_u = clb - A_phys @ x0
     cub_u = cub - A_phys @ x0
-    cons  = LinearConstraint(A_u, clb_u, cub_u)
+    cons_list = [LinearConstraint(A_u, clb_u, cub_u)]
+    duty = pump_duty_constraint(p, n, Q_max)
+    if duty is not None:
+        Ad, lbd, ubd = duty
+        Ad_u   = Ad / abs_g
+        lbd_u  = lbd - Ad @ x0
+        ubd_u  = ubd - Ad @ x0
+        cons_list.append(LinearConstraint(Ad_u, lbd_u, ubd_u))
 
     history   = {"Q": [], "zp": [], "J": []}
     save_dir  = p.save_data
@@ -673,14 +686,15 @@ def optimize_bfr(d, p, max_iter=None):
         history["zp"].append(float(x[-1]))
         history["J"].append(float(J))
         eta = (tot / n_fun[0]) * max(0, max_it - n_fun[0])
-        rec = {"eval": n_fun[0], "J": float(J), "zp": float(x[-1]),
+        rec = {"eval": n_fun[0], "J": float(J),
+               "zp": float(x[-1]),
                "Q_mean": float(x[:-1].mean()), "Q_min": float(x[:-1].min()),
                "Q_max": float(x[:-1].max()),
                "elapsed_s": round(tot,1), "iter_s": round(dt_s,1),
                "eta_s": round(eta,1)}
         _write(rec)
-        _log(f"[bfr-opt #{n_fun[0]:>3d}/{max_it}] J={J:.4e}  z_p={x[-1]:.1f}m  "
-             f"Q̄={x[:-1].mean():.3e}  iter={dt_s:.0f}s  ETA≈{int(eta//60)}m{int(eta%60):02d}s")
+        _log(f"[bfr-opt #{n_fun[0]:>3d}/{max_it}] J={J:.4e}  "
+             f"z_p={x[-1]:.1f}m  Q̄={x[:-1].mean():.3e}  iter={dt_s:.0f}s  ETA≈{int(eta//60)}m{int(eta%60):02d}s")
         return J
 
     def jac(u):
@@ -691,19 +705,20 @@ def optimize_bfr(d, p, max_iter=None):
     _log(f"[bfr-opt] z_p inicial={zp0:.1f}m  z0={getattr(p,'z0',0.0):.1f}m  "
          f"max_iter={max_it}  progress→{prog_path}")
     res = minimize(fun, u0, jac=jac, method="SLSQP",
-                   bounds=bounds_u, constraints=[cons],
-                   options={"maxiter": max_it, "ftol": 1e-12})
+                   bounds=bounds_u, constraints=cons_list,
+                   options={"maxiter": max_it, "ftol": 1e-6})
 
-    x_opt = to_phys(res.x)
-    S_opt = storage_trajectory(x_opt[:-1], p)
-    _log(f"[bfr-opt] TERMINADO: J={res.fun:.6e}  success={res.success}  "
-         f"nit={res.nit}  msg={res.message}")
+    x_opt  = to_phys(res.x)
+    S_opt  = storage_trajectory(x_opt[:-1], p)
+    J_phys = res.fun
+    _log(f"[bfr-opt] TERMINADO: J={J_phys:.6e}  "
+         f"success={res.success}  nit={res.nit}  msg={res.message}")
     _log(f"[bfr-opt] z_p*={x_opt[-1]:.2f}m  "
          f"Q*: min={x_opt[:-1].min():.3e}  max={x_opt[:-1].max():.3e}  "
          f"mean={x_opt[:-1].mean():.3e}")
     _log(f"[bfr-opt] S∈[{S_opt.min():.2f}, {S_opt.max():.2f}] m³  "
          f"(S_max={getattr(p,'S_max',200.0)})")
-    _write({"status": "done", "J_opt": float(res.fun),
+    _write({"status": "done", "J_opt": float(J_phys),
             "zp_opt": float(x_opt[-1]), "success": bool(res.success),
             "nit": int(res.nit)})
     np.savez(f"{save_dir}/optimization_results.npz",
@@ -804,8 +819,15 @@ class SimulationAdjoint:
         self.psi_H = [h.copy() for h in psi_H_list]
         self.psi_C = [c.copy() for c in psi_C_list]
 
-        self.t = p.T  # 👈 adjunto inicia al final del tiempo
+        self.t = p.T
         self.dt = p.dt
+
+        # ψ_C_im — condición terminal: cero. Shape (Nr, N) para K=1.
+        if "mrmt" in p.model:
+            N = len(psi_H_list[0])
+            self.psi_C_im = np.zeros((p.Nr, N))
+        else:
+            self.psi_C_im = None
 
     def update(self, step, h, U, C, Qout, d, figs=None, visuals=None):
 
@@ -815,71 +837,42 @@ class SimulationAdjoint:
             im_H, im_C = visuals
 
         for k in range(p.K):
-        
+
             # =====================================================
             # STEP ADJUNTO
             # =====================================================
-            self.psi_H[k], self.psi_C[k] = step_adjoint(
+            self.psi_H[k], self.psi_C[k], psiC_im_n = step_adjoint(
                 A_solver=d.A_H,
                 B=d.B_H,
-                # ---------------------------------------------
-                # adjoint state at n+1
-                # ---------------------------------------------
                 psiH_N=self.psi_H[k],
                 psiC_N=self.psi_C[k],
-                
-
-                # ---------------------------------------------
-                # forward states
-                # ---------------------------------------------
                 H_N=h[step][k],
                 H_n=h[step - 1][k],
-
-                # ---------------------------------------------
-                # adjoint state at n+1
-                # ---------------------------------------------
                 V_N=U[step][k],
                 V_n=U[step-1][k],
-
                 C_N=C[step][k],
                 C_n=C[step - 1][k],
-
-                # ---------------------------------------------
-                # hydraulic
-                # ---------------------------------------------
                 S_s=d.pho,
                 K=d.K,
                 Div_K=d.div_K,
-
                 pho=d.pho,
-
-                # ---------------------------------------------
-                # transport
-                # ---------------------------------------------
                 D=d.D_f,
-
-                # ---------------------------------------------
-                # source / pumping
-                # ---------------------------------------------
                 Qout_N=Qout[k][step],
                 Qout_n=Qout[k][step - 1],
-
                 gauss_p=d.gauss_p,
                 gamma=p.gamma,
                 delta_p=d.delta_p,
-
-                # ---------------------------------------------
-                # derivative operators
-                # ---------------------------------------------
                 grad=d.grad,
-                # ---------------------------------------------
-                # geometry
-                # ---------------------------------------------
                 nodes=d.nodes,
                 groups=d.groups,
                 normals=d.normals,
-                eps_M=d.eps_M
+                eps_M=d.eps_M,
+                psiC_im_N=self.psi_C_im,
+                exp_lam_dt=d.exp_lam_dt,
             )
+
+            if "mrmt" in p.model and psiC_im_n is not None:
+                self.psi_C_im = psiC_im_n
 
             # =====================================================
             # VISUALIZATION (optional)
@@ -887,22 +880,15 @@ class SimulationAdjoint:
             if visuals is not None:
                 i, j = divmod(k, p.ncols)
 
-                # ---- ψ_H ----
                 SH = d.I.dot(self.psi_H[k])
                 SH[~d.mask] = np.nan
                 SH = SH.reshape(d.xy_grid.shape[1:]).T
-
                 im_H[i][j].set_data(SH)
 
-                # ---- ψ_C ----
                 SC = d.I.dot(self.psi_C[k])
                 SC[~d.mask] = np.nan
                 SC = SC.reshape(d.xy_grid.shape[1:]).T
-
                 im_C[i][j].set_data(SC)
-
-            # if p.activate_ext and self.Qout[k][step]:
-            #     self.C[k] -= d.gauss_p*self.C[k]
 
             if p.activate_ext:
                 self.psi_C[k] -= d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])

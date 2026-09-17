@@ -38,7 +38,9 @@ class Parameters:
                 "Q_max", "zp_min", "zp_max", "opt_maxiter",
                 # Balance de agua / suministro (funtions/water_supply.py):
                 # el pozo debe cubrir un consumo diario con un tanque acotado.
-                "Vscale", "demand_day", "S0", "S_max",
+                "Vscale", "demand_day", "demand_agri",
+                "S0", "S_max", "t0_hour",
+                "pump_cycling", "pump_ton", "pump_toff",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -179,25 +181,41 @@ class Parameters:
         os.makedirs(self.save_video, exist_ok=True)
         os.makedirs(self.save_preprocess, exist_ok=True)
 
-        Q_base = [1e-3, 1e-4, 1e-5, 0]
         self.Nt = int(self.T / self.dt)
-        self.Qout = [np.full(self.Nt, Q_base[i]) for i in range(self.K)]
+        # Q0 que sigue la demanda en cada paso → S_n = S0 = constante (factible)
+        from funtions.water_supply import demand_vector
+        _Vscale = float(getattr(self, 'Vscale', 30.0))
+        _d0 = demand_vector(self, self.Nt)
+        _q0 = _d0 / (_Vscale * float(self.dt))
+        Q_base_rest = [1e-4, 1e-5, 0]
+        self.Qout = [_q0.copy()] + [np.full(self.Nt, Q_base_rest[i]) for i in range(self.K - 1)]
 
         # =========================
         # OPTIMIZACIÓN
         # =========================
         self.gamma = getattr(self, "gamma", 1.0)
         self.koppa = getattr(self, "koppa", 1.0)
-        self.z0 = getattr(self, "z0", 0.0)
+        self.z0    = getattr(self, "z0",    0.0)
+        # Cotas físicas del pozo (domain real z ∈ [−2690, 250] m)
+        self.zp_min = getattr(self, "zp_min", -1400.0)
+        self.zp_max = getattr(self, "zp_max",  -200.0)
 
         # Balance de agua / suministro (funtions/water_supply.py). Defaults
         # elegidos para que el problema sea no trivial con el escenario base
         # (Q~1e-3, dt=3.6e4): el pozo arranca con tanque vacío (S0=0) y debe
         # bombear para cubrir el consumo sin exceder S_max. Tunables por la app.
-        self.Vscale = getattr(self, "Vscale", 1.0)
-        self.demand_day = getattr(self, "demand_day", 120.0)
-        self.S0 = getattr(self, "S0", 0.0)
-        self.S_max = getattr(self, "S_max", 500.0)
+        # Vscale = L_perp [m]: anchura perpendicular al plano de la sección 2D.
+        # Q [m²/s] → Q_vol [m³/s] = Q * Vscale. Por defecto = spacing = 30 m.
+        self.Vscale       = getattr(self, "Vscale",       30.0)
+        # 5 000 hab × 150 L/día + 250 m³/día riego → 1 000 m³/día total
+        self.demand_day   = getattr(self, "demand_day",  750.0)  # doméstico [m³/día]
+        self.demand_agri  = getattr(self, "demand_agri", 250.0)  # riego     [m³/día]
+        self.S0           = getattr(self, "S0",          500.0)  # [m³]
+        self.S_max        = getattr(self, "S_max",      2000.0)  # ≈2 días reserva [m³]
+        self.t0_hour      = getattr(self, "t0_hour",       6.0)  # hora solar inicio
+        self.pump_cycling = getattr(self, "pump_cycling",  True)  # ciclos bomba
+        self.pump_ton     = getattr(self, "pump_ton",     20.0)  # h máx operación continua
+        self.pump_toff    = getattr(self, "pump_toff",     4.0)  # h mín descanso
 
         self.run_type = getattr(self, "run_type", "standard")
 
