@@ -8,11 +8,9 @@ UFL) contra diferencias finitas centradas del MISMO funcional J(Q, z_p). Valida
 la CONSISTENCIA interna del adjunto discreto (no la comparación con bfr, que
 difiere por la discretización — ver fenicsx/README.md).
 
-Sólo corre en el entorno DOLFINx (Docker `dolfinx/dolfinx:stable`):
+Requiere el entorno `fenics_env` (dolfinx 0.11.0 conda-forge):
 
-    docker run --rm -v "$(pwd):/workspace" -w /workspace dolfinx/dolfinx:stable \
-      bash -c "pip install -q pandas matplotlib scikit-learn h5py gmsh; \
-               python -m fenicsx.test_gradient_checkpoint"
+    /home/alex/miniconda3/envs/fenics_env/bin/python -m fenicsx.test_gradient_checkpoint
 
 Criterio: el error relativo debe decrecer ~O(δ²) y luego crecer por redondeo
 (forma de "V" en log-log). Error ~O(1) para todo δ ⇒ gradiente incorrecto.

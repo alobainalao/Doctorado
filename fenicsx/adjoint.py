@@ -34,8 +34,8 @@ con `bfr` (que además difiere por la discretización).
 
 Controles: x = [Q_0, …, Q_{Nt−1}, z_p] (misma convención que
 `view/animation.py:pack_controls`). Optimizador: `scipy.optimize.minimize`
-(L-BFGS-B). Requiere el mismo entorno DOLFINx del forward (Docker
-`dolfinx/dolfinx:stable`, ver fenicsx/README.md).
+(L-BFGS-B). Requiere el entorno `fenics_env` (dolfinx 0.11.0 conda-forge,
+ver fenicsx/README.md). `app.py` despacha automáticamente a ese entorno.
 """
 import numpy as np
 from mpi4py import MPI

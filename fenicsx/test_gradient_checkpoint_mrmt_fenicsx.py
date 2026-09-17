@@ -3,9 +3,8 @@ Checkpoint del gradiente adjunto para modelos MRMT Semi y MRMT Block en el
 backend FEniCS (DOLFINx). Mismo protocolo que fenicsx/test_gradient_checkpoint.py
 (ADR): compara grad_Q obtenido por el adjunto contra diferencias finitas centradas.
 
-Para correr (requiere el entorno Docker de FEniCS):
-    docker exec -w /root/codigo fenics_container \
-        python -m fenicsx.test_gradient_checkpoint_mrmt_fenicsx [semi|block]
+Para correr (requiere el entorno `fenics_env`):
+    /home/alex/miniconda3/envs/fenics_env/bin/python -m fenicsx.test_gradient_checkpoint_mrmt_fenicsx [semi|block]
 """
 import sys
 import numpy as np
