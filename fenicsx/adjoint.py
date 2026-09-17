@@ -533,7 +533,8 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     Incluye restricción lineal de suministro 0 ≤ S_n ≤ S_max (balance del tanque
     con demanda diaria D), idéntica a optimize_bfr. Guarda historial y resultado."""
     from scipy.optimize import minimize, Bounds, LinearConstraint
-    from funtions.water_supply import supply_constraint, storage_trajectory
+    from funtions.water_supply import (supply_constraint, storage_trajectory,
+                                       pump_upper_bounds, pump_duty_constraint)
 
     pozo = list(p.pozo)
     ctx = build_context(pozo, p, mesh_cache)
@@ -544,17 +545,25 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
 
     history = {"Q": [], "zp": [], "J": []}
 
+    # --- Normalización del funcional ---
+    if ctx.comm.rank == 0:
+        print("[fenicsx-opt] Evaluando J₀ para normalización...", flush=True)
+    J0_raw  = functional_fenicsx(x0, ctx)
+    J_scale = max(abs(J0_raw), 1.0)
+    if ctx.comm.rank == 0:
+        print(f"[fenicsx-opt] J₀={J0_raw:.4e}  J_scale={J_scale:.4e}", flush=True)
+
     def fun(x):
         J = functional_fenicsx(x, ctx)
         history["Q"].append(x[:-1].copy())
         history["zp"].append(float(x[-1]))
         history["J"].append(float(J))
         if ctx.comm.rank == 0:
-            print(f"[fenicsx-opt] J={J:.6e}  z_p={x[-1]:.4g}")
-        return J
+            print(f"[fenicsx-opt] J={J:.6e} (×{J_scale:.1e})  z_p={x[-1]:.4g}")
+        return J / J_scale
 
     def jac(x):
-        return gradient_fenicsx(x, ctx)
+        return gradient_fenicsx(x, ctx) / J_scale
 
     # Cotas físicas: Q(t) ≥ 0 hasta Q_max; z_p dentro del rango real de z de la
     # malla (con margen de un spacing). Igual criterio que L-BFGS-B anterior pero
@@ -563,21 +572,29 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     Q_max = float(getattr(p, "Q_max", 1e-2))
     zp_lo = float(getattr(p, "zp_min", float(z_nodes.min()) + float(p.spacing)))
     zp_hi = float(getattr(p, "zp_max", float(z_nodes.max()) - float(p.spacing)))
-    bounds = Bounds([0.0] * len(Q0) + [zp_lo], [Q_max] * len(Q0) + [zp_hi])
+    Q_ub   = pump_upper_bounds(p, len(Q0), Q_max)
+    bounds = Bounds(np.concatenate([np.zeros(len(Q0)), [zp_lo]]),
+                    np.concatenate([Q_ub,               [zp_hi]]))
 
     # Restricción lineal de suministro: 0 ≤ S_n ≤ S_max (water_supply.py).
     # Fuerza a extraer lo suficiente para cubrir la demanda diaria D sin rebosar.
     A, clb, cub = supply_constraint(p, n)
-    cons = LinearConstraint(A, clb, cub)
+    cons_list = [LinearConstraint(A, clb, cub)]
+    duty = pump_duty_constraint(p, n, Q_max)
+    if duty is not None:
+        Ad, lbd, ubd = duty
+        cons_list.append(LinearConstraint(Ad, lbd, ubd))
 
-    opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20))}
+    opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
+            "gtol": 1e-5, "xtol": 1e-8}
     res = minimize(fun, x0, jac=jac, method="trust-constr",
-                   bounds=bounds, constraints=[cons], options=opts)
+                   bounds=bounds, constraints=cons_list, options=opts)
 
-    S_opt = storage_trajectory(res.x[:-1], p)
+    S_opt  = storage_trajectory(res.x[:-1], p)
+    J_phys = res.fun * J_scale
     if ctx.comm.rank == 0:
-        print(f"[fenicsx-opt] terminado: J={res.fun:.6e}, success={res.success}, "
-              f"nit={res.nit}, msg={res.message}")
+        print(f"[fenicsx-opt] terminado: J={J_phys:.6e} (normalizado={res.fun:.4e}), "
+              f"success={res.success}, nit={res.nit}, msg={res.message}")
         print(f"[fenicsx-opt] S(t)=[{S_opt.min():.3g}, {S_opt.max():.3g}]  "
               f"(S_max={getattr(p,'S_max',500.0)})")
         if bool(getattr(p, "save_dat", False)):
@@ -589,7 +606,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                 Q=np.asarray(history["Q"]),
                 zp=np.asarray(history["zp"]),
                 J=np.asarray(history["J"]),
-                x_opt=res.x, J_opt=res.fun, S_opt=S_opt,
+                x_opt=res.x, J_opt=J_phys, J_opt_scaled=res.fun, S_opt=S_opt,
             )
             print(f"[fenicsx-opt] historial guardado ✔  "
                   f"{save_dir}/optimization_results.npz")

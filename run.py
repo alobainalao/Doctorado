@@ -4,13 +4,15 @@ import os
 
 def run(modo=None):
 
-    # 🔥 si no te pasan env directamente, lo tomas del sistema
-    if modo is None:
-        env = dict(os.environ)
+    # Fuente de configuración:
+    #   - app (modo=None + env vars seteadas): usa el ambiente del OS
+    #   - terminal (modo=None sin vars de sim, o modo="dev"/"json"/etc.): usa default.json
+    _APP_KEYS = {"run_type", "model", "metodo", "spacing", "dt"}
+    if modo is None and any(k in os.environ for k in _APP_KEYS):
+        env = dict(os.environ)   # app web: inyecta config por env vars
     else:
-        env = None
+        env = None               # terminal: usa config/default.json
 
-    # 🔥 aquí decides fuente
     RUNTIME.params = Parameters(env=env)
 
     from main import main

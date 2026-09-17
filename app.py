@@ -302,6 +302,9 @@ if submit:
         "eps": str(eps),
 
         "Nr": str(Nr),
+        "Deff":   str(list(mrmt_df["Deff"].values))   if not mrmt_df.empty else str([1e-9, 5e-10, 1e-10]),
+        "beta":   str(list(mrmt_df["beta"].values))   if not mrmt_df.empty else str([0.15, 0.1, 0.05]),
+        "phi_im": str(list(mrmt_df["phi_im"].values)) if not mrmt_df.empty else str([0.1, 0.05, 0.02]),
 
         "save_dat": str(save_dat),
         "animate": str(animate),

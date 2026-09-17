@@ -472,29 +472,23 @@ def make_adj_C_operator(
             # ------------------------------------------------
             # IDENTIDAD
             #
-            # A:
-            # -2φR/dt + div(K∇h) + reaction
-            #
-            # B:
-            # -2φR/dt - div(K∇h) - reaction
+            # Adjunto de U_div_D·∇C con U_div_D=(V-∇D)/2:
+            # la integración por partes da -∇·(U_div_D)ψ ≈ -Div_V/2
             # ------------------------------------------------
             base[i] + sig * (
-                Div_V[i]
-                - p.landa * pho[i] * R 
+                Div_V[i] * 0.5
+                - p.landa * pho[i] * R
             ),
 
             # ------------------------------------------------
             # GRADIENTE
             #
-            # A:
-            # +(K∇h) + ∇D
-            #
-            # B:
-            # -(K∇h) - ∇D
+            # Adjunto de U_div_D·∇C: -U_div_D·∇ψ
+            # U_div_D = (V - ∇D) / 2  →  usar la misma escala
             # ------------------------------------------------
-            sig * (V[i, 0] - Div_D[i, 0]),
+            sig * (V[i, 0] - Div_D[i, 0]) * 0.5,
 
-            sig * (V[i, 1] - Div_D[i, 1]),
+            sig * (V[i, 1] - Div_D[i, 1]) * 0.5,
 
             # ------------------------------------------------
             # DIFUSIÓN
