@@ -8,16 +8,8 @@ def main():
     animate = p.animate
 
     if getattr(p, "metodo", "bfr") == "fenicsx":
-        # Backend FEM (DOLFINx) — ver fenicsx/README.md. Solo el forward de
-        # un run está portado; sin optimización/adjunto todavía, y sin
-        # verificar en un entorno real (dolfinx no está en bfr_env).
-        #
-        # Import perezoso (aquí, no al inicio del módulo): el stack de bfr
-        # (view.animation -> funtions.step_time -> funtions.operators)
-        # importa `rbf`, que no existe en el entorno de fenicsx (Docker
-        # dolfinx/dolfinx) — y viceversa, bfr_env no tiene dolfinx. Si el
-        # import de view.animation estuviera al nivel de módulo, main.py no
-        # se podría ni importar en ninguno de los dos entornos por separado.
+        # Backend FEM (DOLFINx). Import perezoso: bfr_env importa `rbf` que no
+        # existe en fenics_env, y viceversa. Corre bajo fenics_env (ver app.py).
         from fenicsx.forward import solve_forward_fenicsx
 
         if p.run_type not in ("standard", "optimization"):
@@ -25,14 +17,12 @@ def main():
 
         if p.domain != "real":
             raise NotImplementedError(
-                "El backend fenicsx sólo soporta domain='real' (la malla se "
-                "genera con los datos de pozos reales, ver fenicsx/mesh.py)."
+                "El backend fenicsx sólo soporta domain='real'."
             )
 
-        if p.model != "adr":
+        if p.model not in ("adr", "mrmt_semi", "mrmt_block"):
             raise NotImplementedError(
-                f"El backend fenicsx sólo soporta model='adr', no '{p.model}' "
-                "(MRMT no está portado al FEM)."
+                f"El backend fenicsx no soporta model='{p.model}'."
             )
 
         # Etapa de preprocesamiento configurable (flag `pre`): regenera la malla

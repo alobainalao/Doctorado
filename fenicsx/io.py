@@ -12,24 +12,27 @@ import os
 import numpy as np
 
 
-def save_results(save_dir, nodes, H_hist, C_hist, U_hist, dt):
+def save_results(save_dir, nodes, H_hist, C_hist, U_hist, dt, C_im_hist=None):
     """
     Guarda la historia temporal en `{save_dir}/simulation_results.npz`, mismo
     formato que el backend bfr (finalize_outputs): H y C con eje de realización
     K=1 (fenicsx corre un solo run), U con sus dos componentes. Todos los
     campos van sobre los nodos de G (Lagrange-1 = vértices de malla); C y U se
     interpolan a G en el forward para compartir el mismo `nodes` que H.
+    Para MRMT, C_im_hist es opcional: shape (Nt, Nr, N_dofs_Q) sobre DOFs de Q.
     """
     os.makedirs(save_dir, exist_ok=True)
     path = f"{save_dir}/simulation_results.npz"
-    np.savez(
-        path,
+    arrays = dict(
         H=np.asarray(H_hist)[:, None, :],   # (Nt, 1, N) — eje K como bfr
         C=np.asarray(C_hist)[:, None, :],   # (Nt, 1, N)
         U=np.asarray(U_hist),               # (Nt, N, 2)
         nodes=np.asarray(nodes),            # (N, 2)
         dt=dt,
     )
+    if C_im_hist is not None:
+        arrays["C_im"] = np.asarray(C_im_hist)  # (Nt, Nr, N_dofs_Q)
+    np.savez(path, **arrays)
     print(f"[fenicsx] datos guardados ✔  {path}")
 
 

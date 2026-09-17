@@ -260,6 +260,44 @@ def _boundaries_elements(domain, facet_tags, phys):
     return V, G, Q, h_inlet, h_outlet, bc_C, ds_in, ds_out
 
 
+# ---------------------------------------------------------------------------
+# MRMT helpers — usados por solve_forward_fenicsx para mrmt_semi y mrmt_block.
+# ---------------------------------------------------------------------------
+
+def _mrmt_params(p):
+    """Parámetros MRMT precomputados (igual que preprocessing/preprocess.py)."""
+    Nr = int(p.Nr)
+    lam = np.array([p.Deff[r] / (p.R * p.beta[r] * p.L ** 2) for r in range(Nr)])
+    exp_lam_dt = np.exp(-lam * p.dt)           # para mrmt_semi
+    coef = p.dt * np.array(p.alpha_r) / np.array(p.beta)  # para mrmt_block
+    return Nr, np.array(p.beta, float), exp_lam_dt, coef, float(p.alpha_sum)
+
+
+def _mrmt_semi_step(C_arr, C_im, exp_lam_dt, beta):
+    """Operator splitting MRMT Semi: actualiza C_im y corrige C_m in-place."""
+    for r in range(len(beta)):
+        C_im_r_new = C_arr + (C_im[r] - C_arr) * exp_lam_dt[r]
+        C_arr = C_arr + beta[r] * (C_im[r] - C_im_r_new)
+        C_im[r] = C_im_r_new
+    return C_arr, C_im
+
+
+def _mrmt_block_step(C_arr, C_prev_arr, C_im, coef):
+    """Actualiza C_im con el esquema θ tras el solve Block MRMT."""
+    for r in range(len(coef)):
+        C_im[r] = coef[r] * (C_arr + C_prev_arr) + (1.0 - 2.0 * coef[r]) * C_im[r]
+    return C_im
+
+
+def _update_C_im_sum(C_im_sum_func, C_im, alpha_r):
+    """Rellena C_im_sum = Σ_r alpha_r * C_im_r sobre DOFs de Q.
+    El factor phi se aplica simbólicamente en la forma UFL (phi vive en G, C_im en Q)."""
+    acc = np.zeros(C_im_sum_func.x.array.shape)
+    for r in range(len(alpha_r)):
+        acc += float(alpha_r[r]) * C_im[r]
+    C_im_sum_func.x.array[:] = acc
+
+
 def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
                 h_inlet, h_outlet, ds_in, ds_out, QOut_const, delta):
     """Formas (bilineal, lineal) del flujo θ-implícito. Se reusan tal cual
@@ -277,7 +315,10 @@ def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
 
 def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
-                           delta, delta_C, phi, C, C_n, D, D_n, u, u_n):
+                           delta, delta_C, phi, C, C_n, D, D_n, u, u_n,
+                           alpha_sum=0.0, C_im_sum=None):
+    """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
+    alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
     z_t = TestFunction(Q)
 
     a_h, L_h = _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
@@ -296,6 +337,16 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
         + theta_C * inner(delta_C * C, z_t) * dx
         + (1 - theta_C) * inner(delta_C * C_n, z_t) * dx
     )
+
+    # Acoplamiento MRMT Block: mismo escalado que BFR (alpha_r ya absorbe dt).
+    # +R*alpha_sum*phi*(C+C_n) → intercambio; -2*R*phi*C_im_sum → fuente de C_im.
+    # C_im_sum = Σ_r alpha_r*C_im_r (en Q); phi (en G) se aplica aquí en UFL
+    # para evitar multiplicación de DOF arrays de distintos espacios.
+    if alpha_sum and C_im_sum is not None:
+        F_C += (
+            R * alpha_sum * inner(phi * (C + C_n), z_t) * dx
+            - 2.0 * R * inner(phi * C_im_sum, z_t) * dx
+        )
 
     a_C = fem.form(lhs(F_C))
     L_C = fem.form(rhs(F_C))
@@ -385,10 +436,28 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     QOut_const = fem.Constant(domain, PETSc.ScalarType(float(Qout[0])))
 
+    # --- Estado MRMT (arrays de numpy sobre DOFs de Q) ---
+    model = getattr(p, "model", "adr")
+    mrmt_Nr = 0
+    mrmt_beta = mrmt_exp_lam_dt = mrmt_coef = None
+    mrmt_alpha_sum = 0.0
+    C_im = None          # (Nr, N_dofs_Q) para ambos modelos MRMT
+    C_im_sum = None      # fem.Function(Q) sólo para mrmt_block
+
+    if "mrmt" in model:
+        mrmt_Nr, mrmt_beta, mrmt_exp_lam_dt, mrmt_coef, mrmt_alpha_sum = _mrmt_params(p)
+        N_dofs_Q = C_n.x.array.shape[0]
+        C_im = np.zeros((mrmt_Nr, N_dofs_Q))
+
+        if model == "mrmt_block":
+            C_im_sum = fem.Function(Q)
+            C_im_sum.x.array[:] = 0.0
+
     a_h, L_h, a_C, L_C = _variational_form_h_C(
         Q, G, phys["R"], phys["landa"], phi, h, h_n, dt, phys["theta"], phys["theta_C"],
         K_z, phys["alpha"], h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
         delta, delta_C, phi, C, C_n, D + D_m, D + Dm_n, u, u_n,
+        alpha_sum=mrmt_alpha_sum, C_im_sum=C_im_sum,
     )
 
     # A1 (flujo) no depende de QOut (el término QOut*delta es del lado
@@ -417,6 +486,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     # conjunto de nodos que H — así el .npz tiene un único `nodes`, como bfr.
     collect = bool(getattr(p, "save_dat", False)) or bool(getattr(p, "animate", False))
     H_hist, C_hist, U_hist = [], [], []
+    C_im_hist = [] if (collect and "mrmt" in model) else None
     if collect:
         cG = fem.Function(G)
         uGx, uGy = fem.Function(G), fem.Function(G)
@@ -459,7 +529,18 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         solver2 = _create_solver(A2, domain.comm)
         C_ = _solve_step(L_C, a_C, bc_C, solver2, C_)
 
-        C_n.x.array[:] = np.maximum(C_.x.array[:], 0)
+        C_raw = np.maximum(C_.x.array[:], 0)
+
+        # --- Correcciones MRMT (después del solve FEM, antes de avanzar C_n) ---
+        if model == "mrmt_semi":
+            C_raw, C_im = _mrmt_semi_step(C_raw, C_im, mrmt_exp_lam_dt, mrmt_beta)
+            C_raw = np.maximum(C_raw, 0)
+        elif model == "mrmt_block":
+            C_prev_arr = C_n.x.array.copy()
+            C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef)
+            _update_C_im_sum(C_im_sum, C_im, np.array(p.alpha_r))
+
+        C_n.x.array[:] = C_raw
         Src_n.x.array[:] = Src.x.array[:]
         u_n.x.array[:] = u.x.array[:]
 
@@ -473,13 +554,16 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             H_hist.append(h_n.x.array.copy())
             C_hist.append(cG.x.array.copy())
             U_hist.append(np.column_stack([uGx.x.array, uGy.x.array]))
+            if C_im_hist is not None:
+                C_im_hist.append(C_im.copy())
 
     # --- Salidas configurables (mismas etapas que bfr: save_dat / animate /
     #     postproc). Se hacen aquí, con la historia ya recogida. ---
     if collect and domain.comm.rank == 0:
         from fenicsx import io as fx_io
         if getattr(p, "save_dat", False):
-            fx_io.save_results(p.save_data, nodes_G, H_hist, C_hist, U_hist, dt)
+            fx_io.save_results(p.save_data, nodes_G, H_hist, C_hist, U_hist, dt,
+                               C_im_hist=C_im_hist)
         if getattr(p, "animate", False):
             fx_io.animate_results(p.save_video, G, H_hist, C_hist, U_hist, dt)
     if getattr(p, "postproc", False) and domain.comm.rank == 0:

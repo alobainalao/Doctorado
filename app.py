@@ -316,8 +316,11 @@ if submit:
         "z0": str(z0),
     })
 
+    FENICS_PYTHON = "/home/alex/miniconda3/envs/fenics_env/bin/python"
+    python_exe = FENICS_PYTHON if metodo == "fenicsx" else sys.executable
+
     process = subprocess.Popen(
-        [sys.executable, "run.py"],
+        [python_exe, "run.py"],
         cwd=os.getcwd(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
