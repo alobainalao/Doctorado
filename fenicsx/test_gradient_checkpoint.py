@@ -119,8 +119,8 @@ def main():
     ax.legend(fontsize=8)
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fig.savefig("fenicsx/gradient_checkpoint.png", dpi=150)
-    print("\nFigura guardada en fenicsx/gradient_checkpoint.png")
+    fig.savefig("gradient_checkpoint_fenicsx.png", dpi=150)
+    print("\nFigura guardada en gradient_checkpoint_fenicsx.png")
 
     min_errors = {label: min(errs) for label, errs in results.items()}
     print("\n=== Resumen ===")
