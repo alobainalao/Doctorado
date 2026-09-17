@@ -62,6 +62,7 @@ dx = ufl.dx(metadata={"quadrature_degree": _QD})
 from funtions.utils import chi_eps, dchi_eps, get_init_values
 from fenicsx.forward import (
     _config_phys, _boundaries_elements, _K_ope, _D_ope, _fuente_C,
+    _mrmt_exp_lam_dt,
 )
 
 
@@ -268,6 +269,15 @@ def _solve_forward(ctx, Q, zp):
     J1 = 0.0
     obs2_dt = 0.0   # Σ_n (∫δ_p C_n)² dt, sin ponderar por γ (para auto-escalar tests)
 
+    # MRMT: inicializar C_im y tasas de decaimiento.
+    is_mrmt = p.model.startswith("mrmt")
+    C_im_hist = []   # historial de C_im (None para ADR)
+    C_im, exp_lam_dt_mrmt = None, None
+    if is_mrmt:
+        exp_lam_dt_mrmt = _mrmt_exp_lam_dt(p)
+        n_dofs_C = C_prev.x.array.shape[0]
+        C_im = [np.zeros(n_dofs_C) for _ in range(int(p.Nr))]
+
     src_prev_amp = 0.0
     t = 0.0
     for n in range(Nt):
@@ -308,6 +318,26 @@ def _solve_forward(ctx, Q, zp):
         # (el forward físico recorta C≥0; aquí NO se recorta para no romper la
         # diferenciabilidad del funcional — el checkpoint compara J diferenciable)
 
+        # MRMT: post-procesamiento sobre los DOF de C_cur (sin recortar).
+        # Guarda C_im ANTES del update (estado en n) para el adjunto.
+        C_im_snap = None
+        if is_mrmt:
+            C_im_snap = [c.copy() for c in C_im]
+            if p.model == "mrmt_semi":
+                C_arr = C_cur.x.array[:]
+                for r in range(int(p.Nr)):
+                    e_r = float(exp_lam_dt_mrmt[r])
+                    C_im_new_r = C_arr + (C_im[r] - C_arr) * e_r
+                    C_arr = C_arr + float(p.beta[r]) * (C_im[r] - C_im_new_r)
+                    C_im[r] = C_im_new_r
+                C_cur.x.array[:] = C_arr
+            elif p.model == "mrmt_block":
+                C_old_n = C_prev.x.array[:]  # C del paso anterior (antes del solve)
+                C_new_arr = C_cur.x.array[:]
+                coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+                for r in range(int(p.Nr)):
+                    C_im[r] = coef[r] * (C_new_arr + C_old_n) + (1.0 - 2.0 * coef[r]) * C_im[r]
+
         # --- funcional J1 (observación en el pozo) ---
         Cwell = ctx.comm.allreduce(
             fem.assemble_scalar(fem.form(inner(delta_p, C_cur) * dx)), op=MPI.SUM
@@ -317,6 +347,8 @@ def _solve_forward(ctx, Q, zp):
 
         h_hist.append(h_cur.x.array.copy())
         C_hist.append(C_cur.x.array.copy())
+        if is_mrmt:
+            C_im_hist.append(C_im_snap)
 
         h_prev.x.array[:] = h_cur.x.array
         C_prev.x.array[:] = C_cur.x.array
@@ -331,7 +363,8 @@ def _solve_forward(ctx, Q, zp):
     J = J1 + J2 + J3
 
     return dict(h=h_hist, C=C_hist, chi=chi_hist, src=src_hist, J=J, J1=J1,
-                obs2_dt=obs2_dt, zp=zp, Q=np.asarray(Q, float))
+                obs2_dt=obs2_dt, zp=zp, Q=np.asarray(Q, float),
+                C_im=C_im_hist if is_mrmt else None)
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +429,15 @@ def _solve_adjoint_grad(ctx, states):
     psiC = fem.Function(Qs)
     psiH = fem.Function(G)
 
+    # MRMT: carry-over de ψ_C_im desde el paso n+1 (backward).
+    is_mrmt = p.model.startswith("mrmt")
+    C_im_hist = states.get("C_im") or []
+    psiC_im_N = None
+    if is_mrmt:
+        n_dofs_C = psiC.x.array.shape[0]
+        psiC_im_N = [np.zeros(n_dofs_C) for _ in range(int(p.Nr))]
+        exp_lam_dt_mrmt = _mrmt_exp_lam_dt(p)
+
     src_prev = np.concatenate([[0.0], states["src"][:-1]])  # amplitud previa por paso
 
     for n in range(Nt - 1, -1, -1):
@@ -426,10 +468,32 @@ def _solve_adjoint_grad(ctx, states):
         if termC_next is not None:
             rhsC.axpy(-1.0, termC_next)
             termC_next.destroy()
+
+        # MRMT Block: agregar Σ_r coef_r·ψ_C_im_r^{n+1} al RHS del adjunto
+        # (adjunto de la fuente 4R·α_r·φ·C_im en la forma de transporte).
+        if p.model == "mrmt_block" and psiC_im_N is not None:
+            coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+            for r in range(int(p.Nr)):
+                rhsC.array[:] += coef[r] * psiC_im_N[r]
+
         set_bc(rhsC, ctx.bc_C)   # ψ_C = 0 en el inlet (BC homogénea del adjunto)
         solver_C.solve(rhsC, psiC.x.petsc_vec)
         psiC.x.scatter_forward()
         rhsC.destroy()
+
+        # MRMT Block: actualizar ψ_C_im^{n-1} tras el solve de transporte adjunto.
+        # Adjunto de: C_im^n[r] = coef_r*(C^n + C^{n-1}) + (1-2·coef_r)·C_im^{n-1}[r]
+        # → ψ_C_im^{n-1}[r] = (1-2·coef_r)·ψ_C_im^n[r]
+        # El término coef_r·ψ_C_im^n se agrega a rhsC (ya hecho arriba) y a termC_next.
+        if p.model == "mrmt_block" and psiC_im_N is not None:
+            coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+            psiC_im_N_prev = psiC_im_N    # guardar para termC_next
+            psiC_im_n = [np.zeros_like(psiC_im_N[r]) for r in range(int(p.Nr))]
+            for r in range(int(p.Nr)):
+                psiC_im_n[r] = (1.0 - 2.0 * coef[r]) * psiC_im_N[r]
+            psiC_im_N = psiC_im_n
+        else:
+            psiC_im_N_prev = None
 
         # ---- ψ_h^n:  (∂R^h_n/∂h_n)^T ψ_h = −(∂R^C_n/∂h_n)^T ψ_C − termH_next ----
         Ach = assemble_matrix(
@@ -479,12 +543,37 @@ def _solve_adjoint_grad(ctx, states):
         dRc_dzp.destroy()
 
         # ---- couplings hacia el paso n−1 ----
+        # MRMT Semi: aplicar backward del operador splitting al ψ_C^n recién
+        # resuelto antes de calcular termC_next, de modo que el carry al paso
+        # n−1 sea (∂R^C_n/∂C_{n-1})^T @ ψ_C_transport^n (adjunto a nivel de
+        # transporte, antes del MRMT) — análogo al BFR BT @ psiC_N_transport.
+        if p.model == "mrmt_semi" and psiC_im_N is not None:
+            Nr_m = int(p.Nr)
+            beta_m = np.asarray(p.beta, float)
+            psiC_im_n_new = [np.zeros_like(psiC_im_N[r]) for r in range(Nr_m)]
+            psiC_arr = psiC.x.array[:].copy()
+            for r in range(Nr_m - 1, -1, -1):
+                e_r = float(exp_lam_dt_mrmt[r])
+                alpha_r = 1.0 - e_r
+                psiC_arr_new = (1.0 - beta_m[r] * alpha_r) * psiC_arr + alpha_r * psiC_im_N[r]
+                psiC_im_n_new[r] = beta_m[r] * alpha_r * psiC_arr + e_r * psiC_im_N[r]
+                psiC_arr = psiC_arr_new
+            psiC.x.array[:] = psiC_arr   # ψ_C_transport → usado en Acc_prev^T
+            psiC_im_N = psiC_im_n_new
+
         Acc_prev = assemble_matrix(
             fem.form(ufl.derivative(Rc, C_prev, dC)), bcs=[]
         ); Acc_prev.assemble()
         termC_next = psiC.x.petsc_vec.duplicate()
         Acc_prev.multTranspose(psiC.x.petsc_vec, termC_next)
         Acc_prev.destroy()
+
+        # MRMT Block: agregar coef_r·ψ_C_im^n al carry-over hacia C^{n-1}.
+        # (adjunto de la dependencia C_im^n[r] = coef_r*(C^n + C^{n-1}) + ...)
+        if psiC_im_N_prev is not None:
+            coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+            for r in range(int(p.Nr)):
+                termC_next.array[:] += coef[r] * psiC_im_N_prev[r]
 
         Ach_prev = assemble_matrix(
             fem.form(ufl.derivative(Rc, h_prev, dh)), bcs=[]

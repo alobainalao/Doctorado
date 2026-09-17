@@ -273,6 +273,12 @@ def _mrmt_params(p):
     return Nr, np.array(p.beta, float), exp_lam_dt, coef, float(p.alpha_sum)
 
 
+def _mrmt_exp_lam_dt(p):
+    """Retorna sólo el array exp(−λ_r·dt) de _mrmt_params."""
+    _, _, exp_lam_dt, _, _ = _mrmt_params(p)
+    return exp_lam_dt
+
+
 def _mrmt_semi_step(C_arr, C_im, exp_lam_dt, beta):
     """Operator splitting MRMT Semi: actualiza C_im y corrige C_m in-place."""
     for r in range(len(beta)):
