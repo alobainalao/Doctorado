@@ -33,7 +33,17 @@ def Lspacing(x, s_M=100, min_s=None):
 
 def spacing_func(xy):
     p = RUNTIME.get()
-    return Lspacing(np.atleast_2d(xy), s_M=p.spacing, min_s=p.min_sp)
+    if p.min_sp >= p.spacing:
+        # spacing uniforme — comportamiento original
+        return np.full(np.atleast_2d(xy).shape[0], p.spacing)
+    # Refinamiento local: solo basado en distancia al POZO (no a borde ni fuente).
+    # Usar dist_borde causaría nodos <min_sp en esquinas del polígono, rompiendo
+    # la condición de las matrices RBF-FD.
+    x = np.atleast_2d(xy)
+    dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
+    Ly = np.ptp(np.asarray(p.vert)[:, 1])
+    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(dist_pozo / Ly, 0, 1)) + p.min_sp
+    return np.clip(s_local, p.min_sp, p.spacing)
 
 
 # ---------------------------

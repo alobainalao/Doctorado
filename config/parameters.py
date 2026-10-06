@@ -24,7 +24,7 @@ class Parameters:
 
                 "activate_fuente", "activate_ext",
 
-                "spacing", "dt", "T",
+                "spacing", "min_sp", "dt", "T",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 
@@ -35,7 +35,7 @@ class Parameters:
                 # Optimización: pesos del funcional (los controla la app, tab
                 # Optimization) y cotas/iteraciones del optimizador.
                 "gamma", "koppa", "z0",
-                "Q_max", "zp_min", "zp_max", "opt_maxiter",
+                "Q_max", "Q_std", "zp_min", "zp_max", "opt_maxiter",
                 # Balance de agua / suministro (funtions/water_supply.py):
                 # el pozo debe cubrir un consumo diario con un tanque acotado.
                 "Vscale", "demand_day", "demand_agri",
@@ -168,13 +168,17 @@ class Parameters:
         # =========================
         self.ncols = int(np.ceil(np.sqrt(self.K)))
         self.nrows = int(np.ceil(self.K / self.ncols))
-        self.min_sp = self.spacing
+        self.min_sp = getattr(self, "min_sp", self.spacing)
 
         # =========================
         # PATHS
         # =========================
-        self.save_data = f"./data/output/{self.metodo}/data/{self.domain}/{self.model}"
-        self.save_video = f"./data/output/{self.metodo}/figures/{self.domain}/{self.model}"
+        # Separados por run_type ("standard"/"optimization"): así una corrida
+        # de optimización no mezcla sus iteraciones con las corridas de
+        # sanity-check, y cada quien vive bajo su propia carpeta.
+        self.run_type = getattr(self, "run_type", "standard")
+        self.save_data = f"./data/output/{self.metodo}/data/{self.domain}/{self.model}/{self.run_type}"
+        self.save_video = f"./data/output/{self.metodo}/figures/{self.domain}/{self.model}/{self.run_type}"
         self.save_preprocess = f"./data/input/{self.metodo}/{self.domain}/{self.model}"
 
         os.makedirs(self.save_data, exist_ok=True)
@@ -182,11 +186,22 @@ class Parameters:
         os.makedirs(self.save_preprocess, exist_ok=True)
 
         self.Nt = int(self.T / self.dt)
-        # Q0 que sigue la demanda en cada paso → S_n = S0 = constante (factible)
-        from funtions.water_supply import demand_vector
-        _Vscale = float(getattr(self, 'Vscale', 30.0))
-        _d0 = demand_vector(self, self.Nt)
-        _q0 = _d0 / (_Vscale * float(self.dt))
+
+        # Caudal fijo de referencia para run_type="standard" (sanity check /
+        # demo): mismo valor usado en las corridas de avance2 y documentado
+        # como escenario base en los comentarios de water_supply más abajo
+        # (Q~1e-3, dt=3.6e4). No es una restricción física, es el punto de
+        # comparación con la investigación ya publicada.
+        self.Q_std = getattr(self, "Q_std", 1e-3)
+
+        # Punto de partida Q0 = Q_std para todos los run_type.
+        # Para "optimization" el optimizador ajusta Q(t) libremente dentro de
+        # [0, Q_max] respetando la restricción de suministro (supply_constraint);
+        # usar Q_std como Q0 garantiza subsidencia de contaminante desde la
+        # primera iteración (bombeo suficiente para arrastrar el contaminante
+        # de z=+109 m hacia el pozo en z=−700 m) y JE ≠ 0 al arranque.
+        _q0 = np.full(self.Nt, self.Q_std)
+
         Q_base_rest = [1e-4, 1e-5, 0]
         self.Qout = [_q0.copy()] + [np.full(self.Nt, Q_base_rest[i]) for i in range(self.K - 1)]
 
@@ -216,8 +231,6 @@ class Parameters:
         self.pump_cycling = getattr(self, "pump_cycling",  True)  # ciclos bomba
         self.pump_ton     = getattr(self, "pump_ton",     20.0)  # h máx operación continua
         self.pump_toff    = getattr(self, "pump_toff",     4.0)  # h mín descanso
-
-        self.run_type = getattr(self, "run_type", "standard")
 
         # =========================
         # MRMT DERIVADOS

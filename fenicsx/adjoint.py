@@ -37,6 +37,7 @@ Controles: x = [Q_0, …, Q_{Nt−1}, z_p] (misma convención que
 (L-BFGS-B). Requiere el entorno `fenics_env` (dolfinx 0.11.0 conda-forge,
 ver fenicsx/README.md). `app.py` despacha automáticamente a ese entorno.
 """
+import os
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -187,9 +188,10 @@ def _flow_residual(ctx, h_cur, h_prev, Qc, zp_c):
 
 
 def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
-                        src_amp_c, src_amp_prev_c):
+                        src_amp_c, src_amp_prev_c, C_im_sum=None, alpha_sum=0.0):
     """R^C_n(C_cur; C_prev, h_cur, h_prev, χ(Q_n), z_p) = 0. La velocidad y la
-    dispersión son simbólicas en h (acople h→C exacto)."""
+    dispersión son simbólicas en h (acople h→C exacto).
+    Para mrmt_block: C_im_sum (fem.Function en Q) = Σ_r α_r·C_im_r y alpha_sum = Σ_r α_r."""
     p, phys = ctx.p, ctx.phys
     x = SpatialCoordinate(ctx.domain)
     z = TestFunction(ctx.Q)
@@ -204,7 +206,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     gauss_C = _gauss(x, ctx.xp, zp_c, ctx.es)
     src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
 
-    return (
+    F_C = (
         R * inner(ctx.phi * (C_cur - C_prev) / p.dt, z) * dx
         + theta * _D_ope(C_cur, z, D_new) * dx
         + (1 - theta) * _D_ope(C_prev, z, D_old) * dx
@@ -217,6 +219,12 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
         + theta * inner(chi_c * gauss_C * C_cur, z) * dx
         + (1 - theta) * inner(chi_c * gauss_C * C_prev, z) * dx
     )
+    if C_im_sum is not None and alpha_sum:
+        F_C += (
+            R * alpha_sum * inner(ctx.phi * (C_cur + C_prev), z) * dx
+            - 2.0 * R * inner(ctx.phi * C_im_sum, z) * dx
+        )
+    return F_C
 
 
 # ---------------------------------------------------------------------------
@@ -271,12 +279,21 @@ def _solve_forward(ctx, Q, zp):
 
     # MRMT: inicializar C_im y tasas de decaimiento.
     is_mrmt = p.model.startswith("mrmt")
-    C_im_hist = []   # historial de C_im (None para ADR)
+    C_im_hist = []         # historial de C_im (None para ADR)
+    C_pre_mrmt_hist = []   # C_t^n pre-MRMT (solo mrmt_semi, para grad en adjunto)
     C_im, exp_lam_dt_mrmt = None, None
+    C_im_sum_func = None   # fem.Function para acoplamiento MRMT_Block
+    _mrmt_alpha_r = None
+    _mrmt_alpha_sum = 0.0
     if is_mrmt:
         exp_lam_dt_mrmt = _mrmt_exp_lam_dt(p)
         n_dofs_C = C_prev.x.array.shape[0]
         C_im = [np.zeros(n_dofs_C) for _ in range(int(p.Nr))]
+        if p.model == "mrmt_block":
+            C_im_sum_func = fem.Function(Qs)
+            C_im_sum_func.x.array[:] = 0.0
+            _mrmt_alpha_r = np.asarray(p.alpha_r, float)
+            _mrmt_alpha_sum = float(p.alpha_sum)
 
     src_prev_amp = 0.0
     t = 0.0
@@ -299,7 +316,8 @@ def _solve_forward(ctx, Q, zp):
         # --- transporte ---
         dC = TrialFunction(Qs)
         Rc_trial = _transport_residual(
-            ctx, dC, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c
+            ctx, dC, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c,
+            C_im_sum=C_im_sum_func, alpha_sum=_mrmt_alpha_sum,
         )
         a_C = fem.form(ufl.lhs(Rc_trial))
         L_C = fem.form(ufl.rhs(Rc_trial))
@@ -321,9 +339,11 @@ def _solve_forward(ctx, Q, zp):
         # MRMT: post-procesamiento sobre los DOF de C_cur (sin recortar).
         # Guarda C_im ANTES del update (estado en n) para el adjunto.
         C_im_snap = None
+        C_pre_mrmt_snap = None   # C_t^n (pre-MRMT) para grad en adjunto
         if is_mrmt:
             C_im_snap = [c.copy() for c in C_im]
             if p.model == "mrmt_semi":
+                C_pre_mrmt_snap = C_cur.x.array.copy()   # save C_t^n before MRMT
                 C_arr = C_cur.x.array[:]
                 for r in range(int(p.Nr)):
                     e_r = float(exp_lam_dt_mrmt[r])
@@ -337,6 +357,11 @@ def _solve_forward(ctx, Q, zp):
                 coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
                 for r in range(int(p.Nr)):
                     C_im[r] = coef[r] * (C_new_arr + C_old_n) + (1.0 - 2.0 * coef[r]) * C_im[r]
+                # Actualizar C_im_sum para el próximo paso
+                acc = np.zeros(C_im_sum_func.x.array.shape[0])
+                for r in range(int(p.Nr)):
+                    acc += _mrmt_alpha_r[r] * C_im[r]
+                C_im_sum_func.x.array[:] = acc
 
         # --- funcional J1 (observación en el pozo) ---
         Cwell = ctx.comm.allreduce(
@@ -349,6 +374,8 @@ def _solve_forward(ctx, Q, zp):
         C_hist.append(C_cur.x.array.copy())
         if is_mrmt:
             C_im_hist.append(C_im_snap)
+            if C_pre_mrmt_snap is not None:
+                C_pre_mrmt_hist.append(C_pre_mrmt_snap)
 
         h_prev.x.array[:] = h_cur.x.array
         C_prev.x.array[:] = C_cur.x.array
@@ -364,7 +391,8 @@ def _solve_forward(ctx, Q, zp):
 
     return dict(h=h_hist, C=C_hist, chi=chi_hist, src=src_hist, J=J, J1=J1,
                 obs2_dt=obs2_dt, zp=zp, Q=np.asarray(Q, float),
-                C_im=C_im_hist if is_mrmt else None)
+                C_im=C_im_hist if is_mrmt else None,
+                C_pre_mrmt=C_pre_mrmt_hist if C_pre_mrmt_hist else None)
 
 
 # ---------------------------------------------------------------------------
@@ -417,6 +445,9 @@ def _solve_adjoint_grad(ctx, states):
     grad_Q = np.zeros(Nt)
     grad_zp = 0.0
 
+    psiH_hist = []   # acumula en orden backward; se invierte al final
+    psiC_hist = []
+
     def arr(fn_space, ufl_form):
         v = assemble_vector(fem.form(ufl_form))
         v.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
@@ -433,12 +464,22 @@ def _solve_adjoint_grad(ctx, states):
     is_mrmt = p.model.startswith("mrmt")
     C_im_hist = states.get("C_im") or []
     psiC_im_N = None
+    C_im_sum_func_bwd = None   # fem.Function para acoplamiento MRMT_Block backward
+    _bwd_alpha_r = None
+    _bwd_alpha_sum = 0.0
     if is_mrmt:
         n_dofs_C = psiC.x.array.shape[0]
         psiC_im_N = [np.zeros(n_dofs_C) for _ in range(int(p.Nr))]
         exp_lam_dt_mrmt = _mrmt_exp_lam_dt(p)
+        if p.model == "mrmt_block":
+            C_im_sum_func_bwd = fem.Function(Qs)
+            C_im_sum_func_bwd.x.array[:] = 0.0
+            _bwd_alpha_r = np.asarray(p.alpha_r, float)
+            _bwd_alpha_sum = float(p.alpha_sum)
 
     src_prev = np.concatenate([[0.0], states["src"][:-1]])  # amplitud previa por paso
+
+    C_pre_mrmt_list = states.get("C_pre_mrmt") or []  # C_t^n (pre-MRMT), solo mrmt_semi
 
     for n in range(Nt - 1, -1, -1):
         # cargar estados y controles del paso n
@@ -446,13 +487,26 @@ def _solve_adjoint_grad(ctx, states):
         h_prev.x.array[:] = states["h"][n - 1] if n > 0 else ctx.h0
         C_cur.x.array[:] = states["C"][n]
         C_prev.x.array[:] = states["C"][n - 1] if n > 0 else ctx.c0
+        # Para mrmt_semi: cargar C_t^n (pre-MRMT) para usar en dRc_dchi / dRc_dzp
+        if C_pre_mrmt_list:
+            C_cur_transport = C_pre_mrmt_list[n]   # array numpy pre-MRMT
+        else:
+            C_cur_transport = states["C"][n]        # ADR / mrmt_block: igual que C^n
         Qc.value = float(Q[n]) * bool(getattr(p, "activate_ext", True))
         chi_c.value = float(states["chi"][n])
         src_c.value = float(states["src"][n])
         src_prev_c.value = float(src_prev[n])
 
+        # MRMT Block: reconstruir C_im_sum del paso n desde el historial
+        if C_im_sum_func_bwd is not None and n < len(C_im_hist) and C_im_hist[n] is not None:
+            acc = np.zeros(n_dofs_C)
+            for r in range(int(p.Nr)):
+                acc += float(_bwd_alpha_r[r]) * C_im_hist[n][r]
+            C_im_sum_func_bwd.x.array[:] = acc
+
         Rc = _transport_residual(
-            ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c
+            ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c,
+            C_im_sum=C_im_sum_func_bwd, alpha_sum=_bwd_alpha_sum,
         )
         Rh = _flow_residual(ctx, h_cur, h_prev, Qc, zp_c)
 
@@ -476,6 +530,26 @@ def _solve_adjoint_grad(ctx, states):
             for r in range(int(p.Nr)):
                 rhsC.array[:] += coef[r] * psiC_im_N[r]
 
+        # MRMT Semi: aplicar backward del operador splitting AL RHS (antes del solve).
+        # Orden correcto: ψ_mrmt^n (= ∂J/∂C^n + termC_next) → MRMT adjoint → ψ_t^n
+        # El solve da directamente ψ_t^n = A_CC^{-T} ψ_t^n.
+        # Contraste con el orden incorrecto (aplicar DESPUÉS del solve) que produce
+        # A_CC^{-T}(ψ_mrmt^n) y luego MRMT·A_CC^{-T}(ψ_mrmt^n) ≠ A_CC^{-T}(MRMT·ψ_mrmt^n).
+        # Referencia: BFR step_adjoint (funtions/step_time.py líneas 157–169).
+        if p.model == "mrmt_semi" and psiC_im_N is not None:
+            Nr_m = int(p.Nr)
+            beta_m = np.asarray(p.beta, float)
+            psiC_im_n_new = [np.zeros_like(psiC_im_N[r]) for r in range(Nr_m)]
+            psiC_arr = rhsC.array[:].copy()
+            for r in range(Nr_m - 1, -1, -1):
+                e_r = float(exp_lam_dt_mrmt[r])
+                alpha_r = 1.0 - e_r
+                psiC_arr_new = (1.0 - beta_m[r] * alpha_r) * psiC_arr + alpha_r * psiC_im_N[r]
+                psiC_im_n_new[r] = beta_m[r] * alpha_r * psiC_arr + e_r * psiC_im_N[r]
+                psiC_arr = psiC_arr_new
+            rhsC.array[:] = psiC_arr
+            psiC_im_N = psiC_im_n_new
+
         set_bc(rhsC, ctx.bc_C)   # ψ_C = 0 en el inlet (BC homogénea del adjunto)
         solver_C.solve(rhsC, psiC.x.petsc_vec)
         psiC.x.scatter_forward()
@@ -496,9 +570,15 @@ def _solve_adjoint_grad(ctx, states):
             psiC_im_N_prev = None
 
         # ---- ψ_h^n:  (∂R^h_n/∂h_n)^T ψ_h = −(∂R^C_n/∂h_n)^T ψ_C − termH_next ----
+        # Ach = ∂R^C_n/∂h_cur contiene ∇C_cur (acople advectivo); debe evaluarse en
+        # C_t^n (solución de R^C=0), no en C^n_post (que incluye el update de MRMT).
+        # Para ADR/mrmt_block: C_t^n = C^n_post → sin efecto. Para mrmt_semi: distinto.
+        _C_cur_saved_h = C_cur.x.array.copy()
+        C_cur.x.array[:] = C_cur_transport
         Ach = assemble_matrix(
             fem.form(ufl.derivative(Rc, h_cur, dh)), bcs=[]
         ); Ach.assemble()
+        C_cur.x.array[:] = _C_cur_saved_h
         rhsH = psiH.x.petsc_vec.duplicate()
         Ach.multTranspose(psiC.x.petsc_vec, rhsH)
         rhsH.scale(-1.0)
@@ -510,6 +590,10 @@ def _solve_adjoint_grad(ctx, states):
         rhsH.destroy()
         Ach.destroy(); Acc_T.destroy()
 
+        # capturar estado adjunto del paso n (antes de los carry-overs)
+        psiH_hist.append(psiH.x.array.copy())
+        psiC_hist.append(psiC.x.array.copy())
+
         # ---- gradiente: dJ/dθ = ∂J/∂θ − ψ_h·∂R^h/∂θ − ψ_C·∂R^C/∂θ ----
         # Q_n:  J3 + flujo (Q·gauss_flow) + transporte (χ'(Q)·gauss_C·C)
         gQ = 2.0 * abs(zp - z0) * float(Q[n]) * dt
@@ -517,6 +601,19 @@ def _solve_adjoint_grad(ctx, states):
         gQ -= psiH.x.petsc_vec.dot(dRh_dQ)
         dRh_dQ.destroy()
         dchi = float(dchi_eps(np.array(Q[n])))
+
+        # z_p: término de observación J1 usa C^n_post (ANTES del swap a C_t^n).
+        grad_zp += gamma * 2.0 * Cwell * dt * ctx.comm.allreduce(
+            fem.assemble_scalar(fem.form(inner(ddelta_p, C_cur) * dx)), op=MPI.SUM
+        )
+        dRh_dzp = arr(G, Qc * inner(dgauss_flow, gtest) * dx)
+        grad_zp -= psiH.x.petsc_vec.dot(dRh_dzp)
+        dRh_dzp.destroy()
+
+        # dRc/dchi y dRc/dzp usan C_t^n (pre-MRMT para mrmt_semi; igual a C^n para ADR/block).
+        _C_cur_saved = C_cur.x.array.copy()
+        C_cur.x.array[:] = C_cur_transport
+
         dRc_dchi = arr(Qs, (
             theta * inner(gauss_C * C_cur, TestFunction(Qs))
             + (1 - theta) * inner(gauss_C * C_prev, TestFunction(Qs))
@@ -525,13 +622,6 @@ def _solve_adjoint_grad(ctx, states):
         dRc_dchi.destroy()
         grad_Q[n] = gQ
 
-        # z_p (acumula sobre pasos): J1 + acople adjunto (flujo y transporte)
-        grad_zp += gamma * 2.0 * Cwell * dt * ctx.comm.allreduce(
-            fem.assemble_scalar(fem.form(inner(ddelta_p, C_cur) * dx)), op=MPI.SUM
-        )
-        dRh_dzp = arr(G, Qc * inner(dgauss_flow, gtest) * dx)
-        grad_zp -= psiH.x.petsc_vec.dot(dRh_dzp)
-        dRh_dzp.destroy()
         ztest = TestFunction(Qs)
         dRc_dzp = arr(Qs, (
             theta * chi_c * inner(dgauss_C * C_cur, ztest)
@@ -542,25 +632,9 @@ def _solve_adjoint_grad(ctx, states):
         grad_zp -= psiC.x.petsc_vec.dot(dRc_dzp)
         dRc_dzp.destroy()
 
-        # ---- couplings hacia el paso n−1 ----
-        # MRMT Semi: aplicar backward del operador splitting al ψ_C^n recién
-        # resuelto antes de calcular termC_next, de modo que el carry al paso
-        # n−1 sea (∂R^C_n/∂C_{n-1})^T @ ψ_C_transport^n (adjunto a nivel de
-        # transporte, antes del MRMT) — análogo al BFR BT @ psiC_N_transport.
-        if p.model == "mrmt_semi" and psiC_im_N is not None:
-            Nr_m = int(p.Nr)
-            beta_m = np.asarray(p.beta, float)
-            psiC_im_n_new = [np.zeros_like(psiC_im_N[r]) for r in range(Nr_m)]
-            psiC_arr = psiC.x.array[:].copy()
-            for r in range(Nr_m - 1, -1, -1):
-                e_r = float(exp_lam_dt_mrmt[r])
-                alpha_r = 1.0 - e_r
-                psiC_arr_new = (1.0 - beta_m[r] * alpha_r) * psiC_arr + alpha_r * psiC_im_N[r]
-                psiC_im_n_new[r] = beta_m[r] * alpha_r * psiC_arr + e_r * psiC_im_N[r]
-                psiC_arr = psiC_arr_new
-            psiC.x.array[:] = psiC_arr   # ψ_C_transport → usado en Acc_prev^T
-            psiC_im_N = psiC_im_n_new
+        C_cur.x.array[:] = _C_cur_saved   # restaurar para Acc_prev / Acc_h a continuación
 
+        # ---- couplings hacia el paso n−1 ----
         Acc_prev = assemble_matrix(
             fem.form(ufl.derivative(Rc, C_prev, dC)), bcs=[]
         ); Acc_prev.assemble()
@@ -596,7 +670,12 @@ def _solve_adjoint_grad(ctx, states):
     grad_zp += 2.0 * koppa * (zp - z0)
     grad_zp += float(np.sum(np.asarray(Q) ** 2)) * dt * sgn
 
-    return np.concatenate([grad_Q, [grad_zp]])
+    # Invertir al orden forward (psiH_hist[0] = paso 0, ..., [Nt-1] = paso Nt-1)
+    adj_states = {
+        "psiH": np.asarray(psiH_hist[::-1]),   # (Nt, N_G)
+        "psiC": np.asarray(psiC_hist[::-1]),   # (Nt, N_Q)
+    }
+    return np.concatenate([grad_Q, [grad_zp]]), adj_states
 
 
 # ---------------------------------------------------------------------------
@@ -614,7 +693,8 @@ def functional_fenicsx(x, ctx):
 def gradient_fenicsx(x, ctx):
     Q, zp = _unpack(x)
     states = _solve_forward(ctx, Q, zp)
-    return _solve_adjoint_grad(ctx, states)
+    grad, _ = _solve_adjoint_grad(ctx, states)
+    return grad
 
 
 def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
@@ -651,9 +731,6 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
             print(f"[fenicsx-opt] J={J:.6e} (×{J_scale:.1e})  z_p={x[-1]:.4g}")
         return J / J_scale
 
-    def jac(x):
-        return gradient_fenicsx(x, ctx) / J_scale
-
     # Cotas físicas: Q(t) ≥ 0 hasta Q_max; z_p dentro del rango real de z de la
     # malla (con margen de un spacing). Igual criterio que L-BFGS-B anterior pero
     # ahora como Bounds de trust-constr (compatible con LinearConstraint).
@@ -674,6 +751,53 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         Ad, lbd, ubd = duty
         cons_list.append(LinearConstraint(Ad, lbd, ubd))
 
+    # p.save_data ya vive bajo .../optimization (run_type="optimization" es la
+    # única forma de llegar a optimize_fenicsx, ver main.py) — no anidar de nuevo.
+    save_on = bool(getattr(p, "save_dat", False))
+    animate_on = bool(getattr(p, "animate", False))
+    opt_dir = p.save_data
+    if save_on and ctx.comm.rank == 0:
+        os.makedirs(opt_dir, exist_ok=True)
+
+    n_jac = [0]
+
+    def jac(x):
+        Q_c, zp_c = _unpack(x)
+        if ctx.comm.rank == 0:
+            print(f"[fenicsx-opt grad #{n_jac[0]+1}] adjunto en z_p={zp_c:.1f}m ...",
+                  flush=True)
+        states = _solve_forward(ctx, Q_c, zp_c)
+        grad, adj_states = _solve_adjoint_grad(ctx, states)
+        n_jac[0] += 1
+        if save_on and ctx.comm.rank == 0:
+            iter_dir = os.path.join(opt_dir, f"iter_{n_jac[0]:03d}")
+            os.makedirs(iter_dir, exist_ok=True)
+            nodes_G = ctx.G.tabulate_dof_coordinates()[:, :2]
+            nodes_Q = ctx.Q.tabulate_dof_coordinates()[:, :2]
+            # forward
+            np.savez(f"{iter_dir}/simulation_results.npz",
+                     H=np.asarray(states["h"])[:, None, :],
+                     C=np.asarray(states["C"])[:, None, :],
+                     nodes=nodes_G, dt=p.dt, Q=states["Q"], zp=states["zp"])
+            # adjunto
+            from fenicsx import io as fx_io
+            fx_io.save_adjoint_results(
+                iter_dir, nodes_G, nodes_Q,
+                adj_states["psiH"], adj_states["psiC"], p.dt
+            )
+            if animate_on:
+                # Forward (H/C, sin V: este solver no lleva historial de
+                # velocidad) + adjunto (psi_H/psi_C) de ESTA iteración.
+                fx_io.animate_forward_fields(
+                    iter_dir, ctx.G, nodes_Q, states["h"], states["C"], p.dt,
+                    Q0=float(Q_c[0]),
+                )
+                fx_io.animate_adjoint_results(
+                    iter_dir, ctx.G, nodes_Q,
+                    adj_states["psiH"], adj_states["psiC"], p.dt,
+                )
+        return grad / J_scale
+
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
             "gtol": 1e-5, "xtol": 1e-8}
     res = minimize(fun, x0, jac=jac, method="trust-constr",
@@ -686,17 +810,58 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
               f"success={res.success}, nit={res.nit}, msg={res.message}")
         print(f"[fenicsx-opt] S(t)=[{S_opt.min():.3g}, {S_opt.max():.3g}]  "
               f"(S_max={getattr(p,'S_max',500.0)})")
-        if bool(getattr(p, "save_dat", False)):
-            import os
-            save_dir = p.save_data
-            os.makedirs(save_dir, exist_ok=True)
+        if save_on:
             np.savez(
-                f"{save_dir}/optimization_results.npz",
+                f"{opt_dir}/optimization_results.npz",
                 Q=np.asarray(history["Q"]),
                 zp=np.asarray(history["zp"]),
                 J=np.asarray(history["J"]),
                 x_opt=res.x, J_opt=J_phys, J_opt_scaled=res.fun, S_opt=S_opt,
             )
             print(f"[fenicsx-opt] historial guardado ✔  "
-                  f"{save_dir}/optimization_results.npz")
+                  f"{opt_dir}/optimization_results.npz")
+            try:
+                from scripts.opt_animation import render_opt_animation
+                render_opt_animation(
+                    np.asarray(history["Q"]), np.asarray(history["zp"]),
+                    np.asarray(history["J"]), dt=p.dt, fig_dir=opt_dir,
+                    title=f"FENICSX · {p.domain}/{p.model}",
+                )
+            except Exception as e:
+                print(f"[fenicsx-opt] aviso: no se pudo generar opt_animation ({e})")
     return res
+
+
+# ---------------------------------------------------------------------------
+# RUN_TYPE=comparison: forward físico + adjunto discreto, ambos guardados.
+# ---------------------------------------------------------------------------
+def adjoint_fenicsx(p, mesh_cache=None):
+    """Forward físico (Wendland C2 → simulation_results.npz) +
+    adjunto discreto (Gaussiano consistente → adjoint_results.npz).
+    Llamado desde main.py con run_type='comparison'."""
+    from fenicsx.forward import solve_forward_fenicsx
+    from fenicsx import io as fx_io
+
+    pozo = list(p.pozo)
+
+    # Forward físico: guarda simulation_results.npz en p.save_data
+    _orig = getattr(p, "save_dat", False)
+    p.save_dat = True
+    solve_forward_fenicsx(p.Qout[0], pozo, p, mesh_cache=mesh_cache)
+    p.save_dat = _orig
+
+    # Forward adjunto-consistente (gaussiano) + adjunto discreto
+    ctx = build_context(pozo, p, mesh_cache)
+    Q_arr = np.asarray(p.Qout[0], float).ravel()
+    zp    = float(pozo[1])
+    states = _solve_forward(ctx, Q_arr, zp)
+    _, adj_states = _solve_adjoint_grad(ctx, states)
+
+    # Guardar adjoint_results.npz (solo rank 0 en runs MPI)
+    if ctx.comm.rank == 0:
+        nodes_G = ctx.G.tabulate_dof_coordinates()[:, :2]
+        nodes_Q = ctx.Q.tabulate_dof_coordinates()[:, :2]
+        fx_io.save_adjoint_results(
+            p.save_data, nodes_G, nodes_Q,
+            adj_states["psiH"], adj_states["psiC"], p.dt,
+        )

@@ -382,6 +382,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     T_total = Nt * dt
 
     pozo_ext = np.array([pozo[0], pozo[1], 0.0])
+    fnte_ext = np.array([p.fnte[0], p.fnte[1], 0.0])   # fuente de contaminante ≠ pozo
 
     if mesh_cache is None:
         domain, facet_tags, porosidad_raw = build_mesh(pozo, spacing=p.spacing)
@@ -500,6 +501,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         expr_uGx = fem.Expression(u[0], G.element.interpolation_points)
         expr_uGy = fem.Expression(u[1], G.element.interpolation_points)
         nodes_G = G.tabulate_dof_coordinates()[:, :2]
+        nodes_Q = Q.tabulate_dof_coordinates()[:, :2] if C_im_hist is not None else None
 
     t = 0.0
     for step in range(Nt):
@@ -512,7 +514,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         u.interpolate(fem.Expression(expr_u, V.element.interpolation_points))
 
         src_amp = _fuente_C(t, T_total) if fuente_on else 0.0
-        Src.interpolate(lambda x: _gaussian_2d(x, pozo_ext, src_amp))
+        Src.interpolate(lambda x: _gaussian_2d(x, fnte_ext, src_amp))
 
         gate = float(chi_eps(np.array(Qout[step]))) if ext_on else 0.0
         delta_C.interpolate(lambda x: gate / (2 * np.pi * phys["epsilon_sink"] ** 2) * np.exp(
@@ -569,9 +571,10 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         from fenicsx import io as fx_io
         if getattr(p, "save_dat", False):
             fx_io.save_results(p.save_data, nodes_G, H_hist, C_hist, U_hist, dt,
-                               C_im_hist=C_im_hist)
+                               C_im_hist=C_im_hist, nodes_Q=nodes_Q)
         if getattr(p, "animate", False):
-            fx_io.animate_results(p.save_video, G, H_hist, C_hist, U_hist, dt)
+            fx_io.animate_results(p.save_video, G, H_hist, C_hist, U_hist, dt,
+                                  Q0=float(Qout[0]), C_im_hist=C_im_hist, nodes_Q=nodes_Q)
     if getattr(p, "postproc", False) and domain.comm.rank == 0:
         from fenicsx import postprocess as fx_post
         # si no se recogió C_hist (postproc sin save/animate), se arma al vuelo

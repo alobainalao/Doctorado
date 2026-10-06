@@ -1,14 +1,20 @@
 """
 Generación de malla FEM (gmsh + DOLFINx) del dominio real del acuífero.
 
-Adaptado de TesisCode/new_grid.py:generar_malla — la diferencia respecto al
-original es que el pozo (x_p, z_p) ya no está hardcodeado a [3700, -700]:
-se recibe como parámetro `pozo`, para que z_p pueda ser un control
-optimizable (igual que p.pozo en el backend bfr, ver config/geometry.py).
+El contorno del dominio es literalmente `config/geometry.py:build_geometry`
+(`p.vert`, el mismo pentágono que usa bfr para generar sus nodos RBF-FD) y
+la clasificación de fronteras inlet/outlet/wall replica
+`funtions/mesh.py:_boundary_config` — así ambos backends resuelven sobre el
+MISMO dominio. No se importa `funtions.mesh` directamente porque arrastra
+`rbf`/`shapely`, que no están instalados en `fenics_env` (ver
+fenicsx/README.md); el mapeo de bordes se duplica aquí, minimal y comentado.
 
-Reutiliza funtions.get_phi.well_layer_data() para la geometría de capas y
-porosidad — misma fuente de datos reales que ya usa el backend bfr, no se
-duplica aquí.
+El pozo (x_p, z_p) no está hardcodeado a [3700, -700]: se recibe como
+parámetro `pozo`, para que z_p pueda ser un control optimizable (igual que
+p.pozo en el backend bfr).
+
+Reutiliza funtions.get_phi.well_layer_data() sólo para la porosidad por
+capa (no para el contorno) — misma fuente de datos reales que ya usa bfr.
 
 Requiere un entorno con dolfinx + gmsh + mpi4py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
@@ -22,15 +28,25 @@ from mpi4py import MPI
 # arriba, de ahí el alias).
 from dolfinx.io import gmsh as gmshio
 
-from funtions.get_phi import well_layer_data, split_point, interpolar_bidimensional
+from funtions.get_phi import well_layer_data, interpolar_bidimensional
+from funtions.runtime import RUNTIME
+
+# Mismo mapeo edge-index -> grupo físico que funtions/mesh.py:_boundary_config
+# (edge i conecta vert[i] con vert[(i+1) % len(vert)], mismo orden que p.vert).
+# Duplicado aquí porque ese módulo no se puede importar en fenics_env (ver
+# docstring del archivo).
+_BOUNDARY_GROUPS = {
+    "real": {"inlet": [2], "outlet": [4], "wall": [0, 1, 3]},
+    "benchmark": {"inlet": [1], "outlet": [3], "wall": [0, 2]},
+}
 
 
-def generar_malla(vertices, puntos_internos, pozo, lc=80, output_file="data/fenicsx/malla_generada.msh"):
+def generar_malla(vertices, pozo, boundary_groups, lc=80, output_file="data/fenicsx/malla_generada.msh"):
     """
-    Genera la malla 2D del dominio real, embebiendo `pozo` como nodo de
-    malla (refinamiento local; la física de fuente/sumidero se evalúa vía
-    interpolación en `pozo`, no depende de qué punto exacto quedó
-    embebido — ver fenicsx/forward.py).
+    Genera la malla 2D sobre el polígono `vertices` (p.vert de bfr),
+    embebiendo `pozo` como nodo de malla (refinamiento local; la física de
+    fuente/sumidero se evalúa vía interpolación en `pozo`, no depende de qué
+    punto exacto quedó embebido — ver fenicsx/forward.py).
     """
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
@@ -48,26 +64,17 @@ def generar_malla(vertices, puntos_internos, pozo, lc=80, output_file="data/feni
         surface_id = gmsh.model.geo.addPlaneSurface([1], 1)
         gmsh.model.geo.synchronize()
 
-        embedded_points = []
-        for punto in puntos_internos:
-            pid = gmsh.model.geo.addPoint(punto[0], punto[1], 0, lc)
-            embedded_points.append(pid)
-
         pid_pozo = gmsh.model.geo.addPoint(float(pozo[0]), float(pozo[1]), 0, lc)
-        embedded_points.append(pid_pozo)
-
         gmsh.model.geo.synchronize()
-        gmsh.model.mesh.embed(0, embedded_points, 2, surface_id)
+        gmsh.model.mesh.embed(0, [pid_pozo], 2, surface_id)
 
-        # Fronteras físicas — mismos índices de línea que TesisCode/new_grid.py,
-        # dependen del orden de `vertices` (12 puntos externos, ver
-        # funtions/get_phi.py:split_point).
-        borders = {
-            "inlet": line_ids[2:6],
-            "walllet": line_ids[:2] + line_ids[6:9],
-            "outlet": line_ids[9:],
-        }
-        for name, entities in borders.items():
+        # Orden inlet -> wall -> outlet: addPhysicalGroup asigna tags
+        # secuenciales 1,2,3, y fenicsx/forward.py asume inlet_marker=1,
+        # outlet_marker=3 (ver _boundaries_elements) — mismo orden que
+        # funtions/mesh.py:_boundary_config para que ambos backends manden
+        # los mismos flujos por los mismos bordes físicos.
+        for name in ("inlet", "wall", "outlet"):
+            entities = [line_ids[i] for i in boundary_groups[name]]
             tag = gmsh.model.addPhysicalGroup(1, entities)
             gmsh.model.setPhysicalName(1, tag, name)
 
@@ -98,13 +105,17 @@ def build_mesh(pozo, spacing=80.0, output_file="data/fenicsx/malla_generada.msh"
     numpy array plano (no un dolfinx.fem.Function todavía; eso se arma en
     fenicsx/forward.py una vez definido el espacio de funciones G).
     """
-    puntos_dados, porosidad_n, _, _ = well_layer_data()
-    ext_points, int_points = split_point(puntos_dados)
+    p = RUNTIME.get()
+    try:
+        boundary_groups = _BOUNDARY_GROUPS[p.domain]
+    except KeyError:
+        raise ValueError(f"Dominio inválido: {p.domain}")
 
     domain, facet_tags = generar_malla(
-        ext_points, int_points, pozo, lc=spacing, output_file=output_file
+        p.vert, pozo, boundary_groups, lc=spacing, output_file=output_file
     )
 
+    puntos_dados, porosidad_n, _, _ = well_layer_data()
     malla_points = domain.geometry.x[:, :2]
     porosidad = interpolar_bidimensional(malla_points, puntos_dados, porosidad_n)
 
