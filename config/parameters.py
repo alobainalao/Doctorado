@@ -24,7 +24,7 @@ class Parameters:
 
                 "activate_fuente", "activate_ext",
 
-                "spacing", "min_sp", "dt", "T",
+                "spacing", "min_sp", "fenicsx_lc_near", "dt", "T",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 

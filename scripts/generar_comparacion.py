@@ -136,9 +136,16 @@ for case_i, model in (enumerate(models) if not grid_only else []):
                 "pre":      "true",    # fuerza repreprocess: garantiza matrices consistentes
             }
             if backend == "bfr":
-                # Malla con refinamiento local cerca del pozo: min_sp = spacing/2 = 15 m
-                # Mismo efecto que el refinamiento local de la malla gmsh de FEniCS.
-                sim_env["min_sp"] = "15"
+                # Refinamiento local cerca del pozo: min_sp=22 (spacing=30).
+                # Más que spacing/2=15 anterior: reduce artefactos de stencil RBF-FD
+                # con nodos muy juntos y da un cono de velocidad limpio pero visible.
+                sim_env["min_sp"] = "22"
+            elif backend == "fenicsx":
+                # Campo de distancia gmsh: lc_near=22m dentro de r=100m del pozo.
+                # FEniCS no tenía refinamiento local (lc uniforme=30m), lo que
+                # aplastaba el cono de velocidades. Con lc_near=22 ambos backends
+                # tienen densidad similar en el pozo → conos comparables.
+                sim_env["fenicsx_lc_near"] = "22"
             if "mrmt" in model:
                 # Parámetros MRMT no presentes en el entorno del OS
                 sim_env.update({
