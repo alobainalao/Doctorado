@@ -243,17 +243,23 @@ def grad_zp(
     Nt = len(Q)
 
     # --------------------------------------------------------
-    # 2γ ∫ C ∂C/∂z dt
+    # γ ∫∫ ∂g_p/∂z_p · C² dΩ dt
+    # Derivada DIRECTA de J₁ = γ∫∫ g_p C² dΩ dt respecto a z_p
+    # (sensibilidad explícita del kernel Gaussiano al mover el pozo).
+    # Fórmula: ∂g_p/∂z_p = g_p · (z−z_p)/ε_y²  (= d_g_dz)
+    # Nota: usa gauss_p (como compute_functional J₁), NO delta_p.
+    # Para C suave cerca del pozo, coincide con 2γ∫C ∂C/∂z δ_p dΩ dt
+    # hasta primer orden (los dos formulas dan lo mismo cuando C es lineal
+    # en (z−z_p)). Ver derivación en articulos/optimizacion-adjunto/§5.1.
     # --------------------------------------------------------
 
+    dgdzp = d_g_dz(d)
     term1 = 0.0
     for n in range(Nt):
         C_n = C[n].squeeze()
-        dCdz = d.grad[1]@C_n
+        term1 += np.sum(dgdzp * C_n**2 * d.wi) * p.dt
 
-        term1 += np.sum(dCdz *C_n * d.delta_p* d.wi)* p.dt
-
-    term1 *= 2.0 * p.gamma
+    term1 *= p.gamma
 
     # --------------------------------------------------------
     # - ∫ Q² dt
@@ -267,12 +273,6 @@ def grad_zp(
     # 2β(zp-z0)
     # --------------------------------------------------------
     term3 = 2.0*p.koppa*(d.pozo_cor[1] - d.z0)
-
-    # --------------------------------------------------------
-    # ∂g/∂zp
-    # --------------------------------------------------------
-
-    dgdzp = d_g_dz(d)
 
     # --------------------------------------------------------
     # Integral adjunta
