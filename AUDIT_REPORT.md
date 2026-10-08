@@ -81,9 +81,12 @@ el marco formal de verificación del gradiente y marcadores PENDIENTE precisos.*
 
 **C4 — Concentraciones negativas en BFR (1000+ nodos)**  
 El esquema θ=0.9 con los parámetros actuales produce valores negativos en C en
-aproximadamente 1.2% de los nodos en la simulación BFR/ADR. **Estado: documentado
-en comparison_report.txt (L∞ error); causa probable: difusión numérica insuficiente
-o gradiente de concentración alto cerca del pozo.**
+aproximadamente 1.2% de los nodos en la simulación BFR/ADR. **Estado: documentado —
+causa confirmada (2026-10-08): oscilaciones tipo Gibbs del esquema trapezoidal ponderado
+(θ=0.9 > 0.5) cerca del frente de concentración agudo. No se aplica clipping en
+ADR/MRMT Block para preservar linealidad del operador y exactitud del gradiente adjunto
+(comentario añadido en step_time.py). Para MRMT Semi el clipping es necesario por el
+splitting exponencial (ya presente en línea 49). Causa documentada en step_time.py.**
 
 ### 🟠 Importantes
 

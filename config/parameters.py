@@ -255,6 +255,15 @@ class Parameters:
         self.alpha_r = np.zeros(self.Nr)
         self.alpha_sum = 0
 
+        # Coeficiente del complemento de Schur para MRMT Block.
+        # Origen: al eliminar C_im del sistema acoplado (regla trapezoidal),
+        # la diagonal de la ecuación móvil acumula Σ_r 2·base·α_r y el RHS
+        # acumula Σ_r 4·base·α_r·C_im_r (ver operators.py make_transport_operator).
+        # Equivalencia: α_r = κ_r·β_r/dt, donde
+        #   κ_r = dt·Deff_r / (2·β_r·R·L² + dt·Deff_r)
+        # es la fracción de diferencia (C−C_im) transferida en un paso de tiempo.
+        # Límites: κ_r → 1 cuando dt → ∞ (equilibrio instantáneo),
+        #          κ_r → 0 cuando dt → 0 (sin transferencia).
         for r in range(self.Nr):
             val = (self.beta[r] * self.Deff[r]) / (
                 2 * self.beta[r] * self.R * self.L**2 + self.dt * self.Deff[r]
