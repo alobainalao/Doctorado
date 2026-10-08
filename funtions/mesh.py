@@ -34,11 +34,7 @@ def Lspacing(x, s_M=100, min_s=None):
 def spacing_func(xy):
     p = RUNTIME.get()
     if p.min_sp >= p.spacing:
-        # spacing uniforme — comportamiento original
         return np.full(np.atleast_2d(xy).shape[0], p.spacing)
-    # Refinamiento local: solo basado en distancia al POZO (no a borde ni fuente).
-    # Usar dist_borde causaría nodos <min_sp en esquinas del polígono, rompiendo
-    # la condición de las matrices RBF-FD.
     x = np.atleast_2d(xy)
     dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
     Ly = np.ptp(np.asarray(p.vert)[:, 1])
@@ -106,6 +102,15 @@ def build_nodes_var():
         boundary_groups=boundary_groups,
         boundary_groups_with_ghosts=boundary_groups_with_ghosts
     )
+
+    # Forzar nodo en la posición exacta del pozo (análogo a gmsh.embed en FEniCS)
+    # para que discrete_delta quede centrado en r=0.
+    well = np.asarray(p.pozo, dtype=float)
+    if np.linalg.norm(nodes - well, axis=1).min() > 0.5:
+        new_idx = len(nodes)
+        nodes = np.vstack([nodes, well])
+        normals = np.vstack([normals, [[0.0, 0.0]]])
+        groups['interior'] = np.append(groups['interior'], new_idx)
 
     idx_p = np.argmin(np.linalg.norm(nodes - p.pozo, axis=1))
 

@@ -1,4 +1,4 @@
-import matplotlib.pyplot as plt
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FFMpegWriter
@@ -87,7 +87,10 @@ def update_supertitles(figs, t):
 
 def get_colormaps():
 
-    base = plt.cm.get_cmap("turbo")
+    # matplotlib.colormaps[...] en vez de plt.cm.get_cmap(...) (removido en
+    # mpl 3.11): esta función corre tanto en bfr_env (mpl 3.10) como en
+    # fenics_env (mpl 3.11), debe funcionar en ambas.
+    base = matplotlib.colormaps["turbo"]
     colors = base(np.linspace(0.08, 1.0, 256))
 
     cmap_main = LinearSegmentedColormap.from_list(
@@ -95,7 +98,7 @@ def get_colormaps():
         colors
     )
 
-    base = plt.cm.get_cmap("inferno_r")
+    base = matplotlib.colormaps["inferno_r"]
     colors_main = base(np.linspace(0, 1.0, 240))
     gray_zero = np.array([[0.92, 0.92, 0.92, 1.0]])
 
@@ -196,30 +199,7 @@ def create_figures():
             fig_C_im.append(fig)
             axes_C_im.append(np.atleast_2d(axes))
 
-    from matplotlib.colors import LinearSegmentedColormap
-    base = plt.cm.get_cmap("turbo")
-
-    # Recorte para eliminar el azul oscuro inicial
-    colors = base(np.linspace(0.08, 1.0, 256))
-
-    cmap_main = LinearSegmentedColormap.from_list(
-        "turbo_paraview",
-        colors
-    )
-
-    base = plt.cm.get_cmap("inferno_r")
-    colors_main = base(np.linspace(0, 1.0, 240))
-    gray_zero = np.array([[0.92, 0.92, 0.92, 1.0]]) 
-
-    # Recorte para eliminar el azul oscuro inicial
-    colors = np.vstack((gray_zero, colors_main))
-
-
-    cmap_h = LinearSegmentedColormap.from_list(
-        "turbo_paraview",
-        colors,
-        256
-    )
+    cmap_main, cmap_h = get_colormaps()
 
     return [fig_H, fig_V, fig_C, fig_C_im], [np.atleast_2d(axes_H), np.atleast_2d(axes_V),
                      np.atleast_2d(axes_C), axes_C_im], [cmap_main, cmap_h]
@@ -401,32 +381,19 @@ def initialize_plots(d, Qout, axes, cmaps, figs):
                 )
 
         
-        ims = [
-            im_H[0][0],
-            im_V[0][0],
-            im_C[0][0]
-            ]
+        _CI = [0.62, 0.10, 0.33, 0.06]   # esquina inf-der vacía del pentágono
+        for ax_k, im_k, fig_k in [
+            (axes[0][i, j], im_H[i][j],   figs[0]),
+            (axes[1][i, j], im_V[i][j],   figs[1]),
+            (axes[2][i, j], im_C[i][j],   figs[2]),
+        ]:
+            cax = ax_k.inset_axes(_CI)
+            fig_k.colorbar(im_k, cax=cax, orientation='horizontal').ax.tick_params(labelsize=8)
         if "mrmt" in p.model:
             for r in range(p.Nr):
-
-                ims.append(
-                    im_C_im[r][0][0]
-                )
-
-
-        figs_flat = [f for item in figs for f in (item if isinstance(item, list) else [item])]
-        y_pos  = 0.90   # misma altura para las 3 colorbars (puedes cambiarlo)
-
-        for fig, im in zip(figs_flat, ims):
-
-            # Crear el eje para la colorbar (manual)
-            cax = fig.add_axes([0.15, y_pos, 0.70, 0.02])   # [x, y, width, height]
-
-            # Crear la colorbar
-            cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
-
-            # Números en rojo
-            cbar.ax.tick_params(colors='red')
+                cax = axes[3][r][i, j].inset_axes(_CI)
+                figs[3][r].colorbar(im_C_im[r][i][j], cax=cax,
+                                    orientation='horizontal').ax.tick_params(labelsize=8)
 
     return im_H, im_V, im_C, im_C_im, quiv_V
 
@@ -500,35 +467,16 @@ def initialize_adj_plots(d, axes, cmaps, figs):
         #     axes[2][r][i][j].set_title(r"$\psi_C^{im}$")
 
         # =================================================
-        # flatten images for colorbars
+        # COLORBARS — esquina inf-der vacía del pentágono
         # =================================================
-        ims = [
-            im_psiH[0][0],
-            im_psiC[0][0],
-        ]
+        _CI = [0.62, 0.10, 0.33, 0.06]
+        for ax_k, im_k, fig_k in [
+            (axes[0][i, j], im_psiH[i][j], figs[0]),
+            (axes[1][i, j], im_psiC[i][j], figs[1]),
+        ]:
+            cax = ax_k.inset_axes(_CI)
+            fig_k.colorbar(im_k, cax=cax, orientation='horizontal').ax.tick_params(labelsize=8)
 
-        # if "mrmt" in p.model:
-        #     for r in range(p.Nr):
-        #         ims.append(im_psiC_im[r][0][0])
-
-        # =================================================
-        # COLORBARS
-        # =================================================
-        figs_flat = [
-            f for item in figs
-            for f in (item if isinstance(item, list) else [item])
-        ]
-
-        y_pos = 0.94
-
-        for fig, im in zip(figs_flat, ims):
-
-            cax = fig.add_axes([0.15, y_pos, 0.70, 0.02])
-
-            cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
-
-            cbar.ax.tick_params(colors='black')
-    # , im_psiC_im, quiv
     return im_psiH, im_psiC
 
 

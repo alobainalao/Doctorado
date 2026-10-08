@@ -661,11 +661,15 @@ def optimize_bfr(d, p, max_iter=None):
 
     history   = {"Q": [], "zp": [], "J": []}
     save_dir  = p.save_data
-    os.makedirs(save_dir, exist_ok=True)
-    prog_path = os.path.join(save_dir, "progress.jsonl")
+    # p.save_data ya vive bajo .../optimization (run_type="optimization" es la
+    # única forma de llegar a optimize_bfr, ver main.py) — no anidar de nuevo.
+    opt_dir   = save_dir
+    os.makedirs(opt_dir, exist_ok=True)
+    prog_path = os.path.join(opt_dir, "progress.jsonl")
     open(prog_path, "w").close()
 
     n_fun  = [0]
+    n_jac  = [0]
     t0_opt = time.time()
     max_it = int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20))
 
@@ -699,8 +703,22 @@ def optimize_bfr(d, p, max_iter=None):
 
     def jac(u):
         x = to_phys(u)
-        _log(f"[bfr-opt grad #{n_fun[0]}] adjunto en z_p={x[-1]:.1f}m ...")
-        return gradient(x, d, p, animate=False, save_data=False) / abs_g
+        n_jac[0] += 1
+        _log(f"[bfr-opt grad #{n_jac[0]}] adjunto en z_p={x[-1]:.1f}m ...")
+        # Forward + adjunto de ESTA iteración van directo a su propio
+        # subdirectorio (datos .npz y animación H/V/C + psi_H/psi_C), en vez
+        # de pisar el .npz raíz de save_dir cada vez: se redirige save_data/
+        # save_video temporalmente (p es el mismo objeto que ya leen
+        # view.animation/view.plot a nivel de módulo).
+        iter_dir = os.path.join(opt_dir, f"iter_{n_jac[0]:03d}")
+        os.makedirs(iter_dir, exist_ok=True)
+        orig_data, orig_video = p.save_data, p.save_video
+        p.save_data, p.save_video = iter_dir, iter_dir
+        try:
+            g = gradient(x, d, p, animate=True, save_data=True) / abs_g
+        finally:
+            p.save_data, p.save_video = orig_data, orig_video
+        return g
 
     _log(f"[bfr-opt] z_p inicial={zp0:.1f}m  z0={getattr(p,'z0',0.0):.1f}m  "
          f"max_iter={max_it}  progress→{prog_path}")
@@ -721,11 +739,21 @@ def optimize_bfr(d, p, max_iter=None):
     _write({"status": "done", "J_opt": float(J_phys),
             "zp_opt": float(x_opt[-1]), "success": bool(res.success),
             "nit": int(res.nit)})
-    np.savez(f"{save_dir}/optimization_results.npz",
+    np.savez(f"{opt_dir}/optimization_results.npz",
              Q=np.asarray(history["Q"]), zp=np.asarray(history["zp"]),
              J=np.asarray(history["J"]),
              x_opt=x_opt, J_opt=res.fun, S_opt=S_opt)
-    _log(f"[bfr-opt] historial guardado ✔  {save_dir}/optimization_results.npz")
+    _log(f"[bfr-opt] historial guardado ✔  {opt_dir}/optimization_results.npz")
+
+    try:
+        from scripts.opt_animation import render_opt_animation
+        render_opt_animation(
+            np.asarray(history["Q"]), np.asarray(history["zp"]), np.asarray(history["J"]),
+            dt=p.dt, fig_dir=opt_dir, title=f"BFR · {p.domain}/{p.model}"
+        )
+    except Exception as e:
+        _log(f"[bfr-opt] aviso: no se pudo generar opt_animation ({e})")
+
     return res
 
 
@@ -869,6 +897,9 @@ class SimulationAdjoint:
                 eps_M=d.eps_M,
                 psiC_im_N=self.psi_C_im,
                 exp_lam_dt=d.exp_lam_dt,
+                forced_well_node=getattr(d, 'forced_well_node', -1),
+                forced_well_nbrs=getattr(d, 'forced_well_nbrs', None),
+                forced_well_idw=getattr(d, 'forced_well_idw', None),
             )
 
             if "mrmt" in p.model and psiC_im_n is not None:
