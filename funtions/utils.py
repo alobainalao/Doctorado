@@ -314,27 +314,23 @@ def grad_zp(
 
 
 def compute_functional(Q, zp, C, d):
+    """J = γ J₁ + J₂ + J₃  (consistente con grad_Q / grad_zp).
+
+    J₁ = ∫₀ᵀ ∫_Ω g_p(x) C(x,t)² dΩ dt   (kernel Gaussiano, igual al adjunto)
+    J₂ = κ |z_p − z₀|²
+    J₃ = |z_p − z₀| ∫₀ᵀ Q(t)² dt
+    """
     p = RUNTIME.get()
-
-    # -----------------------------------------------------
-    # ejemplo basado en tu funcional
-    # -----------------------------------------------------
-
     Nt = len(Q)
 
     J1 = 0.0
-
     for n in range(Nt):
-
-        # C[n] llega con eje de realización K (forma (1, N) cuando K=1); se
-        # aplana como en grad_Q/grad_zp para que delta_p @ C_n sea la
-        # concentración en el pozo (escalar), no un producto mal formado.
-        Cp = d.delta_p @ np.asarray(C[n]).squeeze()
-
-        J1 += p.gamma * np.sum(Cp**2* d.wi) * p.dt
+        # gauss_p es el kernel Gaussiano normalizado ∫g_p dΩ = 1;
+        # es el mismo kernel que usa grad_Q → J y ∇J son consistentes.
+        C_n = np.asarray(C[n]).squeeze()
+        J1 += p.gamma * np.sum(d.gauss_p * C_n**2 * d.wi) * p.dt
 
     J2 = p.koppa * abs(zp - d.z0)**2
-
     J3 = np.sum(Q**2) * p.dt * abs(zp - d.z0)
 
     return J1 + J2 + J3
