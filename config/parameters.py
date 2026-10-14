@@ -41,6 +41,7 @@ class Parameters:
                 "Vscale", "demand_day", "demand_agri",
                 "S0", "S_max", "t0_hour",
                 "pump_cycling", "pump_ton", "pump_toff",
+                "bfr_mesh",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}

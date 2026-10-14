@@ -214,9 +214,25 @@ def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
 
     nodes = all_nodes[keep_idxs]   # (N_clean, 2)
 
-    # Triangulación Delaunay solo sobre nodos del dominio
-    tri = Delaunay(nodes)
-    triangles = tri.simplices.astype(np.int64)   # (M, 3)
+    # Extraer frontera como polígono cerrado ordenado por ángulo respecto al
+    # centroide — necesario para CDT constrained que respete el borde.
+    import triangle as _tr
+    bnd_keys = [k for k in groups if k.startswith("boundary")]
+    bnd_all_old = np.concatenate([groups[k] for k in bnd_keys])
+    bnd_pts = all_nodes[bnd_all_old]
+    centroid = bnd_pts.mean(axis=0)
+    angle_order = np.argsort(
+        np.arctan2(bnd_pts[:, 1] - centroid[1], bnd_pts[:, 0] - centroid[0])
+    )
+    bnd_ordered = old_to_new[bnd_all_old[angle_order]]
+    n_bnd = len(bnd_ordered)
+    segs = np.column_stack([bnd_ordered, np.roll(bnd_ordered, -1)]).astype(np.int32)
+
+    # CDT con calidad q20 (ángulo mínimo ≥ 20°), S0 = sin Steiner en frontera.
+    # Usando los nodos BFR como puntos fijos: 0 nodos Steiner necesarios.
+    cdt = _tr.triangulate({"vertices": nodes, "segments": segs}, "pq20S0")
+    triangles = cdt["triangles"].astype(np.int64)   # (M, 3)
+    nodes = cdt["vertices"]   # puede incluir Steiner si q20 lo requiere
 
     # --- malla de celdas ---
     coord_elem = basix.ufl.element("Lagrange", "triangle", 1, shape=(2,))
@@ -251,6 +267,8 @@ def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
 
     domain.topology.create_entities(1)
     domain.topology.create_connectivity(1, 0)
+    domain.topology.create_connectivity(2, 1)
+    domain.topology.create_connectivity(1, 2)
     e2v = domain.topology.connectivity(1, 0)
     n_edges = e2v.num_nodes
 
@@ -265,12 +283,13 @@ def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
     tagged = np.sort(np.where(edge_markers > 0)[0]).astype(np.int32)
     facet_tags = meshtags(domain, 1, tagged, edge_markers[tagged])
 
-    # --- porosidad ---
+    # --- porosidad sobre nodos DOLFINx (puede incluir Steiner) ---
     from funtions.get_phi import well_layer_data, interpolar_bidimensional
     puntos_dados, porosidad_n, _, _ = well_layer_data()
-    porosidad = interpolar_bidimensional(nodes, puntos_dados, porosidad_n)
+    porosidad = interpolar_bidimensional(domain.geometry.x[:, :2], puntos_dados, porosidad_n)
 
-    print(f"[mesh] BFR pkl → DOLFINx: N={len(nodes)} nodos, {len(triangles)} triángulos")
+    n_steiner = len(nodes) - len(keep_idxs)
+    print(f"[mesh] BFR pkl → DOLFINx CDT: N={len(nodes)} nodos (+{n_steiner} Steiner), {len(triangles)} triángulos")
     return domain, facet_tags, porosidad
 
 
