@@ -56,7 +56,7 @@ BASE_BFR = {
     "metodo": "bfr",
     "run_type": "optimization",
     "domain": "real",
-    "spacing": 80,
+    "spacing": 30,
     "dt": 36000,
     "T": 3 * 36000,
     "save_dat": True,

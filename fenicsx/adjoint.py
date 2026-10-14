@@ -132,7 +132,7 @@ def build_context(pozo, p, mesh_cache):
     ctx.es = float(phys["epsilon_sink"])           # sumidero de transporte
     ctx.ex = float(phys.get("epsilon_x", 0.5 * p.spacing))   # fuente de contaminante
     ctx.ey = float(phys.get("epsilon_y", p.spacing))
-    ctx.ep = float(getattr(p, "epsilon_y", 30.0))  # observación en el pozo (J1)
+    ctx.ep = float(phys.get("epsilon_p", p.spacing))  # observación en el pozo (J1)
     return ctx
 
 
