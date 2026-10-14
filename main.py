@@ -28,8 +28,12 @@ def main():
         # Etapa de preprocesamiento configurable (flag `pre`): regenera la malla
         # o reusa la cacheada. Guardado/animación/postproceso los maneja el
         # forward según save_dat/animate/postproc (ver solve_forward_fenicsx).
-        from fenicsx.mesh import get_mesh
-        mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
+        from fenicsx.mesh import get_mesh, build_mesh_from_bfr_pkl
+        if getattr(p, "bfr_mesh", False):
+            pkl_path = f"data/input/bfr/real/{p.model}/preproceso.pkl"
+            mesh_cache = build_mesh_from_bfr_pkl(pkl_path)
+        else:
+            mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
 
         if p.run_type == "optimization":
             # Adjunto discreto (AD de UFL) + scipy L-BFGS-B sobre x=[Q(t), z_p].

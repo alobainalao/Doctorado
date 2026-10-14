@@ -1,6 +1,10 @@
 """
 Generación de malla FEM (gmsh + DOLFINx) del dominio real del acuífero.
 
+build_mesh_from_bfr_pkl() permite usar exactamente la nube de nodos BFR
+(con su triangulación Delaunay) como malla DOLFINx, para comparaciones
+nodo a nodo entre ambos backends.
+
 El contorno del dominio es literalmente `config/geometry.py:build_geometry`
 (`p.vert`, el mismo pentágono que usa bfr para generar sus nodos RBF-FD) y
 la clasificación de fronteras inlet/outlet/wall replica
@@ -20,9 +24,14 @@ Requiere un entorno con dolfinx + gmsh + mpi4py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
 """
 import os
+import pickle
 
 import gmsh
+import numpy as np
 from mpi4py import MPI
+import basix.ufl
+import dolfinx
+import dolfinx.mesh as dmesh
 # En DOLFINx >=0.11 el submódulo se renombró de dolfinx.io.gmshio a
 # dolfinx.io.gmsh (colisiona de nombre con el paquete `gmsh` importado
 # arriba, de ahí el alias).
@@ -166,6 +175,102 @@ def load_cached_mesh(output_file="data/fenicsx/malla_generada.msh"):
     puntos_dados, porosidad_n, _, _ = well_layer_data()
     porosidad = interpolar_bidimensional(domain.geometry.x[:, :2], puntos_dados, porosidad_n)
 
+    return domain, facet_tags, porosidad
+
+
+def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
+    """
+    Construye una malla DOLFINx usando exactamente los nodos y la triangulación
+    Delaunay del PKL de BFR.  Permite comparar FEniCS y BFR sobre el MISMO
+    conjunto de nodos (misma geometría discreta, distintos esquemas numéricos).
+
+    La etiqueta de facetas (facet_tags) se reconstruye a partir de los grupos
+    de frontera guardados en el PKL ('groups': dict edge_name -> índices globales).
+    Marcadores: inlet=1, wall=2, outlet=3  (igual que generar_malla).
+
+    Devuelve (domain, facet_tags, porosidad_array).
+    """
+    from scipy.spatial import Delaunay
+
+    with open(pkl_path, "rb") as f:
+        data = pickle.load(f)
+
+    all_nodes = data["nodes"]   # (N, 2) — incluye nodos ghost fuera del dominio
+    groups    = data["groups"]
+
+    # Excluir nodos ghost (fuera del dominio) — solo interior + boundary
+    ghost_idxs = set()
+    for key in groups:
+        if key.startswith("ghost"):
+            ghost_idxs.update(int(i) for i in groups[key])
+
+    keep_mask = np.ones(len(all_nodes), dtype=bool)
+    keep_mask[list(ghost_idxs)] = False
+    keep_idxs = np.where(keep_mask)[0]
+
+    # Reasignar índices: old_idx -> new_idx
+    old_to_new = np.full(len(all_nodes), -1, dtype=np.int64)
+    old_to_new[keep_idxs] = np.arange(len(keep_idxs))
+
+    nodes = all_nodes[keep_idxs]   # (N_clean, 2)
+
+    # Triangulación Delaunay solo sobre nodos del dominio
+    tri = Delaunay(nodes)
+    triangles = tri.simplices.astype(np.int64)   # (M, 3)
+
+    # --- malla de celdas ---
+    coord_elem = basix.ufl.element("Lagrange", "triangle", 1, shape=(2,))
+    domain = dmesh.create_mesh(
+        MPI.COMM_WORLD,
+        triangles,
+        coord_elem,
+        nodes.astype(np.float64),
+    )
+
+    # --- facet_tags desde grupos BFR ---
+    # DOLFINx reordena los vértices internamente, así que mapeamos por
+    # coordenadas (KDTree): buscamos cada DOF de la malla en nuestra nube
+    # original y asignamos su marker de frontera.
+    from scipy.spatial import cKDTree
+
+    dof_coords = domain.geometry.x[:, :2]   # coords en orden DOLFINx
+    tree = cKDTree(nodes)
+    _, dof_to_node = tree.query(dof_coords, k=1)  # dof i → nodo original
+
+    group_to_marker = {"boundary:inlet": 1, "boundary:wall": 2, "boundary:outlet": 3}
+    node_to_marker_orig = np.zeros(len(nodes), dtype=np.int32)
+    for key, marker in group_to_marker.items():
+        idxs = groups.get(key)
+        for idx in (idxs if idxs is not None else []):
+            new_idx = old_to_new[int(idx)]
+            if new_idx >= 0:
+                node_to_marker_orig[new_idx] = marker
+
+    # dof_marker[i] = marker del DOF i según DOLFINx
+    dof_marker = node_to_marker_orig[dof_to_node]
+
+    domain.topology.create_entities(1)
+    domain.topology.create_connectivity(1, 0)
+    e2v = domain.topology.connectivity(1, 0)
+    n_edges = e2v.num_nodes
+
+    edge_markers = np.zeros(n_edges, dtype=np.int32)
+    for e in range(n_edges):
+        verts = e2v.links(e)
+        m0, m1 = dof_marker[verts[0]], dof_marker[verts[1]]
+        if m0 > 0 and m0 == m1:
+            edge_markers[e] = m0
+
+    from dolfinx.mesh import meshtags
+    tagged = np.sort(np.where(edge_markers > 0)[0]).astype(np.int32)
+    facet_tags = meshtags(domain, 1, tagged, edge_markers[tagged])
+
+    # --- porosidad ---
+    from funtions.get_phi import well_layer_data, interpolar_bidimensional
+    puntos_dados, porosidad_n, _, _ = well_layer_data()
+    porosidad = interpolar_bidimensional(nodes, puntos_dados, porosidad_n)
+
+    print(f"[mesh] BFR pkl → DOLFINx: N={len(nodes)} nodos, {len(triangles)} triángulos")
     return domain, facet_tags, porosidad
 
 
