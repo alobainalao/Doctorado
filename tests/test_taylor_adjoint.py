@@ -100,10 +100,15 @@ def make_env(backend: str, model: str) -> dict:
 
 
 def _rng_direction(x0: np.ndarray, seed: int = 42) -> np.ndarray:
-    """Dirección aleatoria normalizada (reproducible)."""
+    """Dirección aleatoria normalizada en el espacio Q, zp fijo en 0.
+    x0 = [Q(t1), ..., Q(Nt), zp].  Perturbar zp con la misma escala que Q
+    haría que scale=700 domine y r0≈r1 (h·slope insignificante frente a h²).
+    """
     rng = np.random.default_rng(seed)
-    dm = rng.standard_normal(x0.shape)
-    return dm / np.linalg.norm(dm)
+    dm = np.zeros_like(x0)
+    dm[:-1] = rng.standard_normal(len(x0) - 1)   # solo componentes Q
+    dm[:-1] /= np.linalg.norm(dm[:-1])
+    return dm
 
 
 # ─────────────────────────── Backend BFR ────────────────────────────────────
@@ -136,10 +141,12 @@ def taylor_bfr(model: str) -> bool:
     dm    = _rng_direction(x0)
     slope = float(g0 @ dm)
 
-    print(f"  ⟨∇J, dm⟩ = {slope:.6e}")
+    # Escala relativa a ‖Q0‖ (no a max|x0| que está dominado por z_p ≈ −700)
+    scale = float(np.linalg.norm(Q0)) or float(p.Q_std)
+
+    print(f"  ⟨∇J, dm⟩ = {slope:.6e}  scale={scale:.3e}")
     print(f"\n  {'h':>10}  {'r0':>12}  {'r1':>12}  {'ratio_r0':>10}  {'ratio_r1':>10}")
 
-    scale = max(abs(x0).max(), 1.0)
     r0_prev = r1_prev = None
     r0s, r1s = [], []
     ok = False
@@ -213,10 +220,12 @@ def taylor_fenicsx(model: str) -> bool:
     dm = _rng_direction(x0)
     slope = float(g0 @ dm)
 
-    print(f"  J0={J0:.3e}  ⟨∇J, dm⟩={slope:.6e}")
+    # Escala relativa a ‖Q0‖
+    scale = float(np.linalg.norm(Q0)) or float(p.Q_std)
+
+    print(f"  J0={J0:.3e}  ⟨∇J, dm⟩={slope:.6e}  scale={scale:.3e}")
     print(f"\n  {'h':>10}  {'r0':>12}  {'r1':>12}  {'ratio_r0':>10}  {'ratio_r1':>10}")
 
-    scale = max(abs(x0).max(), 1.0)
     r0_prev = r1_prev = None
     r0s, r1s = [], []
 
