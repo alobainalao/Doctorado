@@ -130,7 +130,8 @@ def build_context(pozo, p, mesh_cache):
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
     ctx.ef = float(p.spacing)                      # sumidero de flujo
     ctx.es = float(phys["epsilon_sink"])           # sumidero de transporte
-    ctx.ex, ctx.ey = 5.0, 30.0                     # fuente de contaminante
+    ctx.ex = float(phys.get("epsilon_x", 0.5 * p.spacing))   # fuente de contaminante
+    ctx.ey = float(phys.get("epsilon_y", p.spacing))
     ctx.ep = float(getattr(p, "epsilon_y", 30.0))  # observación en el pozo (J1)
     return ctx
 
