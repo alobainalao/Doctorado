@@ -7,6 +7,7 @@ from scipy.linalg import solve
 from funtions.runtime import RUNTIME
 from funtions.utils import In_h, apply_boundary, fuente_C
 from scipy.spatial.distance import cdist
+from scipy.spatial import Delaunay
 
 # ---------------------------
 # 3) Operadores RBF-FD entre mallas
@@ -57,23 +58,23 @@ def rbf_matrix(nodes, eps):
     D = cdist(nodes, nodes)
     return phi(D, eps)
 
-def rbf_integration_weights(nodes, eps):
+def rbf_integration_weights(nodes, eps=None):
+    """Pesos de cuadratura por áreas de Delaunay.
+
+    Cada nodo recibe 1/3 del área de cada triángulo al que pertenece.
+    Satisface ∑w_i = área_del_dominio y ∫f dΩ ≈ ∑w_i f(x_i) con error
+    O(h²). El parámetro eps se conserva por compatibilidad pero se ignora.
     """
-    Compatible con librería rbf (consistente con RBF-FD)
-    """
-
-    N = len(nodes)
-
-    A = rbf_matrix(nodes, eps)
-
-    b = np.ones(N)
-
-    # estabilidad numérica
-    A += 1e-12 * np.eye(N)
-
-    w = solve(A, b, assume_a='sym')
-
-    return w
+    tri = Delaunay(nodes)
+    wi = np.zeros(len(nodes))
+    for simplex in tri.simplices:
+        v = nodes[simplex]
+        area = 0.5 * abs(
+            (v[1, 0] - v[0, 0]) * (v[2, 1] - v[0, 1])
+            - (v[2, 0] - v[0, 0]) * (v[1, 1] - v[0, 1])
+        )
+        wi[simplex] += area / 3.0
+    return wi
 
 
 # ============================================================
