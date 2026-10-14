@@ -17,6 +17,8 @@ from scipy.spatial import cKDTree
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from visualization.style import apply_style, PROFILES
+
 # ── rutas ────────────────────────────────────────────────────────────────────
 DATA = Path("data/output")
 BFR  = DATA / "bfr/data/real"
@@ -24,29 +26,40 @@ FEM  = DATA / "fenicsx/data/real"
 OUT  = Path("../tesis/salidas/cap4")
 OUT.mkdir(parents=True, exist_ok=True)
 
-# ── estilo ────────────────────────────────────────────────────────────────────
-THESIS_RC = {
-    "figure.dpi": 300,
-    "savefig.dpi": 300,
-    "font.size": 9,
-    "axes.labelsize": 9,
-    "axes.titlesize": 9,
-    "legend.fontsize": 8,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "lines.linewidth": 1.4,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "figure.figsize": (13 / 2.54, 7 / 2.54),
-}
+STYLE = "THESIS"
 
 def fig_save(fig, name):
-    path = OUT / f"{name}.pdf"
-    fig.savefig(path, dpi=300, bbox_inches="tight")
-    path2 = OUT / f"{name}.png"
-    fig.savefig(path2, dpi=300, bbox_inches="tight")
+    for ext in ("pdf", "png"):
+        path = OUT / f"{name}.{ext}"
+        fig.savefig(path, dpi=PROFILES[STYLE]["savefig.dpi"], bbox_inches="tight")
     plt.close(fig)
-    print(f"  ✓ {name}.pdf / .png")
+    print(f"  ok {name}.pdf / .png")
+
+
+def _load_sim(path):
+    """Carga simulation_results.npz con manejo unificado de shapes.
+
+    Retorna dict con nodes (N,2), H (Nt,N), C (Nt,N), U (Nt,N,2), dt.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+    d = np.load(path, allow_pickle=True)
+    nodes = d["nodes"]                        # (N, 2)
+    dt    = float(d["dt"])
+    H = np.squeeze(d["H"])                    # (Nt, N)
+    C = np.squeeze(d["C"])
+    U = d["U"].reshape(d["U"].shape[0], -1, 2)  # (Nt, N, 2)
+    return {"nodes": nodes, "dt": dt, "H": H, "C": C, "U": U}
+
+
+def _find_last_iter(opt_dir):
+    """Devuelve (path_iter1, path_iter_last) buscando carpetas iter_NNN/."""
+    opt_dir = Path(opt_dir)
+    dirs = sorted(opt_dir.glob("iter_*"))
+    if not dirs:
+        return None, None
+    return dirs[0] / "simulation_results.npz", dirs[-1] / "simulation_results.npz"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,21 +91,23 @@ def gen_btc():
 
     for nombre, path in modelos.items():
         if not path.exists():
-            print(f"  ⚠ falta {path}")
+            print(f"  falta {path}")
             continue
-        d   = np.load(path, allow_pickle=True)
-        nodes = d["nodes"]
-        C     = d["C"]
-        dt_val = float(d["dt"])
-        if C.ndim == 3:
-            C = C[:, 0, :]
+        try:
+            sim = _load_sim(path)
+        except Exception as e:
+            print(f"  error cargando {path}: {e}")
+            continue
+        nodes  = sim["nodes"]
+        C      = sim["C"]
+        dt_val = sim["dt"]
 
         tree = cKDTree(nodes)
         pts_idx = [tree.query([xi, zi])[1] for xi, zi, _ in MONITOR_PTS]
         series[nombre] = {i: C[:, pts_idx[i]] for i in range(len(MONITOR_PTS))}
 
     if not series or dt_val is None:
-        print("  ⚠ sin datos para BTCs")
+        print("  sin datos para BTCs")
         return
 
     Nt_plot = min(144, len(next(iter(series.values()))[0]))  # 60 días
@@ -101,7 +116,7 @@ def gen_btc():
     colores = {"ADR": "#1f77b4", "MRMT Semi": "#ff7f0e", "MRMT Bloque": "#2ca02c"}
     ls_map  = {"ADR": "-",       "MRMT Semi": "--",      "MRMT Bloque": ":"}
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(1, 3, figsize=(17/2.54, 6/2.54), sharey=False)
 
         for i, (ax, (xi, zi, lbl)) in enumerate(zip(axes, MONITOR_PTS)):
@@ -162,23 +177,26 @@ def gen_comparacion_bfr_fem():
     path_fem = FEM / "adr/comparison/simulation_results.npz"
 
     if not path_bfr.exists() or not path_fem.exists():
-        print("  ⚠ faltan datos de comparison/")
+        print("  faltan datos de comparison/")
         return
 
-    db = np.load(path_bfr, allow_pickle=True)
-    df = np.load(path_fem, allow_pickle=True)
+    try:
+        sb = _load_sim(path_bfr)
+        sf = _load_sim(path_fem)
+    except Exception as e:
+        print(f"  error cargando comparison/: {e}")
+        return
 
-    nodes_bfr = db["nodes"]
-    nodes_fem = df["nodes"]
+    nodes_bfr = sb["nodes"]
+    nodes_fem = sf["nodes"]
 
-    # Tomar último paso temporal disponible
-    H_bfr = db["H"][-1, 0]          # (N_bfr,)
-    C_bfr = db["C"][-1, 0]
-    U_bfr = db["U"][-1, 0, :, :]    # (N_bfr, 2)
+    H_bfr = sb["H"][-1]   # (N_bfr,)
+    C_bfr = sb["C"][-1]
+    U_bfr = sb["U"][-1]   # (N_bfr, 2)
 
-    H_fem = df["H"][-1, 0]
-    C_fem = df["C"][-1, 0]
-    U_fem = df["U"][-1, :, :]       # (N_fem, 2) — FEniCS no tiene dim extra
+    H_fem = sf["H"][-1]
+    C_fem = sf["C"][-1]
+    U_fem = sf["U"][-1]   # (N_fem, 2)
 
     # Interpolar BFR → grid FEM
     H_bfr_i = interp_bfr_to_fem(nodes_bfr, H_bfr, nodes_fem)
@@ -201,7 +219,7 @@ def gen_comparacion_bfr_fem():
     z_fem = nodes_fem[:, 1]
     s = 2  # tamaño scatter
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(3, 3, figsize=(17/2.54, 14/2.54))
 
         campos = [
@@ -243,7 +261,7 @@ def gen_comparacion_bfr_fem():
         fig_save(fig, "comparacion_bfr_fem_panel")
 
     # ── Figura 2: tabla de errores (texto en figura para incluir en tesis)
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, ax = plt.subplots(figsize=(10/2.54, 4/2.54))
         ax.axis("off")
         tabla = [
@@ -315,7 +333,7 @@ def gen_gradient_verification_from_checkpoint():
         "MRMT Semi BFR": "data/output/bfr/data/real/mrmt_semi/gradient_checkpoint.npz",
     }
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(1, 2, figsize=(14/2.54, 6/2.54))
 
         for ax, (nombre, path) in zip(axes, modelos.items()):
@@ -421,7 +439,7 @@ def _gen_gradient_schematic():
     err_teorico = eps**2 / 6 + eps_maq / (eps * np.abs(grad_Q[0]) + 1e-30)
     err_teorico /= err_teorico.max() / 0.5
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, ax = plt.subplots(figsize=(8/2.54, 6/2.54))
         ax.loglog(eps, err_teorico, "b-o", ms=4, label=r"$e_\mathrm{rel}(\varepsilon)$")
         ax.loglog(eps, (eps/eps[0])**2 * err_teorico[0] * 2, "k--", lw=1, label=r"$O(\varepsilon^2)$")
@@ -453,7 +471,7 @@ def gen_optimization_results():
     colores = {"ADR (BFR/RBF-FD)": "#1f77b4", "MRMT Semi (BFR/RBF-FD)": "#ff7f0e"}
 
     # ── Figura 1: Convergencia de J ──
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(1, 2, figsize=(14/2.54, 6/2.54))
         ax_J, ax_zp = axes
 
@@ -492,7 +510,7 @@ def gen_optimization_results():
         fig_save(fig, "optimizacion_convergencia")
 
     # ── Figura 2: Perfil Q(t) inicial vs óptimo ──
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(1, 2, figsize=(14/2.54, 6/2.54))
 
         for ax, (nombre, path) in zip(axes, datos.items()):
@@ -501,13 +519,14 @@ def gen_optimization_results():
                 continue
             d = np.load(path, allow_pickle=True)
             Q  = d["Q"]           # (n_iter, Nt)
-            dt_val = float(d["J"][0]) * 0  # placeholder
 
-            # Leer dt del archivo de simulación
+            # Leer dt del archivo de simulación (opt_results no lo guarda directamente)
             sim_path = Path(path).parent.parent / "simulation_results.npz"
             if sim_path.exists():
                 ds = np.load(sim_path, allow_pickle=True)
                 dt_val = float(ds["dt"])
+            elif "dt" in d:
+                dt_val = float(d["dt"])
             else:
                 dt_val = 36000.0  # default 10h
 
@@ -544,11 +563,10 @@ def gen_optimization_results():
 def _gen_campo_concentracion_opt():
     """Panel C(t_final) para Q_inicial y Q_óptima."""
     opt_path = Path("data/output/bfr/data/real/adr/optimization")
-    iter1 = opt_path / "iter_001/simulation_results.npz"
-    iter_last = opt_path / "iter_050/simulation_results.npz"
+    iter1, iter_last = _find_last_iter(opt_path)
 
-    if not iter1.exists() or not iter_last.exists():
-        print("  ⚠ sin datos de iteraciones individuales")
+    if iter1 is None or not iter1.exists() or not iter_last.exists():
+        print("  sin datos de iteraciones individuales")
         return
 
     d1   = np.load(iter1, allow_pickle=True)
@@ -561,7 +579,7 @@ def _gen_campo_concentracion_opt():
     x, z = nodes[:, 0], nodes[:, 1]
     vmax = max(C_init.max(), C_opt.max())
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(1, 3, figsize=(17/2.54, 6/2.54))
 
         sc0 = axes[0].scatter(x, z, c=C_init, cmap="viridis",
@@ -599,11 +617,16 @@ def gen_campos_flujo():
     if not path.exists():
         return
 
-    d = np.load(path, allow_pickle=True)
-    nodes = d["nodes"]
-    H = d["H"]
-    U = d["U"]
-    dt_val = float(d["dt"])
+    try:
+        sim = _load_sim(path)
+    except Exception as e:
+        print(f"  error: {e}")
+        return
+
+    nodes  = sim["nodes"]
+    H      = sim["H"]
+    U      = sim["U"]
+    dt_val = sim["dt"]
 
     # Tomar varios tiempos: t=0h, t=36h, t=72h (en pasos)
     Nt = H.shape[0]
@@ -612,11 +635,11 @@ def gen_campos_flujo():
 
     x, z = nodes[:, 0], nodes[:, 1]
 
-    with plt.rc_context(THESIS_RC):
+    with apply_style(STYLE):
         fig, axes = plt.subplots(2, 4, figsize=(17/2.54, 10/2.54))
 
-        H_vals = [H[ti, 0] for ti in tiempos]
-        Umag   = [np.linalg.norm(U[ti, 0], axis=-1) for ti in tiempos]
+        H_vals = [H[ti] for ti in tiempos]
+        Umag   = [np.linalg.norm(U[ti], axis=-1) for ti in tiempos]
 
         vH_min = min(v.min() for v in H_vals)
         vH_max = max(v.max() for v in H_vals)

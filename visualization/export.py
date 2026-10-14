@@ -28,15 +28,20 @@ def save_figure(fig, name: str, profile: str, output_dir: Path = None,
     name       : nombre base del archivo (sin extensión)
     profile    : "THESIS" | "PAPER" | "PAPER_WIDE" | "PRESENTATION"
     output_dir : directorio de salida (por defecto figures/<profile>/)
-    fmt        : "png" | "pdf" | "svg"
+    fmt        : "png" | "pdf" | "svg" — o "pdf+png" para guardar ambos
     tight      : usar bbox_inches="tight"
 
     Retorna
     -------
-    Path del archivo guardado
+    Path del archivo guardado (el primero si fmt="pdf+png")
     """
     if profile not in PROFILES:
         raise ValueError(f"Perfil desconocido: {profile}")
+
+    if fmt == "pdf+png":
+        p1 = save_figure(fig, name, profile, output_dir, "pdf", tight)
+        save_figure(fig, name, profile, output_dir, "png", tight)
+        return p1
 
     dpi = PROFILES[profile]["savefig.dpi"]
 
@@ -56,7 +61,7 @@ def save_figure(fig, name: str, profile: str, output_dir: Path = None,
 
 
 def save_all_profiles(fig, name: str, profiles=None, output_dir: Path = None,
-                      fmt: str = "png") -> dict:
+                      fmt: str = "pdf+png") -> dict:
     """
     Guarda `fig` en todos los perfiles indicados.
 

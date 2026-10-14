@@ -71,7 +71,7 @@ def plot_scalar_field(nodes, values, ax, cmap=None, vmin=None, vmax=None,
 def plot_vector_field(nodes, U, ax, subsample=200, scale=None,
                       color="#333333", title="", bg_scalar=None,
                       bg_cmap=None, bg_vmin=None, bg_vmax=None,
-                      bg_label="", point_size=0.3):
+                      bg_label="", point_size=0.3, seed=42):
     """
     Dibuja flechas quiver subsampled sobre una nube de puntos.
 
@@ -79,9 +79,11 @@ def plot_vector_field(nodes, U, ax, subsample=200, scale=None,
     U         : (N, 2)  campo vectorial
     subsample : número de flechas a mostrar (aleatorio uniforme)
     bg_scalar : (N,) campo escalar de fondo (opcional)
+    seed      : semilla para reproducibilidad del subsampling
     """
     N = len(nodes)
-    idx = np.random.choice(N, size=min(subsample, N), replace=False)
+    rng = np.random.default_rng(seed)
+    idx = rng.choice(N, size=min(subsample, N), replace=False)
 
     # Fondo escalar si se da
     sc = None
@@ -175,7 +177,8 @@ def plot_comparison_2x2(nodes, u_ref, u_approx, field_label, units,
 
         for ax, vals, title, cmap, vlo, vhi, cb_lbl in panels:
             norm = None
-            if cmap == COLORMAPS["divergent"] and vhi > 0:
+            if cmap == COLORMAPS["divergent"] and vhi > 0 and vlo < 0:
+                # TwoSlopeNorm requiere vmin < vcenter < vmax estricto
                 norm = TwoSlopeNorm(vmin=vlo, vcenter=0, vmax=vhi)
             sc = ax.scatter(
                 nodes[:, 0], nodes[:, 1],
