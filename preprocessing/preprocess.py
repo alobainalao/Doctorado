@@ -102,7 +102,7 @@ def run_preprocess():
             sig=+1
         )
 
-        if p.run_type == "optimization":
+        if p.run_type in ("optimization", "comparison"):
             wi = rbf_integration_weights(nodes, 2.0)
 
     N = nodes.shape[0]
@@ -167,8 +167,7 @@ def run_preprocess():
     if p.run_type in ("optimization", "comparison"):
         data["A_H"] = A_H
         data["B_H"] = B_H
-    if p.run_type == "optimization":
-        data["wi"] = wi
+        data["wi"] = wi  # necesario para la fuente adjunta ∂J/∂C = 2γ·gₚ·wi·C
         # z0 (profundidad de referencia del término económico): fuente única en
         # `p` para que la app lo controle y coincida con el backend fenicsx.
         data["z0"] = p.z0

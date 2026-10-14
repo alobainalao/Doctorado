@@ -96,7 +96,7 @@ def step_adjoint(
 
     gauss_p,
     gamma,
-    delta_p,
+    wi,
 
     grad,
 
@@ -178,12 +178,12 @@ def step_adjoint(
     else:
         psiC_N_transport = psiC_N
 
-    # RHS ψ_C
+    # RHS ψ_C  —  ∂J₁/∂C = 2γ · gauss_p · wi · C  (adjunto exacto de J₁ = γ∫gₚC²dΩ)
     rhs_C = BT @ psiC_N_transport
     rhs_C[idx_dom] += (
         2.0 * gamma
         * (C_N[idx_dom] + C_n[idx_dom])
-        * delta_p[idx_dom]
+        * gauss_p[idx_dom] * wi[idx_dom]
     )
 
     # --------------------------------------------------
