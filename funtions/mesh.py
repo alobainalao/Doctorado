@@ -32,14 +32,41 @@ def Lspacing(x, s_M=100, min_s=None):
 
 
 def spacing_func(xy):
+    """
+    Espaciado variable para la nube de nodos BFR.
+
+    Refina cerca del pozo (p.pozo) usando p.min_sp como espaciado mínimo.
+    Opcionalmente refina también cerca de la fuente de contaminante (p.fnte)
+    usando p.min_sp_fnte (si no está definido o es ≥ p.spacing, sin efecto).
+
+    La transición es suave: s = (s_max - s_min) * sqrt(clip(d/Ly, 0, 1)) + s_min
+    """
     p = RUNTIME.get()
-    if p.min_sp >= p.spacing:
+
+    min_sp_pozo  = getattr(p, "min_sp",       p.spacing)
+    min_sp_fnte  = getattr(p, "min_sp_fnte",  p.spacing)
+
+    if min_sp_pozo >= p.spacing and min_sp_fnte >= p.spacing:
         return np.full(np.atleast_2d(xy).shape[0], p.spacing)
-    x = np.atleast_2d(xy)
-    dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
+
+    x  = np.atleast_2d(xy)
     Ly = np.ptp(np.asarray(p.vert)[:, 1])
-    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(dist_pozo / Ly, 0, 1)) + p.min_sp
-    return np.clip(s_local, p.min_sp, p.spacing)
+
+    # Espaciado desde la distancia al pozo
+    s_pozo = p.spacing
+    if min_sp_pozo < p.spacing:
+        dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
+        s_pozo = (p.spacing - min_sp_pozo) * np.sqrt(np.clip(dist_pozo / Ly, 0, 1)) + min_sp_pozo
+
+    # Espaciado desde la distancia a la fuente de contaminante
+    s_fnte = p.spacing
+    if min_sp_fnte < p.spacing:
+        dist_fnte = np.linalg.norm(x - np.asarray(p.fnte), axis=1)
+        s_fnte = (p.spacing - min_sp_fnte) * np.sqrt(np.clip(dist_fnte / Ly, 0, 1)) + min_sp_fnte
+
+    # El espaciado final es el mínimo de ambas contribuciones
+    s_local = np.minimum(s_pozo, s_fnte)
+    return np.clip(s_local, min(min_sp_pozo, min_sp_fnte), p.spacing)
 
 
 # ---------------------------
