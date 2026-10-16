@@ -592,26 +592,31 @@ def nonlinear_cg(
 
 
 # =========================================================
-# OPTIMIZACIÓN CON scipy L-BFGS-B (paridad con el backend fenicsx)
+# OPTIMIZACIÓN — trust-constr (consistente con backend fenicsx)
 # =========================================================
 
 def optimize_bfr(d, p, max_iter=None):
     """Optimización adjunta MULTIOBJETIVO (Pareto) sobre x=[Q(t), z_p].
 
-    Minimiza J = gamma*J_m + J_e con:
-      J_m = ∫ C(x_p,z_p,t)² dt        (calidad: contaminación en el pozo)
-      J_e = kappa*|z_p-z0|² + |z_p-z0|*∫Q²dt  (costo: profundidad + bombeo)
+    Minimiza J = gamma*J1 + J2 + J3  (Cap. 3, ec. 3.9) con:
+      J1 = ∫∫ g_p(x) C(x,t)² dΩ dt       (calidad: kernel Gaussiano en pozo)
+      J2 = kappa * |z_p - z0|²             (costo de instalación)
+      J3 = |z_p - z0| * ∫ Q(t)² dt        (costo energético de bombeo)
 
-    z0 = posición de referencia del pozo (costo cero), típicamente la profundidad
-    inicial z0 = p.pozo[1]. Así J_e=0 en la posición actual y crece al moverlo.
-    gamma controla el punto de la frontera de Pareto: gamma grande → pozo más
-    superficial (menor J_m pero mayor J_e); gamma pequeño → pozo profundo.
+    z0 = p.z0 = nivel de la superficie del terreno (referencia física fija,
+    Cap. 3 §3.2). J2 y J3 son cero cuando z_p = z0 y crecen con la profundidad.
+    gamma controla el punto sobre la frontera de Pareto (Cap. 3 §Escalarización):
+      gamma grande → más peso a calidad → pozo más profundo (menor J1)
+      gamma pequeño → más peso a costo → pozo más superficial
 
-    Escalado por gradiente inicial: escala_i = 1/|∂J/∂x_i|, igualando magnitudes
-    de ∂J/∂Q (~10³) y ∂J/∂z_p (~10¹⁶) que de otro modo paralizan a SLSQP.
+    Escalado por gradiente inicial: escala_i = 1/|∂J/∂x_i|, necesario porque
+    |∂J/∂Q| ~ 10³ y |∂J/∂z_p| ~ 10¹⁶ en unidades físicas; trust-constr
+    trabaja en espacio escalado para mejor condicionamiento (Cap. 3 §Algoritmo).
+    Criterio de parada: norma del gradiente proyectado < gtol (condición KKT,
+    Cap. 3 Thm. existencia + Obs. Slater).
     Restricción lineal DURA de suministro 0 ≤ S_n ≤ S_max (water_supply.py)."""
     import time, json, sys
-    from scipy.optimize import minimize, LinearConstraint
+    from scipy.optimize import minimize, LinearConstraint, Bounds
     from funtions.water_supply import (supply_constraint, storage_trajectory,
                                        pump_upper_bounds, pump_duty_constraint)
 
@@ -659,13 +664,17 @@ def optimize_bfr(d, p, max_iter=None):
         ubd_u  = ubd - Ad @ x0
         cons_list.append(LinearConstraint(Ad_u, lbd_u, ubd_u))
 
-    history   = {"Q": [], "zp": [], "J": []}
+    history   = {"Q": [], "zp": [], "J": [], "grad_norm": []}
     save_dir  = p.save_data
-    os.makedirs(save_dir, exist_ok=True)
-    prog_path = os.path.join(save_dir, "progress.jsonl")
+    # p.save_data ya vive bajo .../optimization (run_type="optimization" es la
+    # única forma de llegar a optimize_bfr, ver main.py) — no anidar de nuevo.
+    opt_dir   = save_dir
+    os.makedirs(opt_dir, exist_ok=True)
+    prog_path = os.path.join(opt_dir, "progress.jsonl")
     open(prog_path, "w").close()
 
     n_fun  = [0]
+    n_jac  = [0]
     t0_opt = time.time()
     max_it = int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20))
 
@@ -699,14 +708,37 @@ def optimize_bfr(d, p, max_iter=None):
 
     def jac(u):
         x = to_phys(u)
-        _log(f"[bfr-opt grad #{n_fun[0]}] adjunto en z_p={x[-1]:.1f}m ...")
-        return gradient(x, d, p, animate=False, save_data=False) / abs_g
+        n_jac[0] += 1
+        _log(f"[bfr-opt grad #{n_jac[0]}] adjunto en z_p={x[-1]:.1f}m ...")
+        # Forward + adjunto de ESTA iteración van directo a su propio
+        # subdirectorio (datos .npz y animación H/V/C + psi_H/psi_C), en vez
+        # de pisar el .npz raíz de save_dir cada vez: se redirige save_data/
+        # save_video temporalmente (p es el mismo objeto que ya leen
+        # view.animation/view.plot a nivel de módulo).
+        iter_dir = os.path.join(opt_dir, f"iter_{n_jac[0]:03d}")
+        os.makedirs(iter_dir, exist_ok=True)
+        orig_data, orig_video = p.save_data, p.save_video
+        p.save_data, p.save_video = iter_dir, iter_dir
+        try:
+            g = gradient(x, d, p, animate=True, save_data=True) / abs_g
+        finally:
+            p.save_data, p.save_video = orig_data, orig_video
+        gn = float(np.linalg.norm(g))
+        history["grad_norm"].append(gn)
+        _log(f"[bfr-opt grad #{n_jac[0]}] ‖∇J‖={gn:.3e} (escalado)")
+        return g
 
+    # Verificar factibilidad de Slater: x0 debe satisfacer estrictamente
+    # las cotas para que las condiciones KKT sean aplicables (Cap. 3 Obs. Slater).
+    slater_ok = (np.all(x0[:-1] > lo_phys[:-1]) and np.all(x0[:-1] < hi_phys[:-1])
+                 and lo_phys[-1] < x0[-1] < hi_phys[-1])
     _log(f"[bfr-opt] z_p inicial={zp0:.1f}m  z0={getattr(p,'z0',0.0):.1f}m  "
-         f"max_iter={max_it}  progress→{prog_path}")
-    res = minimize(fun, u0, jac=jac, method="SLSQP",
-                   bounds=bounds_u, constraints=cons_list,
-                   options={"maxiter": max_it, "ftol": 1e-6})
+         f"max_iter={max_it}  Slater={'OK' if slater_ok else 'FRONTERA (KKT puede fallar)'}  "
+         f"progress→{prog_path}")
+    res = minimize(fun, u0, jac=jac, method="trust-constr",
+                   bounds=Bounds((lo_phys - x0) * abs_g, (hi_phys - x0) * abs_g),
+                   constraints=cons_list,
+                   options={"maxiter": max_it, "gtol": 1e-6})
 
     x_opt  = to_phys(res.x)
     S_opt  = storage_trajectory(x_opt[:-1], p)
@@ -721,11 +753,22 @@ def optimize_bfr(d, p, max_iter=None):
     _write({"status": "done", "J_opt": float(J_phys),
             "zp_opt": float(x_opt[-1]), "success": bool(res.success),
             "nit": int(res.nit)})
-    np.savez(f"{save_dir}/optimization_results.npz",
+    np.savez(f"{opt_dir}/optimization_results.npz",
              Q=np.asarray(history["Q"]), zp=np.asarray(history["zp"]),
              J=np.asarray(history["J"]),
+             grad_norm=np.asarray(history["grad_norm"]),
              x_opt=x_opt, J_opt=res.fun, S_opt=S_opt)
-    _log(f"[bfr-opt] historial guardado ✔  {save_dir}/optimization_results.npz")
+    _log(f"[bfr-opt] historial guardado ✔  {opt_dir}/optimization_results.npz")
+
+    try:
+        from scripts.opt_animation import render_opt_animation
+        render_opt_animation(
+            np.asarray(history["Q"]), np.asarray(history["zp"]), np.asarray(history["J"]),
+            dt=p.dt, fig_dir=opt_dir, title=f"BFR · {p.domain}/{p.model}"
+        )
+    except Exception as e:
+        _log(f"[bfr-opt] aviso: no se pudo generar opt_animation ({e})")
+
     return res
 
 
@@ -861,7 +904,7 @@ class SimulationAdjoint:
                 Qout_n=Qout[k][step - 1],
                 gauss_p=d.gauss_p,
                 gamma=p.gamma,
-                delta_p=d.delta_p,
+                wi=d.wi,
                 grad=d.grad,
                 nodes=d.nodes,
                 groups=d.groups,
@@ -869,6 +912,9 @@ class SimulationAdjoint:
                 eps_M=d.eps_M,
                 psiC_im_N=self.psi_C_im,
                 exp_lam_dt=d.exp_lam_dt,
+                forced_well_node=getattr(d, 'forced_well_node', -1),
+                forced_well_nbrs=getattr(d, 'forced_well_nbrs', None),
+                forced_well_idw=getattr(d, 'forced_well_idw', None),
             )
 
             if "mrmt" in p.model and psiC_im_n is not None:

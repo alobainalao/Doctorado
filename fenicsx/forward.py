@@ -84,6 +84,9 @@ def _config_phys(p):
     for k in _SHARED_WITH_BFR:
         phys[k] = getattr(p, k)
     phys["theta_C"] = phys["theta"]   # bfr usa un único theta para flujo y transporte
+    # Anchos de la fuente de contaminante: misma fórmula que bfr (geometry.py líneas 83-84)
+    phys["epsilon_x"] = getattr(p, "epsilon_x", 0.5 * p.spacing)
+    phys["epsilon_y"] = getattr(p, "epsilon_y", p.spacing)
 
     # Geometría de las fronteras de flujo: tomar de `p` (config/geometry.py) los
     # mismos valores que usa bfr al aplicar In_h/Out_h (ver H_vector), en vez de
@@ -171,8 +174,7 @@ def _fuente_C(t, T):
     return 1e-11 * t / T * np.exp(-8 * t / T) + 1e-12 * (1 - np.exp(-8 * t / T))
 
 
-def _gaussian_2d(x, pozo_ext, amplitude):
-    epsilon_x, epsilon_y = 5, 30
+def _gaussian_2d(x, pozo_ext, amplitude, epsilon_x, epsilon_y):
     normalization = 1.0 / (2 * np.pi * epsilon_x * epsilon_y)
     return amplitude * normalization * np.exp(
         -(((x[0] - pozo_ext[0]) ** 2) / (2 * epsilon_x ** 2) +
@@ -514,7 +516,8 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         u.interpolate(fem.Expression(expr_u, V.element.interpolation_points))
 
         src_amp = _fuente_C(t, T_total) if fuente_on else 0.0
-        Src.interpolate(lambda x: _gaussian_2d(x, fnte_ext, src_amp))
+        ex, ey = phys["epsilon_x"], phys["epsilon_y"]
+        Src.interpolate(lambda x: _gaussian_2d(x, fnte_ext, src_amp, ex, ey))
 
         gate = float(chi_eps(np.array(Qout[step]))) if ext_on else 0.0
         delta_C.interpolate(lambda x: gate / (2 * np.pi * phys["epsilon_sink"] ** 2) * np.exp(

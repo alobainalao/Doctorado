@@ -7,6 +7,7 @@ from scipy.linalg import solve
 from funtions.runtime import RUNTIME
 from funtions.utils import In_h, apply_boundary, fuente_C
 from scipy.spatial.distance import cdist
+from scipy.spatial import Delaunay
 
 # ---------------------------
 # 3) Operadores RBF-FD entre mallas
@@ -57,23 +58,23 @@ def rbf_matrix(nodes, eps):
     D = cdist(nodes, nodes)
     return phi(D, eps)
 
-def rbf_integration_weights(nodes, eps):
+def rbf_integration_weights(nodes, eps=None):
+    """Pesos de cuadratura por áreas de Delaunay.
+
+    Cada nodo recibe 1/3 del área de cada triángulo al que pertenece.
+    Satisface ∑w_i = área_del_dominio y ∫f dΩ ≈ ∑w_i f(x_i) con error
+    O(h²). El parámetro eps se conserva por compatibilidad pero se ignora.
     """
-    Compatible con librería rbf (consistente con RBF-FD)
-    """
-
-    N = len(nodes)
-
-    A = rbf_matrix(nodes, eps)
-
-    b = np.ones(N)
-
-    # estabilidad numérica
-    A += 1e-12 * np.eye(N)
-
-    w = solve(A, b, assume_a='sym')
-
-    return w
+    tri = Delaunay(nodes)
+    wi = np.zeros(len(nodes))
+    for simplex in tri.simplices:
+        v = nodes[simplex]
+        area = 0.5 * abs(
+            (v[1, 0] - v[0, 0]) * (v[2, 1] - v[0, 1])
+            - (v[2, 0] - v[0, 0]) * (v[1, 1] - v[0, 1])
+        )
+        wi[simplex] += area / 3.0
+    return wi
 
 
 # ============================================================
@@ -354,12 +355,18 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
     base = pho * p.R
     coef_identity = base * (2. / p.dt)
 
-    # if p.activate_ext and Qout and p.run_type != "optimization":
-    #     coef_identity -= sig * gauss_p
+    # Sumidero de contaminante en el pozo: el agua bombeada arrastra C disuelto.
+    # Análogo al término `delta_C * C` de FEniCS. Default True en default.json.
+    if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
+        coef_identity -= sig * gauss_p
 
     if p.model == "adr":
         coef_identity -= base * sig * p.landa
     elif p.model == "mrmt_block":
+        # Factor 2: complemento de Schur tras eliminar C_im analíticamente.
+        # La diagonal del sistema Schur-reducido lleva ±2·base·Σ_r α_r en LHS/RHS.
+        # El RHS acoplado lleva 4·base·α_r·C_im_r^n (ver C_vector).
+        # Derivación: alpha_r = κ_r·β_r/dt; ver config/parameters.py.
         coef_identity -= 2 * base * sig * p.alpha_sum
     elif p.model != "mrmt_semi":
         raise ValueError(f"Modelo no válido: {p.model}")
@@ -626,24 +633,15 @@ def make_adj_H_operator(
 
         coeffs_func=lambda i: [
 
-            # --------------------------------------------
-            # IDENTIDAD
-            #
-            # A = -2Ss/dt
-            # B = -2Ss/dt
-            # --------------------------------------------
-            -2.0 * S_s[i] / p.dt,
+            # Adjunto discreto exacto: A_H = A_left (operador de flujo forward).
+            # La ecuación de flujo es simétrica → A_left^T = A_left = A_H.
+            # Mismos coeficientes que make_H_operator "full".
+            S_s[i] / p.dt,
 
-            # --------------------------------------------
-            # DIFUSIÓN
-            #
-            # A = +K∇²
-            # B = -K∇²
-            # --------------------------------------------
-            -theta * sig * K[i, 0],
-            -theta * sig * K[i, 1],
-            -theta * sig * Div_K[i, 0],
-            -theta * sig * Div_K[i, 1],
+            theta * sig * K[i, 0],
+            theta * sig * K[i, 1],
+            theta * sig * Div_K[i, 0],
+            theta * sig * Div_K[i, 1],
         ]
     )
 def make_adj_H_bc(normals, K):
@@ -734,14 +732,17 @@ def build_adj_H_matrix(
 # ---------------------------
 # 5) RHS builders adapted for two meshes
 # ---------------------------
-def H_vector(H, M_right, delta_p, groups, nodes, N, operador= None, Qout_n=0, Qout_N=0):
+def H_vector(H, M_right, delta_p, groups, nodes, N, operador=None, Qout_n=0, Qout_N=0, gauss_p=None):
     p = RUNTIME.get()
     idx = np.hstack((groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'], groups['boundary:wall']))
 
     b = np.zeros(N)
     aux = H if operador == "Identity" else M_right @ H
     if p.activate_ext and operador != "Identity":
-        aux -= ((1-p.theta)*Qout_n + p.theta*Qout_N) * delta_p
+        # smooth_well_h=True → Gaussiano (mismo kernel que C extraction, igual que FEniCS)
+        # smooth_well_h=False → Wendland C2 compacto (default histórico)
+        well_kernel = gauss_p if (gauss_p is not None and getattr(p, "smooth_well_h", False)) else delta_p
+        aux -= ((1-p.theta)*Qout_n + p.theta*Qout_N) * well_kernel
 
     b[idx] = aux[idx]
     apply_boundary(b, nodes, groups.get('ghosts:inlet', []),
@@ -777,20 +778,22 @@ def C_vector(C, M_right, gauss_f, groups, t, T, N, C_im, pho):
     aux = M_right @ C
     b[idx] = aux[idx]
 
-    # 🔹 Fuente (ADR + MRMT semi)
-    if p.model == "adr" or p.model == "mrmt_semi":
+    # 🔹 Fuente de contaminación (todos los modelos)
+    if p.model in ("adr", "mrmt_semi", "mrmt_block"):
         fuente = (fuente_C(t, T) + fuente_C(t - p.dt, T)) * gauss_f
         b[idx] += fuente[idx]
+    else:
+        raise ValueError(f"Modelo no válido: {p.model}")
 
-    # 🔹 Acoplamiento MRMT block
-    elif p.model == "mrmt_block":
+    # 🔹 Acoplamiento MRMT block: C_im^n → C (complemento de Schur).
+    # Factor 4 = 2×2: un factor 2 del RHS Schur y otro de la regla trapezoidal.
+    # Exactamente el transpuesto del término 4·base·α_r que aparece en la
+    # actualización adjunta de ψ_im_r (step_time.py:step_adjoint).
+    if p.model == "mrmt_block":
         b[idx] += np.sum(
             4 * p.R * p.alpha_r[:, None] * pho[idx] * C_im[:, idx],
             axis=0
         )
-
-    else:
-        raise ValueError(f"Modelo no válido: {p.model}")
 
 
 

@@ -1,0 +1,2 @@
+model,tidx,t_days,N_bfr,N_fen,H_l2_rel,H_linf_abs,H_range_bfr,H_range_fen,C_l2_rel,C_linf_abs,C_max_bfr,C_max_fen,C_neg_bfr,U_l2_rel,U_linf_abs,U_max_bfr,U_max_fen,Ux_l2_rel,Uz_l2_rel,U_ang_mean_deg,U_ang_max_deg
+adr,71,29.58,16552,25917,0.000522,8.431404,17.0452,3.8163,0.325028,5.71e-11,9.74e-11,3.60e-11,1042,0.691648,1.99e-03,3.53e-03,1.93e-03,0.742078,0.740490,17.0376,179.9445

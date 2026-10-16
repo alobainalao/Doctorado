@@ -1,21 +1,17 @@
 """
-Checkpoint del gradiente adjunto del backend FEM (DOLFINx) — espejo de
-`tests/test_gradient_checkpoint.py` (backend bfr), pero llamando a
-`fenicsx.adjoint.functional_fenicsx` / `gradient_fenicsx`.
+Checkpoint del gradiente adjunto del backend FEM (DOLFINx).
 
-Compara el gradiente adjunto (∂J/∂Q_n, ∂J/∂z_p, obtenido vía ψ_C/ψ_h y AD de
-UFL) contra diferencias finitas centradas del MISMO funcional J(Q, z_p). Valida
-la CONSISTENCIA interna del adjunto discreto (no la comparación con bfr, que
-difiere por la discretización — ver fenicsx/README.md).
+Compara el gradiente adjunto (∂J/∂Q_n, ∂J/∂z_p) contra diferencias finitas
+centradas del MISMO funcional J(Q, z_p). Valida la consistencia interna del
+adjunto discreto para los tres modelos: adr, mrmt_semi, mrmt_block.
 
 Requiere el entorno `fenics_env` (dolfinx 0.11.0 conda-forge):
 
-    /home/alex/miniconda3/envs/fenics_env/bin/python -m fenicsx.test_gradient_checkpoint
+    /home/alex/miniconda3/envs/fenics_env/bin/python -m fenicsx.test_gradient_checkpoint [adr|mrmt_semi|mrmt_block]
 
-Criterio: el error relativo debe decrecer ~O(δ²) y luego crecer por redondeo
-(forma de "V" en log-log). Error ~O(1) para todo δ ⇒ gradiente incorrecto.
+Criterio: error relativo ~O(δ²) con "V" en log-log. O(1) ⇒ gradiente incorrecto.
 """
-import os
+import os, sys
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -30,11 +26,10 @@ from fenicsx.adjoint import (
 
 
 # Malla/horizonte reducidos para que corra en minutos (igual criterio que bfr).
-CHECKPOINT_ENV = {
+BASE_CHECKPOINT_ENV = {
     "metodo": "fenicsx",
     "run_type": "optimization",
     "domain": "real",
-    "model": "adr",
     "spacing": 120,     # malla gruesa (fenicsx es más caro que bfr)
     "dt": 36000,
     "T": 4 * 36000,     # horizonte corto: 4 pasos de tiempo
@@ -43,7 +38,23 @@ CHECKPOINT_ENV = {
     "postproc": False,
     "pre": True,
 }
+
+# Parámetros MRMT mínimos (Nr=2 cubre el loop multi-región; igual que bfr)
+MRMT_PARAMS = {
+    "Nr": 2,
+    "Deff":   [1e-9, 5e-10],
+    "beta":   [0.15, 0.10],
+    "phi_im": [0.1,  0.05],
+}
+
+def make_env(model: str) -> dict:
+    env = {**BASE_CHECKPOINT_ENV, "model": model}
+    if model.startswith("mrmt"):
+        env.update(MRMT_PARAMS)
+    return env
+
 # Toggles de diagnóstico por variable de entorno (para aislar términos z_p).
+CHECKPOINT_ENV = make_env("adr")
 for _k in ("activate_fuente", "activate_ext"):
     if _k in os.environ:
         CHECKPOINT_ENV[_k] = os.environ[_k].lower() == "true"
@@ -72,8 +83,17 @@ def checkpoint_component(label, x0, i, g_adjoint_i, ctx):
     return errors
 
 
-def main():
-    RUNTIME.params = Parameters(env=CHECKPOINT_ENV)
+def run_model(model: str) -> bool:
+    print(f"\n{'='*60}")
+    print(f"  Checkpoint FEniCS — model={model}")
+    print(f"{'='*60}")
+
+    env = make_env(model)
+    for _k in ("activate_fuente", "activate_ext"):
+        if _k in os.environ:
+            env[_k] = os.environ[_k].lower() == "true"
+
+    RUNTIME.params = Parameters(env=env)
     p = RUNTIME.get()
 
     mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=True)
@@ -84,13 +104,8 @@ def main():
     x0 = np.concatenate([Q0, [zp0]])
     Nt = len(Q0)
 
-    # -----------------------------------------------------------------
-    # Auto-escala γ para que la observación en el pozo (J1, y por tanto
-    # ψ_C/ψ_h) DOMINE sobre los términos económicos analíticos. Sin esto,
-    # con γ=1 la concentración (~1e-11) hace J1 despreciable y el checkpoint
-    # sólo validaría los términos económicos, no la maquinaria adjunta.
-    # También κ=0 para aislar la física en grad_zp.
-    # -----------------------------------------------------------------
+    # Auto-escala γ: fuerza J1 ≫ términos económicos para validar el adjunto
+    # físico. κ=0 aísla grad_zp de la economía.
     obs2_dt = _solve_forward(ctx, *_unpack(x0))["obs2_dt"]
     TARGET_J1 = 1e12
     p.gamma = TARGET_J1 / obs2_dt if obs2_dt > 0 else 1.0
@@ -99,7 +114,6 @@ def main():
     idx_to_check = sorted(set([0, Nt // 2, Nt - 1]))
     print(f"Nt={Nt}, índices de Q a chequear: {idx_to_check}")
 
-    # gradiente adjunto (una sola resolución forward+adjunta)
     g = gradient_fenicsx(x0, ctx)
 
     results = {}
@@ -113,14 +127,16 @@ def main():
         ax.loglog(DELTA_FRACTIONS, errors, marker="o", label=label)
     ax.set_xlabel(r"$\delta$ relativo ($\delta/|x_i|$)")
     ax.set_ylabel("error relativo")
-    ax.set_title("Checkpoint del gradiente adjunto (fenicsx)")
+    ax.set_title(f"Checkpoint gradiente adjunto — fenicsx/{model}")
     ax.axhline(TOL_RELATIVE_ERROR, color="k", linestyle="--",
                label=f"tolerancia ({TOL_RELATIVE_ERROR:.0e})")
     ax.legend(fontsize=8)
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fig.savefig("gradient_checkpoint_fenicsx.png", dpi=150)
-    print("\nFigura guardada en gradient_checkpoint_fenicsx.png")
+    fname = f"gradient_checkpoint_fenicsx_{model}.png"
+    fig.savefig(fname, dpi=150)
+    plt.close(fig)
+    print(f"\nFigura: {fname}")
 
     min_errors = {label: min(errs) for label, errs in results.items()}
     print("\n=== Resumen ===")
@@ -131,10 +147,28 @@ def main():
             all_pass = False
         print(f"{label}: error relativo mínimo = {min_err:.3e}  [{status}]")
 
-    print("\nCheckpoint OK." if all_pass else
-          "\nCheckpoint FALLÓ: revisar fenicsx/adjoint.py "
-          "(residuales/derivadas UFL, signos de la recursión, kernels z_p).")
+    print("Checkpoint OK." if all_pass else
+          "Checkpoint FALLÓ: revisar fenicsx/adjoint.py.")
     return all_pass
+
+
+def main():
+    # Si se pasa un modelo por CLI se corre solo ese; si no, los tres.
+    if len(sys.argv) > 1:
+        models = [sys.argv[1]]
+    else:
+        models = ["adr", "mrmt_semi", "mrmt_block"]
+
+    summary = {}
+    for model in models:
+        summary[model] = run_model(model)
+
+    print(f"\n{'='*60}")
+    print("RESUMEN GLOBAL")
+    for m, ok in summary.items():
+        print(f"  {m:15s}  {'OK' if ok else 'FALLA'}")
+    print(f"{'='*60}")
+    return all(summary.values())
 
 
 if __name__ == "__main__":

@@ -135,12 +135,7 @@ for case_i, model in (enumerate(models) if not grid_only else []):
                 "animate":  "false",
                 "pre":      "true",    # fuerza repreprocess: garantiza matrices consistentes
             }
-            if backend == "bfr":
-                # Refinamiento local cerca del pozo: min_sp=22 (spacing=30).
-                # Más que spacing/2=15 anterior: reduce artefactos de stencil RBF-FD
-                # con nodos muy juntos y da un cono de velocidad limpio pero visible.
-                sim_env["min_sp"] = "22"
-            elif backend == "fenicsx":
+            if backend == "fenicsx":
                 # Campo de distancia gmsh: lc_near=22m dentro de r=100m del pozo.
                 # FEniCS no tenía refinamiento local (lc uniforme=30m), lo que
                 # aplastaba el cono de velocidades. Con lc_near=22 ambos backends

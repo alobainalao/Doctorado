@@ -12,7 +12,7 @@ def main():
         # existe en fenics_env, y viceversa. Corre bajo fenics_env (ver app.py).
         from fenicsx.forward import solve_forward_fenicsx
 
-        if p.run_type not in ("standard", "optimization"):
+        if p.run_type not in ("standard", "optimization", "comparison"):
             raise ValueError(f"run_type desconocido: {p.run_type}")
 
         if p.domain != "real":
@@ -28,24 +28,44 @@ def main():
         # Etapa de preprocesamiento configurable (flag `pre`): regenera la malla
         # o reusa la cacheada. Guardado/animación/postproceso los maneja el
         # forward según save_dat/animate/postproc (ver solve_forward_fenicsx).
-        from fenicsx.mesh import get_mesh
-        mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
+        from fenicsx.mesh import get_mesh, build_mesh_from_bfr_pkl
+        if getattr(p, "bfr_mesh", False):
+            pkl_path = f"data/input/bfr/real/{p.model}/preproceso.pkl"
+            mesh_cache = build_mesh_from_bfr_pkl(pkl_path)
+        else:
+            mesh_cache = get_mesh(p.pozo, p.spacing, regenerate=bool(getattr(p, "pre", False)))
 
         if p.run_type == "optimization":
             # Adjunto discreto (AD de UFL) + scipy L-BFGS-B sobre x=[Q(t), z_p].
             from fenicsx.adjoint import optimize_fenicsx
             return optimize_fenicsx(p, mesh_cache=mesh_cache)
 
+        if p.run_type == "comparison":
+            # Forward físico + adjunto discreto, ambos guardados para comparación.
+            from fenicsx.adjoint import adjoint_fenicsx
+            return adjoint_fenicsx(p, mesh_cache=mesh_cache)
+
         return solve_forward_fenicsx(p.Qout[0], p.pozo, p, mesh_cache=mesh_cache)
 
-    from view.animation import solve_forward, optimize_bfr
+    from view.animation import solve_forward, solve_adjoint, optimize_bfr
     from preprocessing.preprocess import load_data
+    from funtions.utils import get_solucion
 
     d = load_data()
 
     if p.run_type == "standard":
         Qout = p.Qout
         solve_forward(d, Qout, animate, save_data)
+
+    elif p.run_type == "comparison":
+        # Forward + adjunto discreto guardados para comparación animada.
+        Qout = p.Qout
+        solve_forward(d, Qout, False, True)
+        h, U, C = get_solucion(
+            ["H", "U", "C"],
+            f"{p.save_data}/simulation_results.npz",
+        )
+        solve_adjoint(h, U, C, Qout, d, False, True)
 
     elif p.run_type == "optimization":
         # Adjunto (ψ_h/ψ_C validados por tests/test_gradient_checkpoint.py) +

@@ -12,16 +12,16 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
               pho, D_f, A_right, delta_p, gauss_p, gauss_f, Qout_n, Qout_N,
               t, T, exp_lam_dt):
     p = RUNTIME.get()
-    
+
     N = len(nodes)
     idx = np.hstack((groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'], groups['boundary:wall']))
-    
+
     D_n = D_total(D_f, U)
     Div_D_n = Div_KD(D_n, grad)
 
 
     # --- FLOW ---
-    rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N)
+    rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N, gauss_p=gauss_p)
     H = A_solver.solve(rhs)
 
     U = U_vector(H, K, grad)
@@ -35,6 +35,11 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     rhs = C_vector(C, C_right, gauss_f, groups, t, T, N, C_im, pho)
 
     C_new = splu(C_solver).solve(rhs)
+    # Nota: el esquema θ=0.9 puede producir valores ligeramente negativos (~1.2%
+    # de nodos en ADR/MRMT Block) cerca de gradientes abruptos (tipo Gibbs).
+    # No se aplica clipping aquí para preservar la linealidad del operador y la
+    # exactitud del gradiente adjunto. Para MRMT Semi el clipping es necesario
+    # porque el splitting exponencial puede amplificar esas oscilaciones.
 
     C_im_new = np.zeros_like(C_im)
 
@@ -91,7 +96,7 @@ def step_adjoint(
 
     gauss_p,
     gamma,
-    delta_p,
+    wi,
 
     grad,
 
@@ -102,6 +107,9 @@ def step_adjoint(
 
     psiC_im_N=None,   # (Nr, N) adjunto de C_im en n+1; None para ADR
     exp_lam_dt=None,  # tasas precomputadas para MRMT Semi
+    forced_well_node=-1,   # índice del nodo forzado en p.pozo (-1 si no hay)
+    forced_well_nbrs=None,  # vecinos Poisson-disc para IDW
+    forced_well_idw=None,   # pesos IDW normalizados
 ):
 
     p = RUNTIME.get()
@@ -170,17 +178,20 @@ def step_adjoint(
     else:
         psiC_N_transport = psiC_N
 
-    # RHS ψ_C
+    # RHS ψ_C  —  ∂J₁/∂C = 2γ · gauss_p · wi · C  (adjunto exacto de J₁ = γ∫gₚC²dΩ)
     rhs_C = BT @ psiC_N_transport
     rhs_C[idx_dom] += (
         2.0 * gamma
         * (C_N[idx_dom] + C_n[idx_dom])
-        * delta_p[idx_dom]
+        * gauss_p[idx_dom] * wi[idx_dom]
     )
 
     # --------------------------------------------------
     # MRMT Block: agregar coef_r·ψ_C_im_r^{n+1} al RHS
-    # (adjunto de ∂C_im_r^{n+1}/∂C^{n+1} = coef_r).
+    # Transpuesto de ∂C_im_r^{n+1}/∂C^{n+1} = κ_r (= dt·α_r/β_r).
+    # Demostración: en el bloque L^T del sistema adjunto, la fila C tiene
+    # -κ_r·I acoplada a C_im_r, que entra como +κ_r·ψ_im_r^{n+1} en rhs_C
+    # antes de resolver A_C^T·φ_C = rhs_C.
     # --------------------------------------------------
     if p.model == "mrmt_block" and psiC_im_N is not None:
         coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
@@ -191,6 +202,13 @@ def step_adjoint(
 
     # solve ψ_C
     psiC_n = splu(AT).solve(rhs_C)
+
+    # Corrección post-solve: el nodo forzado (r=0) tiene estencil RBF-FD degradado
+    # (todos sus vecinos están a r≥16m) y produce una oscilación espuria en ψ_C.
+    # Se reemplaza su valor por la interpolación IDW de sus vecinos Poisson-disc,
+    # lo que equivale a tratarlo como nodo de interpolación (no colocation) en el adjunto.
+    if forced_well_node >= 0 and forced_well_nbrs is not None:
+        psiC_n[forced_well_node] = np.dot(forced_well_idw, psiC_n[forced_well_nbrs])
 
     # --------------------------------------------------
     # MRMT Block: ψ_C_im_r^n tras el solve del transporte.

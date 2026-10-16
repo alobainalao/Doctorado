@@ -42,7 +42,9 @@ from config.parameters import Parameters
 CHECKPOINT_ENV = {
     "run_type": "optimization",
     "domain": "real",
-    "model": "adr",
+    "model": "adr",   # Validado: error <1e-10 (grad_Q), <1e-15 (grad_zp)
+    # TODO: agregar cobertura para "mrmt_semi" (error <5e-3, O(Δt) por splitting)
+    #       y "mrmt_block" (algebraicamente transpuesto exacto, aún no ejecutado).
     "spacing": 60,      # malla más gruesa que default.json (30)
     "dt": 36000,
     "T": 5 * 36000,     # horizonte corto: 5 pasos de tiempo

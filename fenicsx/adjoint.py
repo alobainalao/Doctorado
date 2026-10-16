@@ -130,8 +130,9 @@ def build_context(pozo, p, mesh_cache):
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
     ctx.ef = float(p.spacing)                      # sumidero de flujo
     ctx.es = float(phys["epsilon_sink"])           # sumidero de transporte
-    ctx.ex, ctx.ey = 5.0, 30.0                     # fuente de contaminante
-    ctx.ep = float(getattr(p, "epsilon_y", 30.0))  # observación en el pozo (J1)
+    ctx.ex = float(phys.get("epsilon_x", 0.5 * p.spacing))   # fuente de contaminante
+    ctx.ey = float(phys.get("epsilon_y", p.spacing))
+    ctx.ep = float(phys.get("epsilon_p", p.spacing))  # observación en el pozo (J1)
     return ctx
 
 
@@ -363,12 +364,12 @@ def _solve_forward(ctx, Q, zp):
                     acc += _mrmt_alpha_r[r] * C_im[r]
                 C_im_sum_func.x.array[:] = acc
 
-        # --- funcional J1 (observación en el pozo) ---
-        Cwell = ctx.comm.allreduce(
-            fem.assemble_scalar(fem.form(inner(delta_p, C_cur) * dx)), op=MPI.SUM
+        # --- funcional J1 = γ ∫δₚ C² dΩ  (consistente con BFR: J₁=γ∫gₚC²dΩ) ---
+        C2well = ctx.comm.allreduce(
+            fem.assemble_scalar(fem.form(delta_p * C_cur * C_cur * dx)), op=MPI.SUM
         )
-        J1 += gamma * Cwell ** 2 * dt
-        obs2_dt += Cwell ** 2 * dt
+        J1 += gamma * C2well * dt
+        obs2_dt += C2well * dt
 
         h_hist.append(h_cur.x.array.copy())
         C_hist.append(C_cur.x.array.copy())
@@ -515,10 +516,8 @@ def _solve_adjoint_grad(ctx, states):
         Acc_T = assemble_matrix(a_cc_T, bcs=ctx.bc_C); Acc_T.assemble()
         solver_C = _lu_solver(Acc_T, ctx.comm)
 
-        Cwell = ctx.comm.allreduce(
-            fem.assemble_scalar(fem.form(inner(delta_p, C_cur) * dx)), op=MPI.SUM
-        )
-        rhsC = arr(Qs, 2.0 * gamma * Cwell * dt * inner(delta_p, TestFunction(Qs)) * dx)
+        # ∂J₁/∂C · v = 2γ ∫ δₚ C v dΩ  (adjunto exacto de J₁ = γ∫δₚC²dΩ)
+        rhsC = arr(Qs, 2.0 * gamma * dt * inner(delta_p * C_cur, TestFunction(Qs)) * dx)
         if termC_next is not None:
             rhsC.axpy(-1.0, termC_next)
             termC_next.destroy()
@@ -602,9 +601,9 @@ def _solve_adjoint_grad(ctx, states):
         dRh_dQ.destroy()
         dchi = float(dchi_eps(np.array(Q[n])))
 
-        # z_p: término de observación J1 usa C^n_post (ANTES del swap a C_t^n).
-        grad_zp += gamma * 2.0 * Cwell * dt * ctx.comm.allreduce(
-            fem.assemble_scalar(fem.form(inner(ddelta_p, C_cur) * dx)), op=MPI.SUM
+        # ∂J₁/∂zp = γ ∫(∂δₚ/∂zp) C² dΩ  (J₁ = γ∫δₚC²dΩ, C fijo respecto a zp aquí)
+        grad_zp += gamma * dt * ctx.comm.allreduce(
+            fem.assemble_scalar(fem.form(ddelta_p * C_cur * C_cur * dx)), op=MPI.SUM
         )
         dRh_dzp = arr(G, Qc * inner(dgauss_flow, gtest) * dx)
         grad_zp -= psiH.x.petsc_vec.dot(dRh_dzp)
@@ -712,7 +711,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     x0 = np.concatenate([Q0, [float(pozo[1])]])
     n = len(x0)
 
-    history = {"Q": [], "zp": [], "J": []}
+    history = {"Q": [], "zp": [], "J": [], "grad_norm": []}
 
     # --- Normalización del funcional ---
     if ctx.comm.rank == 0:
@@ -796,8 +795,15 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                     iter_dir, ctx.G, nodes_Q,
                     adj_states["psiH"], adj_states["psiC"], p.dt,
                 )
-        return grad / J_scale
+        g_scaled = grad / J_scale
+        gn = float(np.linalg.norm(g_scaled))
+        history["grad_norm"].append(gn)
+        if ctx.comm.rank == 0:
+            print(f"[fenicsx-opt grad #{n_jac[0]}] ‖∇J‖={gn:.3e} (escalado, gtol=1e-5)")
+        return g_scaled
 
+    # gtol: norma del gradiente proyectado en espacio escalado (∥∇J/J_scale∥ < gtol)
+    # equivale a condición KKT (Cap. 3 Obs. Slater + Thm. existencia).
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
             "gtol": 1e-5, "xtol": 1e-8}
     res = minimize(fun, x0, jac=jac, method="trust-constr",
@@ -816,6 +822,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                 Q=np.asarray(history["Q"]),
                 zp=np.asarray(history["zp"]),
                 J=np.asarray(history["J"]),
+                grad_norm=np.asarray(history["grad_norm"]),
                 x_opt=res.x, J_opt=J_phys, J_opt_scaled=res.fun, S_opt=S_opt,
             )
             print(f"[fenicsx-opt] historial guardado ✔  "

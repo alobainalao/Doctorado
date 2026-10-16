@@ -1,0 +1,29 @@
+COMPARACIÓN CUANTITATIVA BFR/RBF-FD vs FEM/FEniCS
+===========================================================================
+Modelo       Campo      Err L2 rel     Err L∞ abs Notas
+---------------------------------------------------------------------------
+adr          H              0.0005         8.4314  range BFR=17.05 FEM=3.82
+             C              0.3250       5.71e-11  max BFR=9.74e-11 FEM=3.60e-11
+             |U|            0.6916       1.99e-03  max BFR=3.53e-03 FEM=1.93e-03  *** 1042 nodos con C<0
+             U_ang                                 medio=17.04°  máx=179.94°
+---------------------------------------------------------------------------
+
+INTERPRETACIÓN DE LAS MÉTRICAS
+---------------------------------------------------------------------------
+
+Error relativo L2:
+  < 0.05  : Excelente acuerdo cuantitativo
+  0.05–0.20: Acuerdo moderado (diferencias esperables por malla/BCs)
+  > 0.20  : Diferencia significativa — investigar causa
+
+Error L∞:
+  Diferencia máxima puntual (puede estar localizada en el pozo o frontera)
+
+Error angular del campo U:
+  < 5°  : Campo direccional prácticamente idéntico
+  5–15° : Diferencias moderadas en la dirección del flujo
+  > 15° : Discrepancias direccionales significativas
+
+H range BFR vs FEM:
+  Si range_BFR >> range_FEM → BCs de flujo diferentes (ver AUDIT_INVENTORY §3.1)
+  La razón conocida: BFR usa Dirichlet; FEniCS usa condición natural (Neumann).
