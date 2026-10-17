@@ -31,54 +31,90 @@ def Lspacing(x, s_M=100, min_s=None):
     return np.clip(spacing_local, min_s, s_M)
 
 
-def _dist_to_polyline(pts, polyline):
+def _s(d, s_min, s_max, d_far):
+    """Espaciado monotonamente creciente con la distancia d."""
+    return s_min + (s_max - s_min) * np.sqrt(np.clip(d / d_far, 0.0, 1.0))
+
+
+def _well_vertical_cone(pts, pozo, s_min, s_max, r0=150.0, r1=500.0, z_top=200.0):
     """
-    Distancia de cada punto en `pts` (N,2) a la polilínea más cercana.
-    La polilínea es un array (M,2) de vértices consecutivos.
+    Cono de succión vertical: máx densidad en el eje x=x_pozo para z>z_pozo,
+    expandiéndose lateralmente al subir. El cono conecta con la pluma en z_top.
+
+    Distancia efectiva:
+      - Eje (dx=0, dz>0): 0  → s_min
+      - Dentro del cono: dx escalado a [0, r0]
+      - Fuera del cono:  dx - w + r0  (exceso sobre el borde)
+      - Por debajo del pozo: distancia radial al pozo
     """
-    if len(polyline) < 2:
-        return np.linalg.norm(pts - polyline[0], axis=1)
-    ab_vecs = np.diff(polyline, axis=0)          # (M-1, 2)
-    ab2 = np.einsum('ij,ij->i', ab_vecs, ab_vecs)  # (M-1,)
-    # Para cada punto, distancia a cada segmento
     pts = np.atleast_2d(pts)
-    dists = np.empty((len(pts), len(ab_vecs)))
-    for k, (a, ab, l2) in enumerate(zip(polyline[:-1], ab_vecs, ab2)):
-        if l2 < 1e-20:
-            dists[:, k] = np.linalg.norm(pts - a, axis=1)
-        else:
-            t = np.clip(((pts - a) @ ab) / l2, 0.0, 1.0)
-            proj = a + t[:, None] * ab
-            dists[:, k] = np.linalg.norm(pts - proj, axis=1)
-    return dists.min(axis=1)
+    xp, zp = float(pozo[0]), float(pozo[1])
+    dz = pts[:, 1] - zp
+    dx = np.abs(pts[:, 0] - xp)
+
+    # Ancho del cono a altura dz sobre el pozo
+    dz_norm = np.clip(dz / (z_top - zp), 0.0, 1.0)
+    w = r0 + (r1 - r0) * dz_norm
+
+    d_radial = np.linalg.norm(pts - np.array([xp, zp]), axis=1)
+    d_inside = dx * r0 / np.maximum(w, 1e-10)
+    d_outside = dx - w + r0
+
+    d_cone = np.where(dz <= 0, d_radial,
+                      np.where(dx < w, d_inside, d_outside))
+
+    return _s(d_cone, s_min, s_max, r1 + 400.0)
 
 
 def spacing_func(xy):
+    """
+    Función de espaciado estratégico de la malla con 4 contribuciones:
+
+    1. Cono horizontal de la pluma  — eje = streamline Darcy, ancho creciente.
+    2. Vecindad radial del pozo     — mínimo en el pozo, aumenta al alejarse.
+    3. Cono vertical de succión     — desde el pozo hacia arriba, anisótropo.
+    4. Refinamiento en fronteras    — dentro de ~200 m de cualquier frontera.
+
+    En cada punto prevalece el espaciado más fino de los cuatro.
+    Si min_sp >= spacing, la malla es uniforme (comportamiento conservado).
+    """
     p = RUNTIME.get()
     if p.min_sp >= p.spacing:
         return np.full(np.atleast_2d(xy).shape[0], p.spacing)
-    x = np.atleast_2d(xy)
+
+    x    = np.atleast_2d(xy)
     pozo = np.asarray(p.pozo, float)
     fnte = np.asarray(p.fnte, float)
-    Ly = np.ptp(np.asarray(p.vert)[:, 1])
+    vert = np.asarray(p.vert, float)
+    s_min, s_max = float(p.min_sp), float(p.spacing)
 
-    # Intentar usar la streamline real de la pluma (calculada con Darcy).
-    # Si el pkl aún no existe (primera generación), usa solo pozo y fuente.
-    from funtions.plume import get_plume_streamline
+    # ── 1. Cono horizontal de la pluma ────────────────────────────────────
+    from funtions.plume import get_plume_streamline, plume_cone_dist
     plume_pts = get_plume_streamline()
-
-    dist_pozo = np.linalg.norm(x - pozo, axis=1)
-    dist_fnte = np.linalg.norm(x - fnte, axis=1)
-
     if plume_pts is not None and len(plume_pts) >= 2:
-        from funtions.plume import plume_cone_dist
-        dist_pluma = plume_cone_dist(x, plume_pts)
-        d = np.minimum.reduce([dist_pozo, dist_fnte, dist_pluma])
+        d_pluma = plume_cone_dist(x, plume_pts, w0=60.0, w1=500.0)
     else:
-        d = np.minimum(dist_pozo, dist_fnte)
+        d_pluma = np.minimum(np.linalg.norm(x - fnte, axis=1),
+                             np.linalg.norm(x - pozo, axis=1))
+    s_plume = _s(d_pluma, s_min, s_max, 500.0)
 
-    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(d / Ly, 0, 1)) + p.min_sp
-    return np.clip(s_local, p.min_sp, p.spacing)
+    # ── 2. Vecindad radial del pozo ───────────────────────────────────────
+    d_pozo = np.linalg.norm(x - pozo, axis=1)
+    s_pozo_r = _s(d_pozo, s_min, s_max, 600.0)
+
+    # ── 3. Cono vertical de succión (desde el pozo hacia arriba) ──────────
+    # z_top: nivel de la pluma (z de fnte); el cono conecta ambas zonas.
+    s_pozo_v = _well_vertical_cone(x, pozo, s_min, s_max,
+                                   r0=150.0, r1=500.0,
+                                   z_top=float(fnte[1]) + 50.0)
+
+    # ── 4. Fronteras (Shapely, igual que Lspacing) ────────────────────────
+    d_borde = np.array([
+        Polygon(vert).boundary.distance(Point(px, pz)) for px, pz in x
+    ])
+    s_borde = _s(d_borde, s_min, s_max, 200.0)
+
+    return np.minimum.reduce([s_plume, s_pozo_r, s_pozo_v, s_borde])
 
 
 # ---------------------------
