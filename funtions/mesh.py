@@ -31,15 +31,26 @@ def Lspacing(x, s_M=100, min_s=None):
     return np.clip(spacing_local, min_s, s_M)
 
 
-def _dist_to_segment(pts, a, b):
-    """Distancia de cada punto en `pts` (N,2) al segmento a→b."""
-    ab = np.asarray(b, float) - np.asarray(a, float)
-    ab2 = float(ab @ ab)
-    if ab2 == 0:
-        return np.linalg.norm(pts - a, axis=1)
-    t = np.clip(((pts - a) @ ab) / ab2, 0.0, 1.0)
-    proj = np.asarray(a, float) + t[:, None] * ab
-    return np.linalg.norm(pts - proj, axis=1)
+def _dist_to_polyline(pts, polyline):
+    """
+    Distancia de cada punto en `pts` (N,2) a la polilínea más cercana.
+    La polilínea es un array (M,2) de vértices consecutivos.
+    """
+    if len(polyline) < 2:
+        return np.linalg.norm(pts - polyline[0], axis=1)
+    ab_vecs = np.diff(polyline, axis=0)          # (M-1, 2)
+    ab2 = np.einsum('ij,ij->i', ab_vecs, ab_vecs)  # (M-1,)
+    # Para cada punto, distancia a cada segmento
+    pts = np.atleast_2d(pts)
+    dists = np.empty((len(pts), len(ab_vecs)))
+    for k, (a, ab, l2) in enumerate(zip(polyline[:-1], ab_vecs, ab2)):
+        if l2 < 1e-20:
+            dists[:, k] = np.linalg.norm(pts - a, axis=1)
+        else:
+            t = np.clip(((pts - a) @ ab) / l2, 0.0, 1.0)
+            proj = a + t[:, None] * ab
+            dists[:, k] = np.linalg.norm(pts - proj, axis=1)
+    return dists.min(axis=1)
 
 
 def spacing_func(xy):
@@ -50,11 +61,21 @@ def spacing_func(xy):
     pozo = np.asarray(p.pozo, float)
     fnte = np.asarray(p.fnte, float)
     Ly = np.ptp(np.asarray(p.vert)[:, 1])
-    # Distancia al pozo, a la fuente y al eje central de la pluma (segmento fnte→pozo)
+
+    # Intentar usar la streamline real de la pluma (calculada con Darcy).
+    # Si el pkl aún no existe (primera generación), usa solo pozo y fuente.
+    from funtions.plume import get_plume_streamline
+    plume_pts = get_plume_streamline()
+
     dist_pozo = np.linalg.norm(x - pozo, axis=1)
     dist_fnte = np.linalg.norm(x - fnte, axis=1)
-    dist_pluma = _dist_to_segment(x, fnte, pozo)
-    d = np.minimum.reduce([dist_pozo, dist_fnte, dist_pluma])
+
+    if plume_pts is not None and len(plume_pts) >= 2:
+        dist_pluma = _dist_to_polyline(x, plume_pts)
+        d = np.minimum.reduce([dist_pozo, dist_fnte, dist_pluma])
+    else:
+        d = np.minimum(dist_pozo, dist_fnte)
+
     s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(d / Ly, 0, 1)) + p.min_sp
     return np.clip(s_local, p.min_sp, p.spacing)
 

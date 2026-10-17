@@ -52,18 +52,21 @@ _BOUNDARY_GROUPS = {
 
 def generar_malla(vertices, pozo, boundary_groups, lc=80, lc_near=None,
                   r_near=100.0, r_far=350.0,
-                  fnte=None, r_near_pluma=150.0, r_far_pluma=500.0,
+                  fnte=None, plume_pts=None,
+                  r_near_pluma=150.0, r_far_pluma=500.0,
                   output_file="data/fenicsx/malla_generada.msh"):
     """
     Genera la malla 2D sobre el polígono `vertices`.
 
     lc            : tamaño global de elemento [m]
-    lc_near       : tamaño de elemento cerca del pozo/fuente/pluma; si es None o >= lc, malla uniforme.
-    r_near        : radio [m] del núcleo fino alrededor del pozo y la fuente
-    r_far         : radio [m] donde termina la transición al lc global (pozo/fuente)
-    fnte          : [x, z] posición de la fuente de contaminante; si se da, se refina el corredor fnte→pozo
-    r_near_pluma  : semi-ancho [m] del corredor fino alrededor del eje fnte→pozo
-    r_far_pluma   : semi-ancho [m] donde termina la transición al lc global en el corredor
+    lc_near      : tamaño de elemento fino (pozo, fuente, pluma); None → malla uniforme
+    r_near       : radio [m] de núcleo fino alrededor del pozo y la fuente
+    r_far        : radio [m] donde termina la transición al lc global
+    fnte         : [x, z] posición de la fuente; si se da, se refina también su vecindad
+    plume_pts    : array (M,2) de puntos de la streamline real de la pluma; si None y fnte
+                   no es None, se intenta cargar de la caché de funtions/plume.py
+    r_near_pluma : semi-ancho [m] del corredor fino alrededor de la streamline
+    r_far_pluma  : semi-ancho [m] donde termina la transición al lc global en el corredor
     """
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
@@ -118,31 +121,45 @@ def generar_malla(vertices, pozo, boundary_groups, lc=80, lc_near=None,
                 gmsh.model.mesh.field.setNumber(f_thresh_fnte, "DistMax",  r_far)
                 threshold_fields.append(f_thresh_fnte)
 
-                # --- campo 3: corredor de la pluma (línea fnte→pozo, puntos intermedios) ---
-                # Se crean N_seg+1 puntos a lo largo del eje para que gmsh interpole bien.
-                N_seg = 8
-                pluma_pts = []
-                for k in range(1, N_seg):
-                    t = k / N_seg
-                    px = float(fnte[0]) * (1 - t) + float(pozo[0]) * t
-                    pz = float(fnte[1]) * (1 - t) + float(pozo[1]) * t
-                    pid_k = gmsh.model.geo.addPoint(px, pz, 0, _lc_pozo)
-                    gmsh.model.geo.synchronize()
-                    gmsh.model.mesh.embed(0, [pid_k], 2, surface_id)
-                    pluma_pts.append(pid_k)
+                # --- campo 3: corredor de la pluma (streamline real de Darcy) ---
+                # Si no se pasó plume_pts, intenta cargar la caché.
+                _plume = plume_pts
+                if _plume is None:
+                    try:
+                        import numpy as _np
+                        _cache = "data/input/plume_streamline.npy"
+                        import os as _os
+                        if _os.path.exists(_cache):
+                            _plume = _np.load(_cache)
+                    except Exception:
+                        _plume = None
 
-                f_dist_pluma = gmsh.model.mesh.field.add("Distance")
-                gmsh.model.mesh.field.setNumbers(
-                    f_dist_pluma, "PointsList",
-                    [pid_fnte] + pluma_pts + [pid_pozo]
-                )
-                f_thresh_pluma = gmsh.model.mesh.field.add("Threshold")
-                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "InField",  f_dist_pluma)
-                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMin",  lc_near)
-                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMax",  lc)
-                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMin",  r_near_pluma)
-                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMax",  r_far_pluma)
-                threshold_fields.append(f_thresh_pluma)
+                if _plume is not None and len(_plume) >= 2:
+                    # Submuestrear a ≤50 puntos para no saturar gmsh
+                    import numpy as _np
+                    step = max(1, len(_plume) // 50)
+                    sampled = _plume[::step]
+                    if not _np.allclose(sampled[-1], pozo, atol=1.0):
+                        sampled = _np.vstack([sampled, pozo])
+                    pluma_gmsh_ids = []
+                    for px, pz in sampled[1:-1]:   # excluir fnte y pozo (ya embebidos)
+                        pid_k = gmsh.model.geo.addPoint(float(px), float(pz), 0, _lc_pozo)
+                        gmsh.model.geo.synchronize()
+                        gmsh.model.mesh.embed(0, [pid_k], 2, surface_id)
+                        pluma_gmsh_ids.append(pid_k)
+
+                    f_dist_pluma = gmsh.model.mesh.field.add("Distance")
+                    gmsh.model.mesh.field.setNumbers(
+                        f_dist_pluma, "PointsList",
+                        [pid_fnte] + pluma_gmsh_ids + [pid_pozo]
+                    )
+                    f_thresh_pluma = gmsh.model.mesh.field.add("Threshold")
+                    gmsh.model.mesh.field.setNumber(f_thresh_pluma, "InField",  f_dist_pluma)
+                    gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMin",  lc_near)
+                    gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMax",  lc)
+                    gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMin",  r_near_pluma)
+                    gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMax",  r_far_pluma)
+                    threshold_fields.append(f_thresh_pluma)
 
             # Campo Min: toma el tamaño más pequeño de todos los campos activos
             if len(threshold_fields) == 1:
