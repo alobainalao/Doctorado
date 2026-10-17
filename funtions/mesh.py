@@ -31,14 +31,31 @@ def Lspacing(x, s_M=100, min_s=None):
     return np.clip(spacing_local, min_s, s_M)
 
 
+def _dist_to_segment(pts, a, b):
+    """Distancia de cada punto en `pts` (N,2) al segmento a→b."""
+    ab = np.asarray(b, float) - np.asarray(a, float)
+    ab2 = float(ab @ ab)
+    if ab2 == 0:
+        return np.linalg.norm(pts - a, axis=1)
+    t = np.clip(((pts - a) @ ab) / ab2, 0.0, 1.0)
+    proj = np.asarray(a, float) + t[:, None] * ab
+    return np.linalg.norm(pts - proj, axis=1)
+
+
 def spacing_func(xy):
     p = RUNTIME.get()
     if p.min_sp >= p.spacing:
         return np.full(np.atleast_2d(xy).shape[0], p.spacing)
     x = np.atleast_2d(xy)
-    dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
+    pozo = np.asarray(p.pozo, float)
+    fnte = np.asarray(p.fnte, float)
     Ly = np.ptp(np.asarray(p.vert)[:, 1])
-    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(dist_pozo / Ly, 0, 1)) + p.min_sp
+    # Distancia al pozo, a la fuente y al eje central de la pluma (segmento fnte→pozo)
+    dist_pozo = np.linalg.norm(x - pozo, axis=1)
+    dist_fnte = np.linalg.norm(x - fnte, axis=1)
+    dist_pluma = _dist_to_segment(x, fnte, pozo)
+    d = np.minimum.reduce([dist_pozo, dist_fnte, dist_pluma])
+    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(d / Ly, 0, 1)) + p.min_sp
     return np.clip(s_local, p.min_sp, p.spacing)
 
 

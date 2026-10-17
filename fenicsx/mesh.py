@@ -52,14 +52,18 @@ _BOUNDARY_GROUPS = {
 
 def generar_malla(vertices, pozo, boundary_groups, lc=80, lc_near=None,
                   r_near=100.0, r_far=350.0,
+                  fnte=None, r_near_pluma=150.0, r_far_pluma=500.0,
                   output_file="data/fenicsx/malla_generada.msh"):
     """
     Genera la malla 2D sobre el polígono `vertices`.
 
-    lc       : tamaño global de elemento [m]
-    lc_near  : tamaño de elemento cerca del pozo; si es None o >= lc, malla uniforme.
-    r_near   : radio [m] dentro del cual se aplica lc_near (100 m ≈ Gaussian support 2.5*30m*1.3)
-    r_far    : radio [m] donde la transición a lc global termina
+    lc            : tamaño global de elemento [m]
+    lc_near       : tamaño de elemento cerca del pozo/fuente/pluma; si es None o >= lc, malla uniforme.
+    r_near        : radio [m] del núcleo fino alrededor del pozo y la fuente
+    r_far         : radio [m] donde termina la transición al lc global (pozo/fuente)
+    fnte          : [x, z] posición de la fuente de contaminante; si se da, se refina el corredor fnte→pozo
+    r_near_pluma  : semi-ancho [m] del corredor fino alrededor del eje fnte→pozo
+    r_far_pluma   : semi-ancho [m] donde termina la transición al lc global en el corredor
     """
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
@@ -82,19 +86,71 @@ def generar_malla(vertices, pozo, boundary_groups, lc=80, lc_near=None,
         gmsh.model.geo.synchronize()
         gmsh.model.mesh.embed(0, [pid_pozo], 2, surface_id)
 
-        # Refinamiento local cerca del pozo: campo Distance + Threshold de gmsh.
-        # Esto replica para FEniCS el mismo efecto que min_sp hace en BFR:
-        # más nodos cerca del pozo → mejor resolución del cono de velocidades.
+        # Refinamiento local: pozo, fuente y corredor de la pluma (fnte→pozo).
+        # Combina múltiples campos Distance+Threshold y toma el mínimo (campo Min).
         if lc_near is not None and lc_near < lc:
-            f_dist = gmsh.model.mesh.field.add("Distance")
-            gmsh.model.mesh.field.setNumbers(f_dist, "PointsList", [pid_pozo])
-            f_thresh = gmsh.model.mesh.field.add("Threshold")
-            gmsh.model.mesh.field.setNumber(f_thresh, "InField",   f_dist)
-            gmsh.model.mesh.field.setNumber(f_thresh, "SizeMin",   lc_near)
-            gmsh.model.mesh.field.setNumber(f_thresh, "SizeMax",   lc)
-            gmsh.model.mesh.field.setNumber(f_thresh, "DistMin",   r_near)
-            gmsh.model.mesh.field.setNumber(f_thresh, "DistMax",   r_far)
-            gmsh.model.mesh.field.setAsBackgroundMesh(f_thresh)
+            threshold_fields = []
+
+            # --- campo 1: vecindad del pozo ---
+            f_dist_pozo = gmsh.model.mesh.field.add("Distance")
+            gmsh.model.mesh.field.setNumbers(f_dist_pozo, "PointsList", [pid_pozo])
+            f_thresh_pozo = gmsh.model.mesh.field.add("Threshold")
+            gmsh.model.mesh.field.setNumber(f_thresh_pozo, "InField",  f_dist_pozo)
+            gmsh.model.mesh.field.setNumber(f_thresh_pozo, "SizeMin",  lc_near)
+            gmsh.model.mesh.field.setNumber(f_thresh_pozo, "SizeMax",  lc)
+            gmsh.model.mesh.field.setNumber(f_thresh_pozo, "DistMin",  r_near)
+            gmsh.model.mesh.field.setNumber(f_thresh_pozo, "DistMax",  r_far)
+            threshold_fields.append(f_thresh_pozo)
+
+            if fnte is not None:
+                # --- campo 2: vecindad de la fuente ---
+                pid_fnte = gmsh.model.geo.addPoint(float(fnte[0]), float(fnte[1]), 0, _lc_pozo)
+                gmsh.model.geo.synchronize()
+                gmsh.model.mesh.embed(0, [pid_fnte], 2, surface_id)
+
+                f_dist_fnte = gmsh.model.mesh.field.add("Distance")
+                gmsh.model.mesh.field.setNumbers(f_dist_fnte, "PointsList", [pid_fnte])
+                f_thresh_fnte = gmsh.model.mesh.field.add("Threshold")
+                gmsh.model.mesh.field.setNumber(f_thresh_fnte, "InField",  f_dist_fnte)
+                gmsh.model.mesh.field.setNumber(f_thresh_fnte, "SizeMin",  lc_near)
+                gmsh.model.mesh.field.setNumber(f_thresh_fnte, "SizeMax",  lc)
+                gmsh.model.mesh.field.setNumber(f_thresh_fnte, "DistMin",  r_near)
+                gmsh.model.mesh.field.setNumber(f_thresh_fnte, "DistMax",  r_far)
+                threshold_fields.append(f_thresh_fnte)
+
+                # --- campo 3: corredor de la pluma (línea fnte→pozo, puntos intermedios) ---
+                # Se crean N_seg+1 puntos a lo largo del eje para que gmsh interpole bien.
+                N_seg = 8
+                pluma_pts = []
+                for k in range(1, N_seg):
+                    t = k / N_seg
+                    px = float(fnte[0]) * (1 - t) + float(pozo[0]) * t
+                    pz = float(fnte[1]) * (1 - t) + float(pozo[1]) * t
+                    pid_k = gmsh.model.geo.addPoint(px, pz, 0, _lc_pozo)
+                    gmsh.model.geo.synchronize()
+                    gmsh.model.mesh.embed(0, [pid_k], 2, surface_id)
+                    pluma_pts.append(pid_k)
+
+                f_dist_pluma = gmsh.model.mesh.field.add("Distance")
+                gmsh.model.mesh.field.setNumbers(
+                    f_dist_pluma, "PointsList",
+                    [pid_fnte] + pluma_pts + [pid_pozo]
+                )
+                f_thresh_pluma = gmsh.model.mesh.field.add("Threshold")
+                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "InField",  f_dist_pluma)
+                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMin",  lc_near)
+                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "SizeMax",  lc)
+                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMin",  r_near_pluma)
+                gmsh.model.mesh.field.setNumber(f_thresh_pluma, "DistMax",  r_far_pluma)
+                threshold_fields.append(f_thresh_pluma)
+
+            # Campo Min: toma el tamaño más pequeño de todos los campos activos
+            if len(threshold_fields) == 1:
+                gmsh.model.mesh.field.setAsBackgroundMesh(threshold_fields[0])
+            else:
+                f_min = gmsh.model.mesh.field.add("Min")
+                gmsh.model.mesh.field.setNumbers(f_min, "FieldsList", threshold_fields)
+                gmsh.model.mesh.field.setAsBackgroundMesh(f_min)
 
         # Orden inlet -> wall -> outlet: addPhysicalGroup asigna tags
         # secuenciales 1,2,3, y fenicsx/forward.py asume inlet_marker=1,
@@ -142,6 +198,7 @@ def build_mesh(pozo, spacing=80.0, output_file="data/fenicsx/malla_generada.msh"
     lc_near = getattr(p, "fenicsx_lc_near", None)
     domain, facet_tags = generar_malla(
         p.vert, pozo, boundary_groups, lc=spacing, lc_near=lc_near,
+        fnte=p.fnte,
         output_file=output_file,
     )
 
