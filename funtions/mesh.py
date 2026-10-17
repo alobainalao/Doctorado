@@ -71,7 +71,8 @@ def spacing_func(xy):
     dist_fnte = np.linalg.norm(x - fnte, axis=1)
 
     if plume_pts is not None and len(plume_pts) >= 2:
-        dist_pluma = _dist_to_polyline(x, plume_pts)
+        from funtions.plume import plume_cone_dist
+        dist_pluma = plume_cone_dist(x, plume_pts)
         d = np.minimum.reduce([dist_pozo, dist_fnte, dist_pluma])
     else:
         d = np.minimum(dist_pozo, dist_fnte)

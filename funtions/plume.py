@@ -1,13 +1,13 @@
 """
 Streamline de la pluma del contaminante.
 
-Traza la trayectoria real desde fnte hasta pozo integrando el campo de
-velocidades Darcy U (estado estacionario) del pkl de preproceso BFR.
-Usa RK4 con paso normalizado en dirección para seguir la curva de flujo.
+Integra la trayectoria real del contaminante desde fnte hasta la frontera
+izquierda (outlet) usando el campo de velocidades Darcy U del pkl de
+preproceso BFR con integración RK4.
 
-La streamline se cachea en data/input/plume_streamline.npy. Si el pkl aún
-no existe (primera generación de malla), devuelve None y el caller usa el
-fallback (distancia a fnte+pozo directamente).
+La streamline cubre fnte → pozo → outlet (frontera izquierda), de modo que
+la función de espaciado pueda refinar toda la zona de contaminación.
+El resultado se cachea en data/input/plume_streamline.npy.
 """
 import os
 import numpy as np
@@ -39,16 +39,15 @@ def _rk4_step(pt, ds, interp_u, interp_v):
     return pt + (ds / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
-def compute_plume_streamline(pkl_path, ds=30.0, n_steps=3000):
+def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000):
     """
-    Integra la streamline desde fnte hasta pozo con RK4.
+    Integra la streamline desde fnte hasta la frontera izquierda (outlet)
+    con RK4 sobre el campo de velocidades Darcy U[0] del pkl.
 
-    pkl_path : preproceso.pkl del backend BFR (contiene nodes y U[0])
-    ds       : paso de integración [m]; ~spacing es razonable
-    n_steps  : máximo de pasos antes de cortar
+    La trayectoria pasa a través de la vecindad del pozo y continúa hasta
+    que sale por la frontera izquierda del dominio.
 
-    Devuelve array (M, 2) de puntos o None si el pkl no existe.
-    Guarda el resultado en _CACHE_PATH para reutilización.
+    Devuelve array (M, 2) o None si el pkl no existe.
     """
     from scipy.interpolate import LinearNDInterpolator
     from funtions.runtime import RUNTIME
@@ -59,20 +58,20 @@ def compute_plume_streamline(pkl_path, ds=30.0, n_steps=3000):
 
     p = RUNTIME.get()
     fnte = np.asarray(p.fnte, float)
-    pozo = np.asarray(p.pozo, float)
+    vert = np.asarray(p.vert, float)
+    x_outlet = vert[:, 0].min()   # frontera izquierda del dominio
 
     with open(pkl_path, "rb") as f:
         data = pickle.load(f)
 
-    nodes = data["nodes"]   # (N, 2)
-    U0 = data["U"][0]       # (N, 2) velocidad Darcy en t=0
+    nodes = data["nodes"]
+    U0 = data["U"][0]
 
     interp_u = LinearNDInterpolator(nodes, U0[:, 0], fill_value=0.0)
     interp_v = LinearNDInterpolator(nodes, U0[:, 1], fill_value=0.0)
 
     pts = [fnte.copy()]
     pt = fnte.copy()
-    prev_dist = np.linalg.norm(pt - pozo)
 
     for _ in range(n_steps):
         new_pt = _rk4_step(pt, ds, interp_u, interp_v)
@@ -80,37 +79,74 @@ def compute_plume_streamline(pkl_path, ds=30.0, n_steps=3000):
             break
         pts.append(new_pt.copy())
         pt = new_pt
-        dist = np.linalg.norm(pt - pozo)
-        # Parar si llegamos cerca del pozo
-        if dist < ds * 1.5:
+        # Parar al alcanzar la frontera izquierda
+        if pt[0] <= x_outlet + ds:
             break
-        # Parar si la distancia empieza a crecer de nuevo después de acercarse
-        # bastante (el punto de mínimo acercamiento fue en el paso anterior)
-        if dist > prev_dist and prev_dist < 800:
-            break
-        # Parar si pasamos el pozo en x (no tiene sentido seguir hacia la pared)
-        if pt[0] < pozo[0] - 400:
-            break
-        prev_dist = dist
 
-    # Truncar en el punto más cercano al pozo y unir con él
-    arr = np.array(pts)
-    idx_closest = int(np.argmin(np.linalg.norm(arr - pozo, axis=1)))
-    streamline = np.vstack([arr[: idx_closest + 1], pozo])
+    streamline = np.array(pts)
 
     os.makedirs(os.path.dirname(_CACHE_PATH) or ".", exist_ok=True)
     np.save(_CACHE_PATH, streamline)
-    print(f"[plume] streamline calculada: {len(streamline)} puntos → {_CACHE_PATH}")
+    print(f"[plume] streamline calculada: {len(streamline)} puntos "
+          f"({streamline[0]} → {streamline[-1]}) → {_CACHE_PATH}")
     return streamline
 
 
-def get_plume_streamline(pkl_path=None):
+def plume_cone_dist(pts, streamline, w0=80.0, w1=600.0):
     """
-    Devuelve la streamline de la pluma (cacheada o calculada).
+    Distancia efectiva de cada punto a la pluma con ancho de cono variable.
 
-    Si el pkl no existe todavía (primera generación de malla), devuelve None;
-    el caller debe usar fallback a distancia directa a fnte y pozo.
+    El cono se ensancha linealmente desde w0 (en fnte, s=0) hasta w1
+    (en el outlet, s=L). Para un punto dentro del cono (d < w_local), la
+    distancia efectiva se escala a [0, w0] para que el espaciado mínimo
+    se aplique en todo el interior del cono.
+
+        d_eff = d * w0 / w_local   si d < w_local
+              = d                  si d >= w_local
+
+    Args:
+        pts       : (N, 2) puntos de consulta
+        streamline: (M, 2) eje de la pluma
+        w0        : semi-ancho mínimo del cono en fnte [m]
+        w1        : semi-ancho máximo del cono en outlet [m]
+
+    Devuelve:
+        d_eff : (N,) distancia efectiva al eje de la pluma
     """
+    pts = np.atleast_2d(pts)
+    seg_vecs = np.diff(streamline, axis=0)          # (M-1, 2)
+    seg_len2 = np.einsum('ij,ij->i', seg_vecs, seg_vecs)  # (M-1,)
+
+    # Longitudes acumuladas (para parametrizar el cono)
+    seg_len = np.sqrt(np.maximum(seg_len2, 1e-20))
+    arc = np.concatenate([[0.0], np.cumsum(seg_len)])  # (M,)
+    L = arc[-1]
+
+    n_pts = len(pts)
+    d_eff = np.full(n_pts, np.inf)
+
+    for k, (a, ab, l2, l) in enumerate(zip(streamline[:-1], seg_vecs, seg_len2, seg_len)):
+        if l2 < 1e-20:
+            continue
+        t = np.clip(((pts - a) @ ab) / l2, 0.0, 1.0)
+        proj = a + t[:, None] * ab
+        d = np.linalg.norm(pts - proj, axis=1)
+
+        # Posición normalizada a lo largo del eje (0 = fnte, 1 = outlet)
+        s_norm = np.clip((arc[k] + t * l) / L, 0.0, 1.0)
+        w_local = w0 + (w1 - w0) * s_norm
+
+        # Dentro del cono: escalar d para que w_local → w0
+        inside = d < w_local
+        d_scaled = np.where(inside, d * w0 / w_local, d)
+
+        d_eff = np.minimum(d_eff, d_scaled)
+
+    return d_eff
+
+
+def get_plume_streamline(pkl_path=None):
+    """Devuelve la streamline cacheada o la calcula."""
     if os.path.exists(_CACHE_PATH):
         return np.load(_CACHE_PATH)
 
