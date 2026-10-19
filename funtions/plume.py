@@ -92,7 +92,7 @@ def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000):
     return streamline
 
 
-def plume_cone_dist(pts, streamline, w0=80.0, w1=600.0):
+def plume_cone_dist(pts, streamline, w0=80.0, w1=600.0, depth_below=150.0):
     """
     Distancia efectiva de cada punto a la pluma con ancho de cono variable.
 
@@ -130,15 +130,21 @@ def plume_cone_dist(pts, streamline, w0=80.0, w1=600.0):
             continue
         t = np.clip(((pts - a) @ ab) / l2, 0.0, 1.0)
         proj = a + t[:, None] * ab
-        d = np.linalg.norm(pts - proj, axis=1)
+        d_lat = np.linalg.norm(pts - proj, axis=1)   # distancia lateral al eje
+
+        # Penalizar puntos que quedan más de depth_below metros POR DEBAJO
+        # de la proyección sobre el eje (z_pts < z_proj - depth_below).
+        z_proj = proj[:, 1]
+        dz_below = np.maximum(0.0, z_proj - depth_below - pts[:, 1])
+        d = np.sqrt(d_lat**2 + dz_below**2)
 
         # Posición normalizada a lo largo del eje (0 = fnte, 1 = outlet)
         s_norm = np.clip((arc[k] + t * l) / L, 0.0, 1.0)
         w_local = w0 + (w1 - w0) * s_norm
 
-        # Dentro del cono: escalar d para que w_local → w0
-        inside = d < w_local
-        d_scaled = np.where(inside, d * w0 / w_local, d)
+        # Dentro del cono lateral: escalar para que w_local → w0
+        inside = d_lat < w_local
+        d_scaled = np.where(inside, d_lat * w0 / w_local + dz_below, d)
 
         d_eff = np.minimum(d_eff, d_scaled)
 

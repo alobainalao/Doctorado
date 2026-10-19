@@ -12,17 +12,35 @@ def plot_mesh(nodes, groups, simplices, title='Malla', figsize=(10, 3)):
 
     fig, ax = plt.subplots(figsize=figsize)
 
-    ax.scatter(nodes[:, 0], nodes[:, 1], s=0.5, color='gray')
+    # Todos los nodos: puntos muy pequeños
+    ax.plot(
+        nodes[:, 0], nodes[:, 1],
+        '.', color='gray', markersize=0.2,
+        linestyle='None', label='Nodos'
+    )
 
+    # Nodos agrupados
     for name, idxs in groups.items():
-        ax.scatter(nodes[idxs, 0], nodes[idxs, 1], s=1, label=name)
+        ax.plot(
+            nodes[idxs, 0], nodes[idxs, 1],
+            '.', markersize=0.4,
+            linestyle='None', label=name
+        )
 
     ax.set_title(title)
     ax.legend(fontsize='x-small')
     ax.set_aspect('equal')
 
     plt.tight_layout()
-    plt.show()
+    fig.savefig(
+        "mesh.png",
+        dpi=fig.dpi,
+        facecolor=fig.get_facecolor(),
+        edgecolor="none",
+        bbox_inches=None,
+        pad_inches=0,
+    )
+    #plt.show()
 
 def update_supertitles(figs, t):
     """

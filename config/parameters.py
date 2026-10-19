@@ -142,7 +142,7 @@ class Parameters:
         # =========================
         # NUMÉRICOS AVANZADOS
         # =========================
-        self.n_stencil = getattr(self, "n_stencil", 25)
+        self.n_stencil = getattr(self, "n_stencil", 35)
         self.phi = getattr(self, "phi", "mq")
         self.order = getattr(self, "order", 2)
 
@@ -169,7 +169,7 @@ class Parameters:
         # =========================
         self.ncols = int(np.ceil(np.sqrt(self.K)))
         self.nrows = int(np.ceil(self.K / self.ncols))
-        self.min_sp = getattr(self, "min_sp", self.spacing)
+        self.min_sp = getattr(self, "min_sp", 30)
 
         # =========================
         # PATHS
