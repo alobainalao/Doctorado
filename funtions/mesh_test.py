@@ -579,6 +579,27 @@ def clear_spacing_cache_memory():
     _SPACING_CACHE.clear()
 
 
+def _dist_to_boundary(xy, vert):
+    """Distancia mínima de cada punto a los segmentos del polígono de dominio."""
+    xy = np.atleast_2d(xy)
+    vert = np.asarray(vert, dtype=float)
+    n = len(vert)
+    dist = np.full(len(xy), np.inf)
+    for i in range(n):
+        a = vert[i]
+        b = vert[(i + 1) % n]
+        ab = b - a
+        l2 = np.dot(ab, ab)
+        if l2 < 1e-14:
+            d = np.linalg.norm(xy - a, axis=1)
+        else:
+            t = np.clip(((xy - a) @ ab) / l2, 0.0, 1.0)
+            proj = a + t[:, None] * ab
+            d = np.linalg.norm(xy - proj, axis=1)
+        dist = np.minimum(dist, d)
+    return dist
+
+
 def spacing_func_cached(
     xy,
     grid_step=DEFAULT_GRID_STEP,
@@ -587,6 +608,9 @@ def spacing_func_cached(
     """
     Evalúa el campo precalculado y aplica los valores actuales de
     p.min_sp y p.spacing sin reconstruir q(x,y).
+
+    Si p define min_sp_boundary, aplica ese mínimo en una franja de
+    2*min_sp_boundary metros desde la frontera del dominio.
     """
     p = RUNTIME.get()
 
@@ -615,7 +639,19 @@ def spacing_func_cached(
     q = _SPACING_CACHE["interpolator"](x)
     q = np.clip(np.asarray(q, dtype=float), 0.0, 1.0)
 
-    return s_min + q * (s_max - s_min)
+    s = s_min + q * (s_max - s_min)
+
+    # Mínimo de frontera: si p.min_sp_boundary está definido, los nodos dentro
+    # de una franja de 2*min_sp_boundary metros desde la frontera no pueden
+    # tener espaciado menor que min_sp_boundary.
+    s_min_bnd = float(getattr(p, "min_sp_boundary", 0.0))
+    if s_min_bnd > s_min:
+        buffer = 2.0 * s_min_bnd
+        dist_bnd = _dist_to_boundary(x, p.vert)
+        s_floor = np.where(dist_bnd < buffer, s_min_bnd, s_min)
+        s = np.maximum(s, s_floor)
+
+    return s
 
 
 def compare_spacing_functions(
