@@ -462,7 +462,7 @@ def build_spacing_cache(
 
     points = np.column_stack((xx.ravel(), yy.ravel()))
 
-    # Campo normalizado: no depende de min_sp ni de spacing.
+    # Campo normalizado q(x,y): no depende de min_sp ni de spacing.
     q = _spacing_field_raw(
         points,
         0.0,
@@ -476,6 +476,10 @@ def build_spacing_cache(
     # triángulos elongados en poisson_disc_nodes.
     q = _enforce_gradation(q, x_grid, y_grid)
 
+    # Campo de distancia a la frontera d_bnd(x,y): geométrico, independiente
+    # de los valores de spacing. Se usa para aplicar min_sp_boundary en runtime.
+    d_bnd = _dist_to_boundary(points, p.vert).reshape(xx.shape)
+
     cache_file.parent.mkdir(parents=True, exist_ok=True)
 
     np.savez_compressed(
@@ -483,6 +487,7 @@ def build_spacing_cache(
         x_grid=x_grid,
         y_grid=y_grid,
         q=q,
+        d_bnd=d_bnd,
         signature=np.asarray(signature),
         grid_step=np.asarray(float(grid_step)),
     )
@@ -493,6 +498,7 @@ def build_spacing_cache(
         "x_grid": x_grid,
         "y_grid": y_grid,
         "q": q,
+        "d_bnd": d_bnd,
         "signature": signature,
     }
 
@@ -525,12 +531,15 @@ def load_or_build_spacing_cache(
                 ):
                     print(f"Cargando campo desde caché: {cache_file}")
 
-                    return {
+                    result = {
                         "x_grid": data["x_grid"].copy(),
                         "y_grid": data["y_grid"].copy(),
                         "q": data["q"].copy(),
                         "signature": stored_signature,
                     }
+                    if "d_bnd" in data:
+                        result["d_bnd"] = data["d_bnd"].copy()
+                    return result
 
                 print(
                     "La geometría o grid_step cambió. "
@@ -570,6 +579,15 @@ def prepare_spacing_cache(
     _SPACING_CACHE["interpolator"] = interpolator
     _SPACING_CACHE["grid_step"] = float(grid_step)
     _SPACING_CACHE["cache_file"] = str(Path(cache_file).resolve())
+
+    if "d_bnd" in cache:
+        _SPACING_CACHE["d_bnd_interpolator"] = RegularGridInterpolator(
+            (cache["x_grid"], cache["y_grid"]),
+            cache["d_bnd"],
+            method="linear",
+            bounds_error=False,
+            fill_value=0.0,  # fuera del grid → asumir en frontera (conservador)
+        )
 
     return cache
 
@@ -641,13 +659,18 @@ def spacing_func_cached(
 
     s = s_min + q * (s_max - s_min)
 
-    # Mínimo de frontera: si p.min_sp_boundary está definido, los nodos dentro
+    # Mínimo de frontera: si p.min_sp_boundary > p.min_sp, los nodos dentro
     # de una franja de 2*min_sp_boundary metros desde la frontera no pueden
     # tener espaciado menor que min_sp_boundary.
+    # d_bnd se obtiene del interpolador precalculado (caché); si no existe
+    # (caché antigua sin d_bnd), se calcula directamente.
     s_min_bnd = float(getattr(p, "min_sp_boundary", 0.0))
     if s_min_bnd > s_min:
         buffer = 2.0 * s_min_bnd
-        dist_bnd = _dist_to_boundary(x, p.vert)
+        if "d_bnd_interpolator" in _SPACING_CACHE:
+            dist_bnd = np.asarray(_SPACING_CACHE["d_bnd_interpolator"](x), dtype=float)
+        else:
+            dist_bnd = _dist_to_boundary(x, p.vert)
         s_floor = np.where(dist_bnd < buffer, s_min_bnd, s_min)
         s = np.maximum(s, s_floor)
 
