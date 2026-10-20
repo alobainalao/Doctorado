@@ -5,7 +5,8 @@ from sklearn.neighbors import KDTree
 from rbf.pde.fd import weight_matrix
 from rbf.pde.geometry import contains
 import funtions.get_phi as gph
-from funtions.mesh import build_nodes_var
+#from funtions.mesh import build_nodes_var
+from funtions.mesh_test import build_nodes_var
 from funtions.utils import *
 from funtions.operators import *
 from scipy.sparse.linalg import splu

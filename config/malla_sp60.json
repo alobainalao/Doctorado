@@ -1,0 +1,9 @@
+{
+  "pre": true,
+  "spacing": 60,
+  "min_sp": 10,
+  "min_sp_boundary": 30,
+  "dt": 3600,
+  "T": 2592000,
+  "n_stencil": 35
+}

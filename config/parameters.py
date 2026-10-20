@@ -24,7 +24,7 @@ class Parameters:
 
                 "activate_fuente", "activate_ext",
 
-                "spacing", "min_sp", "fenicsx_lc_near", "dt", "T",
+                "spacing", "min_sp", "min_sp_boundary", "fenicsx_lc_near", "dt", "T",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 
@@ -142,7 +142,7 @@ class Parameters:
         # =========================
         # NUMÉRICOS AVANZADOS
         # =========================
-        self.n_stencil = getattr(self, "n_stencil", 25)
+        self.n_stencil = getattr(self, "n_stencil", 35)
         self.phi = getattr(self, "phi", "mq")
         self.order = getattr(self, "order", 2)
 
@@ -169,7 +169,10 @@ class Parameters:
         # =========================
         self.ncols = int(np.ceil(np.sqrt(self.K)))
         self.nrows = int(np.ceil(self.K / self.ncols))
-        self.min_sp = getattr(self, "min_sp", self.spacing)
+        self.min_sp = getattr(self, "min_sp", 30)
+        # Espaciado mínimo en la franja de frontera (2*min_sp_boundary metros).
+        # 0 → mismo que min_sp (comportamiento clásico sin distinción frontera/interior).
+        self.min_sp_boundary = getattr(self, "min_sp_boundary", 0)
 
         # =========================
         # PATHS

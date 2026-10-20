@@ -33,13 +33,7 @@ def Lspacing(x, s_M=100, min_s=None):
 
 def spacing_func(xy):
     p = RUNTIME.get()
-    if p.min_sp >= p.spacing:
-        return np.full(np.atleast_2d(xy).shape[0], p.spacing)
-    x = np.atleast_2d(xy)
-    dist_pozo = np.linalg.norm(x - np.asarray(p.pozo), axis=1)
-    Ly = np.ptp(np.asarray(p.vert)[:, 1])
-    s_local = (p.spacing - p.min_sp) * np.sqrt(np.clip(dist_pozo / Ly, 0, 1)) + p.min_sp
-    return np.clip(s_local, p.min_sp, p.spacing)
+    return Lspacing(np.atleast_2d(xy), s_M=p.spacing, min_s=p.min_sp)
 
 
 # ---------------------------
@@ -102,15 +96,6 @@ def build_nodes_var():
         boundary_groups=boundary_groups,
         boundary_groups_with_ghosts=boundary_groups_with_ghosts
     )
-
-    # Forzar nodo en la posición exacta del pozo (análogo a gmsh.embed en FEniCS)
-    # para que discrete_delta quede centrado en r=0.
-    well = np.asarray(p.pozo, dtype=float)
-    if np.linalg.norm(nodes - well, axis=1).min() > 0.5:
-        new_idx = len(nodes)
-        nodes = np.vstack([nodes, well])
-        normals = np.vstack([normals, [[0.0, 0.0]]])
-        groups['interior'] = np.append(groups['interior'], new_idx)
 
     idx_p = np.argmin(np.linalg.norm(nodes - p.pozo, axis=1))
 
