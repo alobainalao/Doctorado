@@ -1,9 +1,13 @@
 {
   "pre": true,
   "spacing": 60,
-  "min_sp": 10,
+  "min_sp": 4,
   "min_sp_boundary": 30,
-  "dt": 3600,
+  "s_cone": 16,
+  "r_circle": 100,
+  "r_cone": 500,
+  "dt": 18000,
   "T": 2592000,
-  "n_stencil": 35
+  "n_stencil": 25,
+  "anim_stride": 1
 }

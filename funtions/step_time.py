@@ -4,7 +4,7 @@ from scipy.sparse.linalg import splu
 
 # Dependencias externas (ya las tienes en otros módulos)
 from funtions.operators import H_vector, U_vector, build_transport_matrix, C_vector, build_adj_C_matrix, build_adj_H_matrix, build_adj_C_rhs, build_adj_H_rhs
-from funtions.utils import D_total, Div_KD
+from funtions.utils import D_total, Div_KD, upwind_diffusion
 from funtions.runtime import RUNTIME
 
 
@@ -16,9 +16,10 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     N = len(nodes)
     idx = np.hstack((groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'], groups['boundary:wall']))
 
+    _upwind = getattr(p, 'upwind_transport', False)
+
     D_n = D_total(D_f, U)
     Div_D_n = Div_KD(D_n, grad)
-
 
     # --- FLOW ---
     rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N, gauss_p=gauss_p)
@@ -30,16 +31,16 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     D_N = D_total(D_f, U)
     Div_D_N = Div_KD(D_N, grad)
 
-    C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1)
-    C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p, 1)
+    if _upwind:
+        from funtions.upwind_operators import build_upwind_transport_matrix
+        C_solver = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, p)
+        C_right  = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p,  1, p)
+    else:
+        C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1)
+        C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p, 1)
     rhs = C_vector(C, C_right, gauss_f, groups, t, T, N, C_im, pho)
 
     C_new = splu(C_solver).solve(rhs)
-    # Nota: el esquema θ=0.9 puede producir valores ligeramente negativos (~1.2%
-    # de nodos en ADR/MRMT Block) cerca de gradientes abruptos (tipo Gibbs).
-    # No se aplica clipping aquí para preservar la linealidad del operador y la
-    # exactitud del gradiente adjunto. Para MRMT Semi el clipping es necesario
-    # porque el splitting exponencial puede amplificar esas oscilaciones.
 
     C_im_new = np.zeros_like(C_im)
 

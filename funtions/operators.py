@@ -779,11 +779,11 @@ def C_vector(C, M_right, gauss_f, groups, t, T, N, C_im, pho):
     b[idx] = aux[idx]
 
     # 🔹 Fuente de contaminación (todos los modelos)
-    if p.model in ("adr", "mrmt_semi", "mrmt_block"):
+    if p.model not in ("adr", "mrmt_semi", "mrmt_block"):
+        raise ValueError(f"Modelo no válido: {p.model}")
+    if getattr(p, "activate_fuente", True):
         fuente = (fuente_C(t, T) + fuente_C(t - p.dt, T)) * gauss_f
         b[idx] += fuente[idx]
-    else:
-        raise ValueError(f"Modelo no válido: {p.model}")
 
     # 🔹 Acoplamiento MRMT block: C_im^n → C (complemento de Schur).
     # Factor 4 = 2×2: un factor 2 del RHS Schur y otro de la regla trapezoidal.

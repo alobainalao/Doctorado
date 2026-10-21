@@ -53,6 +53,18 @@ def main():
 
     d = load_data()
 
+    # Para upwinding direccional: preconstruir Dx_upw, Dy_upw con V inicial.
+    # La dirección del flujo cambia poco en tiempo → se reusan en todos los pasos.
+    if getattr(p, 'upwind_transport', False):
+        import numpy as np
+        from funtions.upwind_operators import build_directional_gradient
+        print("Construyendo gradiente upwind direccional (paso único)...", flush=True)
+        p._Dx_upw, p._Dy_upw = build_directional_gradient(
+            d.nodes, d.U, d.eps_M,
+            n=p.n_stencil, phi=p.phi, order=p.order,
+        )
+        print("Gradiente upwind listo.", flush=True)
+
     if p.run_type == "standard":
         Qout = p.Qout
         solve_forward(d, Qout, animate, save_data)

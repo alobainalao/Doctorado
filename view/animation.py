@@ -69,7 +69,8 @@ def solve_forward(d, Qout, animate, save_data):
             figs=figs,
             save_data=save_data,
             animate=animate,
-            nodes=d.nodes
+            nodes=d.nodes,
+            anim_stride=getattr(p, "anim_stride", 1)
         )
 
     run_simulation(sim, p.Nt, outputs, d, figs, visuals)
@@ -794,10 +795,11 @@ class Simulation:
 
         for k in range(p.K): 
             self.H[k], self.U[k], self.C[k], self.C_im[k] = step_time( H=self.H[k], U=self.U[k], C=self.C[k], C_im=self.C_im[k],
-                                         nodes=d.nodes, groups=d.groups, normals=d.normals, A_solver=d.A_left, 
+                                         nodes=d.nodes, groups=d.groups, normals=d.normals, A_solver=d.A_left,
                                          eps_M=d.eps_M, K=d.K, grad=d.grad, pho=d.pho, D_f=d.D_f, A_right=d.A_right,
                                          delta_p=d.delta_p, gauss_p=d.gauss_p, gauss_f=d.gauss_f, Qout_n=self.Qout[k][step-1],
-                                         Qout_N=self.Qout[k][step], t=self.t, T=p.T, exp_lam_dt=d.exp_lam_dt) 
+                                         Qout_N=self.Qout[k][step], t=self.t, T=p.T, exp_lam_dt=d.exp_lam_dt)
+            np.maximum(self.C[k], 0.0, out=self.C[k])  # positividad física
 
 
             if visuals is not None:
@@ -978,7 +980,7 @@ def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
 
 
             # 🔹 ANIMACIÓN
-            if outputs["animate"]:
+            if outputs["animate"] and (n % outputs.get("anim_stride", 1) == 0):
                 writer_H, writer_V, writer_C, writer_C_im = outputs["writers"]
 
                 writer_H.grab_frame()
@@ -1170,11 +1172,12 @@ def create_writers_adj(figs):
 
 
 
-def setup_outputs(figs=None, save_data=False, animate=False, nodes=None):
+def setup_outputs(figs=None, save_data=False, animate=False, nodes=None, anim_stride=1):
 
     outputs = {
         "save_data": save_data,
         "animate": animate,
+        "anim_stride": int(anim_stride),
         "H_hist": [],
         "C_hist": [],
         "U_hist": [],

@@ -16,7 +16,7 @@ def dv(x0, xb):
 # GEOMETRÍA PRINCIPAL
 # ==========================================================
 
-def build_geometry(domain="real", spacing=30):
+def build_geometry(domain="real", spacing=30, sigma_fuente=1.0):
     """
     Construye la geometría del dominio dependiendo del escenario.
 
@@ -80,8 +80,8 @@ def build_geometry(domain="real", spacing=30):
     Lx = xmax - xmin
     Ly = ymax - ymin
 
-    epsilon_x = 0.5 * spacing
-    epsilon_y = spacing
+    epsilon_x = 0.5 * spacing * sigma_fuente
+    epsilon_y = spacing * sigma_fuente
 
     # Perfil de velocidades
     d_vel = inlet_a / 15

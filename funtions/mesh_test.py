@@ -51,6 +51,14 @@ WELL_Z_OFFSET = 50.0
 
 BOUNDARY_D_FAR = 200.0
 
+# Radios de los 4 niveles de refinamiento.
+# Nivel 1 (min_sp):        círculo de radio CIRCLE_R centrado en pozo y fuente.
+# Nivel 2 (s_cone):        transición desde CIRCLE_R hasta CONE_R.
+# Nivel 3 (min_sp_bnd):    franja de frontera (gestionada por spacing_func_cached).
+# Nivel 4 (spacing):       campo lejano.
+CIRCLE_R = 100.0
+CONE_R   = 500.0
+
 # Tasa máxima de cambio del campo normalizado q por metro.
 # Limita la gradación entre zonas finas y gruesas para evitar
 # triángulos elongados en la transición.  Rango útil: 0.003–0.015.
@@ -215,140 +223,70 @@ def _get_plume_geometry():
 
 def _spacing_field_raw(xy, s_min, s_max, plume_pts=None):
     """
-    Calcula el campo de espaciamiento mediante la geometría original.
+    Campo de espaciamiento con 4 niveles de refinamiento.
 
-    Para precalcular el campo normalizado se utilizan s_min=0 y s_max=1.
-    La regla de profundidad se aplica antes de guardar el campo en caché.
+    Se llama con s_min=0, s_max=1 para construir el campo normalizado q(x,y).
+    Los niveles intermedios (s_cone, min_sp_boundary) se expresan como fracciones
+    derivadas de los parámetros del modelo, de modo que el caché debe invalidarse
+    si cambian min_sp, s_cone, min_sp_boundary o spacing.
+
+    Niveles:
+      q = 0          → min_sp          (círculo CIRCLE_R entorno a pozo y fuente)
+      q = q_cone     → s_cone          (cono hasta CONE_R)
+      q = q_bnd      → min_sp_boundary (franja de fronteras)
+      q = 1          → spacing         (campo lejano)
     """
     p = RUNTIME.get()
 
     x = np.atleast_2d(np.asarray(xy, dtype=float))
-
     if x.shape[1] != 2:
         raise ValueError("Las coordenadas deben tener forma (N, 2).")
 
     pozo = np.asarray(p.pozo, dtype=float)
     fnte = np.asarray(p.fnte, dtype=float)
-    polygon = Polygon(p.vert)
 
-    from funtions.plume import plume_cone_dist
+    # Niveles absolutos del modelo (para calcular fracciones en espacio q)
+    p_min  = float(getattr(p, 'min_sp', 4.0))
+    p_cone = float(getattr(p, 's_cone', 16.0))
+    p_bnd  = float(getattr(p, 'min_sp_boundary', 30.0))
+    p_max  = float(getattr(p, 'spacing', 60.0))
+    denom  = max(p_max - p_min, 1e-12)
 
-    if plume_pts is None:
-        plume_pts = _get_plume_geometry()
+    R_circle = float(getattr(p, 'r_circle', CIRCLE_R))
+    R_cone   = float(getattr(p, 'r_cone', CONE_R))
 
-    # 1. Refinamiento alrededor de la pluma.
-    if plume_pts is not None:
-        d_plume = plume_cone_dist(
-            x,
-            plume_pts,
-            w0=PLUME_W0,
-            w1=PLUME_W1,
-            depth_below=PLUME_DEPTH_BELOW,
+    q_cone = (p_cone - p_min) / denom   # ≈ 0.214 con (4, 16, 60)
+    q_bnd  = (p_bnd  - p_min) / denom   # ≈ 0.464 con (4, 30, 60)
+
+    # Distancia al centro más cercano (pozo o fuente)
+    d_well = np.linalg.norm(x - pozo, axis=1)
+    d_fnte = np.linalg.norm(x - fnte, axis=1)
+    d_ctr  = np.minimum(d_well, d_fnte)
+
+    # Campo de zona central
+    in_circle = d_ctr < R_circle
+    in_cone   = (d_ctr >= R_circle) & (d_ctr < R_cone)
+
+    t_cone = np.clip((d_ctr - R_circle) / max(R_cone - R_circle, 1.0), 0.0, 1.0)
+    t_far  = np.clip((d_ctr - R_cone)   / max(PLUME_D_FAR, 1.0),       0.0, 1.0)
+
+    q_center = np.where(
+        in_circle, 0.0,
+        np.where(
+            in_cone,
+            q_cone * np.sqrt(t_cone),
+            q_cone + (1.0 - q_cone) * np.sqrt(t_far),
         )
-    else:
-        d_plume = np.minimum(
-            np.linalg.norm(x - fnte, axis=1),
-            np.linalg.norm(x - pozo, axis=1),
-        )
-
-    s_plume = _s(d_plume, s_min, s_max, PLUME_D_FAR)
-
-    # 2. Refinamiento alrededor del pozo.
-    s_well = _well_vertical_cone(
-        x,
-        pozo,
-        s_min,
-        s_max,
-        r0=WELL_R0,
-        r1=WELL_R1,
-        z_top=float(fnte[1]) + WELL_Z_OFFSET,
     )
 
-    # 3. Refinamiento cerca de las fronteras.
-    d_boundary = np.array([
-        polygon.boundary.distance(Point(px, py))
-        for px, py in x
-    ])
+    # Campo de frontera: q_bnd en la franja, 1.0 lejos
+    d_boundary = _dist_to_boundary(x, p.vert)
+    t_bnd      = np.clip(d_boundary / BOUNDARY_D_FAR, 0.0, 1.0)
+    q_boundary = q_bnd + (1.0 - q_bnd) * np.sqrt(t_bnd)
 
-    s_boundary = _s(
-        d_boundary,
-        s_min,
-        s_max,
-        BOUNDARY_D_FAR,
-    )
+    result = np.minimum(q_center, q_boundary)
 
-    result = np.minimum.reduce([
-        s_plume,
-        s_well,
-        s_boundary,
-    ])
-
-    # 4. Máscara de profundidad bajo el eje de la pluma.
-    if plume_pts is not None:
-        order = np.argsort(plume_pts[:, 0])
-        plume_sorted = plume_pts[order]
-
-        unique_x, unique_idx = np.unique(
-            plume_sorted[:, 0],
-            return_index=True,
-        )
-        unique_z = plume_sorted[unique_idx, 1]
-
-        if len(unique_x) >= 2:
-            z_of_x = interp1d(
-                unique_x,
-                unique_z,
-                bounds_error=False,
-                fill_value=(unique_z[0], unique_z[-1]),
-                assume_sorted=True,
-            )
-
-            z_axis = z_of_x(x[:, 0])
-            too_deep = (
-                x[:, 1] < z_axis - PLUME_DEPTH_BELOW
-            )
-
-            xp, zp = float(pozo[0]), float(pozo[1])
-            dz_well = x[:, 1] - zp
-
-            denominator = (
-                float(fnte[1]) + WELL_Z_OFFSET - zp
-            )
-
-            if abs(denominator) < 1e-12:
-                dz_norm = np.zeros_like(dz_well)
-            else:
-                dz_norm = np.clip(
-                    dz_well / denominator,
-                    0.0,
-                    1.0,
-                )
-
-            width_well = (
-                WELL_R0
-                + (WELL_R1 - WELL_R0) * dz_norm
-            )
-
-            in_well_cone = (
-                (dz_well >= 0)
-                & (np.abs(x[:, 0] - xp) < width_well)
-            )
-
-            # No anular el refinamiento cerca de las fronteras.
-            # Se aplica al generar el campo que se guardará en caché.
-            near_boundary = d_boundary < 200.0
-
-            result = np.where(
-                too_deep & ~in_well_cone & ~near_boundary,
-                s_max,
-                result,
-            )
-
-    return np.clip(
-        result,
-        min(s_min, s_max),
-        max(s_min, s_max),
-    )
+    return np.clip(result, 0.0, 1.0)
 
 
 def spacing_func(xy):
@@ -412,8 +350,21 @@ def _configuration_signature(grid_step, plume_pts):
             WELL_Z_OFFSET,
             BOUNDARY_D_FAR,
             MAX_GRADATION,
+            CIRCLE_R,
+            CONE_R,
         ],
     )
+
+    # Los niveles de espaciado forman parte del campo normalizado q(x,y):
+    # cambiar min_sp, s_cone, min_sp_boundary o spacing invalida el caché.
+    add_array("levels", [
+        float(getattr(p, 'min_sp', 4.0)),
+        float(getattr(p, 's_cone', 16.0)),
+        float(getattr(p, 'min_sp_boundary', 30.0)),
+        float(getattr(p, 'spacing', 60.0)),
+        float(getattr(p, 'r_circle', CIRCLE_R)),
+        float(getattr(p, 'r_cone', CONE_R)),
+    ])
 
     return digest.hexdigest()
 

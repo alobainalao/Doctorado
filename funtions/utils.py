@@ -409,6 +409,49 @@ def D_total(Dif, V):
     # Aquí ya todo es (N,2)
     return Dif + D_disp
 
+
+def upwind_diffusion(D, V, h_local):
+    """
+    Difusión artificial de upwinding de primer orden en dirección streamline.
+
+    Para cada nodo i calcula la cantidad mínima de difusión necesaria para que
+    el número de Péclet local Pe = |V|·h / D_stream sea ≤ 2, y la añade al
+    tensor D en la dirección de la velocidad.
+
+    κ_art[i] = max(0,  |V[i]|·h[i]/2  −  D_stream[i])
+
+    D_stream[i] = D[i,0]·(Vx/|V|)² + D[i,1]·(Vy/|V|)²  (proyección sobre û)
+
+    Parámetros
+    ----------
+    D       : (N,2) tensor de difusión diagonal ya calculado (D_total)
+    V       : (N,2) velocidades de Darcy
+    h_local : (N,)  spacing local (distancia al vecino más cercano)
+
+    Devuelve D_upw (N,2) = D + difusión streamline.
+    """
+    Vx = V[:, 0]; Vy = V[:, 1]
+    Vnorm = np.sqrt(Vx**2 + Vy**2)
+    Vnorm_safe = np.where(Vnorm < 1e-30, 1e-30, Vnorm)
+
+    ux = Vx / Vnorm_safe          # coseno del ángulo de flujo
+    uy = Vy / Vnorm_safe
+
+    # Difusión en dirección streamline (proyección de D sobre û)
+    D_stream = D[:, 0] * ux**2 + D[:, 1] * uy**2
+
+    # Difusión artificial mínima para Pe ≤ 2
+    kappa = np.maximum(0.0, Vnorm * h_local / 2.0 - D_stream)
+
+    # Añadir solo donde hay flujo significativo
+    kappa = np.where(Vnorm < 1e-20, 0.0, kappa)
+
+    D_upw = D.copy()
+    D_upw[:, 0] += kappa * ux**2
+    D_upw[:, 1] += kappa * uy**2
+
+    return D_upw
+
 def delta_char(nodes, x_p, tol):
 
     dist = np.linalg.norm(nodes - x_p, axis=1)
@@ -526,8 +569,9 @@ def get_init_values(new_nodes):
     h_new = h_ct.copy()
     h_new[mask_nan] = interp_h_nn(new_nodes[mask_nan])
 
-    interp_c = CloughTocher2DInterpolator(nodes_c, c, fill_value = 0)
+    interp_c = CloughTocher2DInterpolator(nodes_c, c, fill_value=0)
     c_new = interp_c(new_nodes)
+    c_new = np.maximum(c_new, 0.0)  # CI no puede ser negativa físicamente
 
     return h_new, c_new
 

@@ -245,16 +245,9 @@ def _boundaries_elements(domain, facet_tags, phys):
         0.4 * phys["zo_max"] + 0.6 * phys["outlet_z_t"], outlet_a, outlet_a / 150,
     ))
 
-    C_inlet = fem.Function(Q)
-    C_inlet.interpolate(lambda x: np.full(x.shape[1], 0.0))
-    # Fix respecto a maintesis.py (ver fenicsx/README.md, "Ya corregido"): el original
-    # usaba el mapa de dofs de V (espacio vectorial) para una condición de
-    # frontera sobre C_inlet, que vive en Q (espacio escalar) — dofmaps de
-    # espacios distintos. Aquí se usa Q, el espacio correcto de C_inlet.
-    bc_C = [fem.dirichletbc(
-        C_inlet,
-        fem.locate_dofs_topological(Q, domain.topology.dim - 1, facet_tags.find(phys["inlet_marker"])),
-    )]
+    # Sin Dirichlet en C: BFR usa Neumann (flujo) en inlet, no C=0.
+    # Imponer C=0 en inlet drena la pluma artificialmente — inconsistente con BFR.
+    bc_C = []
 
     ds_in = Measure("ds", domain=domain, subdomain_data=facet_tags, subdomain_id=phys["inlet_marker"])
     ds_out = Measure("ds", domain=domain, subdomain_data=facet_tags, subdomain_id=phys["outlet_marker"])
@@ -540,12 +533,11 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         solver2 = _create_solver(A2, domain.comm)
         C_ = _solve_step(L_C, a_C, bc_C, solver2, C_)
 
-        C_raw = np.maximum(C_.x.array[:], 0)
+        C_raw = C_.x.array[:]
 
         # --- Correcciones MRMT (después del solve FEM, antes de avanzar C_n) ---
         if model == "mrmt_semi":
             C_raw, C_im = _mrmt_semi_step(C_raw, C_im, mrmt_exp_lam_dt, mrmt_beta)
-            C_raw = np.maximum(C_raw, 0)
         elif model == "mrmt_block":
             C_prev_arr = C_n.x.array.copy()
             C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef)

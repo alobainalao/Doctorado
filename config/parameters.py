@@ -20,11 +20,13 @@ class Parameters:
             VALID_KEYS = {
                 "model", "domain", "metodo",
 
-                "pre", "postproc", "plot_grid",
+                "pre", "postproc", "plot_grid", "anim_stride",
 
                 "activate_fuente", "activate_ext",
 
-                "spacing", "min_sp", "min_sp_boundary", "fenicsx_lc_near", "dt", "T",
+                "spacing", "min_sp", "min_sp_boundary", "s_cone", "r_circle", "r_cone", "sigma_fuente",
+                "fenicsx_lc_near", "dt", "T",
+                "upwind_transport",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 
@@ -108,6 +110,7 @@ class Parameters:
 
         self.pre = getattr(self, "pre", False)
         self.postproc = getattr(self, "postproc", False)
+        self.anim_stride = int(getattr(self, "anim_stride", 1))
         self.plot_grid = getattr(self, "plot_grid", False)
 
         self.activate_fuente = getattr(self, "activate_fuente", True)
@@ -160,7 +163,7 @@ class Parameters:
         # =========================
         # GEOMETRÍA
         # =========================
-        geom = build_geometry(self.domain, self.spacing)
+        geom = build_geometry(self.domain, self.spacing, getattr(self, "sigma_fuente", 1.0))
         for k, v in geom.items():
             setattr(self, k, v)
 
