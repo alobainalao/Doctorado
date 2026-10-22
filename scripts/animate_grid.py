@@ -80,8 +80,11 @@ _FIELD_INFO = {
 _fi = _FIELD_INFO[field]
 
 # ── Cargar datos ────────────────────────────────────────────────────────────
+_exp_root = os.environ.get("EXP_ROOT")   # experimentos/: <EXP_ROOT>/<model>/<backend>/
+
 def _load_case(model, backend):
-    root_data = f"./data/output/{backend}/data/real/{model}{_suffix}"
+    root_data = (f"{_exp_root}/{model}/{backend}" if _exp_root
+                 else f"./data/output/{backend}/data/real/{model}{_suffix}")
     if is_adj:
         path = f"{root_data}/adjoint_results.npz"
         if not os.path.exists(path):
@@ -313,7 +316,7 @@ if field == "V":
 
 
 # ── Animación ───────────────────────────────────────────────────────────────
-out_dir  = "./data/output/grid"
+out_dir  = f"{_exp_root}/grid" if _exp_root else "./data/output/grid"
 os.makedirs(out_dir, exist_ok=True)
 out_path = f"{out_dir}/grid_{field}.mp4"
 

@@ -1,0 +1,159 @@
+"""
+Catálogo de experimentos BFR (RBF-FD) vs FEniCS (FEM).
+
+Cada caso es un conjunto de *cambios* respecto a `experimentos/base.json`
+(malla compartida congelada, CI de funcion.h5, ADR, dt=18000 s, T=30 días).
+
+Campos de un caso:
+    desc       descripción corta (aparece en --list y en el resumen)
+    cfg        cambios comunes a ambos backends
+    bfr / fenicsx
+               cambios sólo para ese backend
+    backends   backends que se corren (default: ambos)
+    ref_fem    "grupo/caso" cuyo resultado FEniCS sirve de referencia cuando
+               el caso sólo cambia algo de BFR (evita repetir la corrida FEM)
+
+Salidas: data/output/experimentos/<grupo>/<caso>/{bfr,fenicsx,comparacion}/
+"""
+
+BACKENDS = ("bfr", "fenicsx")
+ENVS = {"bfr": "bfr_env", "fenicsx": "fenics_env"}
+
+SIN_FUENTE = {"activate_fuente": False}
+SIN_POZO = {"activate_ext": False}
+
+GRUPOS = {
+    # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
+    "A_terminos": {
+        "desc": "Términos fuente: CI sola, sólo fuente, sólo pozo, ambos",
+        "casos": {
+            "A0_sin_fuente_sin_pozo": {
+                "desc": "Sólo la CI transportada (sin fuente, sin pozo)",
+                "cfg": {**SIN_FUENTE, **SIN_POZO},
+            },
+            "A1_solo_fuente": {
+                "desc": "Fuente activa, pozo apagado",
+                "cfg": {**SIN_POZO},
+            },
+            "A2_solo_pozo": {
+                "desc": "Pozo activo (Q_std=1e-3), fuente apagada",
+                "cfg": {**SIN_FUENTE},
+            },
+            "A3_fuente_pozo": {
+                "desc": "Fuente y pozo activos (configuración de referencia)",
+                "cfg": {},
+            },
+        },
+    },
+
+    # ── B. BC de salida: BFR con la condición natural de FEniCS ──────────────
+    # Sólo cambia BFR → la referencia FEM es el caso homólogo del grupo A.
+    "B_bc_salida_fem": {
+        "desc": "BFR con BC de salida tipo FEM (Neumann 1.er orden)",
+        "casos": {
+            f"B{i}_{nombre}": {
+                "desc": f"Como A{i}, BFR con bc_outlet_mode=fem",
+                "cfg": dict(cfg),
+                "bfr": {"bc_outlet_mode": "fem"},
+                "backends": ["bfr"],
+                "ref_fem": f"A_terminos/A{i}_{nombre}",
+            }
+            for i, (nombre, cfg) in enumerate([
+                ("sin_fuente_sin_pozo", {**SIN_FUENTE, **SIN_POZO}),
+                ("solo_fuente", {**SIN_POZO}),
+                ("solo_pozo", {**SIN_FUENTE}),
+                ("fuente_pozo", {}),
+            ])
+        },
+    },
+
+    # ── C. Soporte de la fuente gaussiana (σ = 1 está en A1 / A3) ────────────
+    "C_soporte_fuente": {
+        "desc": "Ancho de la gaussiana de la fuente (sigma_fuente), con y sin pozo",
+        "casos": {
+            f"C_sigma{str(s).replace('.', 'p')}_{tag}": {
+                "desc": f"sigma_fuente={s}, {'sin' if tag == 'sin_pozo' else 'con'} pozo",
+                "cfg": {"sigma_fuente": s, **(SIN_POZO if tag == "sin_pozo" else {})},
+            }
+            for tag in ("sin_pozo", "con_pozo")
+            for s in (0.5, 2.0, 4.0)
+        },
+    },
+
+    # ── D. Caudal del pozo, sin fuente (Q_std = 1e-3 está en A2) ─────────────
+    "D_caudal_pozo": {
+        "desc": "Caudal de extracción Q_std (cono de depresión), sin fuente",
+        "casos": {
+            f"D_Q{q:.0e}".replace("-0", "-"): {
+                "desc": f"Q_std={q:g}, sin fuente",
+                "cfg": {"Q_std": q, **SIN_FUENTE},
+            }
+            for q in (1e-4, 5e-4, 2e-3, 5e-3)
+        },
+    },
+
+    # ── E. Paso de tiempo (dt = 18000 s está en A3) ──────────────────────────
+    "E_paso_tiempo": {
+        "desc": "Paso de tiempo dt, con fuente y pozo",
+        "casos": {
+            f"E_dt{dt}": {"desc": f"dt={dt} s ({dt / 3600:g} h)", "cfg": {"dt": dt}}
+            for dt in (36000, 7200)
+        },
+    },
+
+    # ── F. Estabilización del transporte en BFR (upwind) ────────────────────
+    "F_upwind_bfr": {
+        "desc": "Upwind direccional en el transporte BFR",
+        "casos": {
+            "F1_upwind_solo_fuente": {
+                "desc": "Como A1, BFR con upwind_transport",
+                "cfg": {**SIN_POZO},
+                "bfr": {"upwind_transport": True},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A1_solo_fuente",
+            },
+            "F3_upwind_fuente_pozo": {
+                "desc": "Como A3, BFR con upwind_transport",
+                "cfg": {},
+                "bfr": {"upwind_transport": True},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A3_fuente_pozo",
+            },
+        },
+    },
+
+    # ── P. Presentación: 6 variantes con adjunto (videos de grilla 3×2) ─────
+    # Sustituye a scripts/generar_comparacion.py y run_all_6_variants.py.
+    # Los casos se llaman como el modelo para que EXP_ROOT funcione con
+    # scripts/animate_*.py (<EXP_ROOT>/<modelo>/<backend>/).
+    "P_presentacion": {
+        "desc": "ADR / MRMT Semi / MRMT Bloque × BFR / FEniCS, forward + adjunto",
+        "comparar": False,
+        "casos": {
+            m: {"desc": f"{m}, run_type=comparison", "cfg": {"model": m, "run_type": "comparison"}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+}
+
+
+def iter_casos(grupos=None, casos=None):
+    """Genera (grupo, caso, spec) filtrando por nombre de grupo y/o caso."""
+    for g, gspec in GRUPOS.items():
+        if grupos and g not in grupos:
+            continue
+        for c, spec in gspec["casos"].items():
+            if casos and c not in casos and f"{g}/{c}" not in casos:
+                continue
+            yield g, c, spec
+
+
+def config_caso(base, grupo, caso, spec, backend, out_root):
+    """Config completa (base + cambios) de un caso para un backend."""
+    import os
+    cfg = dict(base)
+    cfg.update(spec.get("cfg", {}))
+    cfg.update(spec.get(backend, {}))
+    cfg["metodo"] = backend
+    cfg["exp_dir"] = os.path.join(out_root, grupo, caso)
+    return cfg

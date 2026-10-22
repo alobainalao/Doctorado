@@ -6,12 +6,16 @@ from config.geometry import build_geometry
 
 class Parameters:
 
-    def __init__(self, env=None, json_path="config/default.json"):
+    def __init__(self, env=None, json_path="config/default.json", config=None):
 
         # =========================
         # 1. CARGA BASE
         # =========================
-        if env is None:
+        if config is not None:
+            # 🔥 modo experimentos → dict COMPLETO (sin filtrar por VALID_KEYS:
+            # el modo env descarta n_stencil, theta, phi, … y caen a defaults)
+            data = dict(config)
+        elif env is None:
             # 🔥 modo terminal → JSON
             with open(json_path, "r") as f:
                 data = json.load(f)
@@ -44,6 +48,9 @@ class Parameters:
                 "S0", "S_max", "t0_hour",
                 "pump_cycling", "pump_ton", "pump_toff",
                 "bfr_mesh",
+                # Experimentos (experimentos/): BC de salida BFR, malla congelada
+                # y carpeta de salida propia por caso.
+                "bc_outlet_mode", "mesh_pkl", "exp_dir",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -187,6 +194,14 @@ class Parameters:
         self.save_data = f"./data/output/{self.metodo}/data/{self.domain}/{self.model}/{self.run_type}"
         self.save_video = f"./data/output/{self.metodo}/figures/{self.domain}/{self.model}/{self.run_type}"
         self.save_preprocess = f"./data/input/{self.metodo}/{self.domain}/{self.model}"
+
+        # Experimentos: todo (datos, figuras y preproceso) vive en la carpeta
+        # del caso → <exp_dir>/<metodo>/, sin pisar las rutas de arriba.
+        self.exp_dir = getattr(self, "exp_dir", None)
+        if self.exp_dir:
+            self.save_data = os.path.join(self.exp_dir, self.metodo)
+            self.save_video = os.path.join(self.exp_dir, self.metodo, "figures")
+            self.save_preprocess = os.path.join(self.exp_dir, self.metodo)
 
         os.makedirs(self.save_data, exist_ok=True)
         os.makedirs(self.save_video, exist_ok=True)

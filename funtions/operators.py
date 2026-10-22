@@ -270,6 +270,53 @@ def make_H_operator(nodes, groups, theta, S_s, K, Div_K,
     return OPERATORS[key]()
 
 def make_H_bc(nodes, groups, K, Div_K, normals):
+    """
+    Condiciones de frontera para H.
+
+    bc_outlet_mode (leído desde RUNTIME p):
+      "pfs"  — condición de 2.º orden original (n·∇(K∇H) = 0). DEFAULT.
+      "fem"  — Neumann de 1.º orden: K∇H·n = h_outlet(z), idéntica a la
+               condición natural de FEniCS. Permite comparación rigurosa
+               con el backend FEM bajo condiciones de salida equivalentes.
+    """
+    p = RUNTIME.get()
+    bc_outlet_mode = getattr(p, "bc_outlet_mode", "pfs")
+
+    if bc_outlet_mode == "fem":
+        # Neumann 1.º orden: -(K∇H·n) = b  con  b = -h_outlet(z)
+        # (aplicado en H_vector con signo correcto al nodo fantasma de salida)
+        outlet_bc = dict(
+            name="outlet",
+            coeffs_func=lambda i: (
+                [[1, 0], [0, 1]],
+                [
+                    -K[i, 0] * normals[i, 0],
+                    -K[i, 1] * normals[i, 1]
+                ]
+            )
+        )
+    else:
+        # Condición de radiación de 2.º orden original (modo "pfs")
+        outlet_bc = dict(
+            name="outlet",
+            diffs=[
+                [1, 0],
+                [0, 1],
+                [2, 0],
+                [0, 2],
+                [1, 1]
+            ],
+            coeffs_func=lambda i: (
+                [[1, 0], [0, 1], [2, 0], [0, 2], [1, 1]],
+                [
+                    -(Div_K[i, 0] * normals[i, 0] + Div_K[i, 2] * normals[i, 1]),
+                    -(Div_K[i, 3] * normals[i, 0] + Div_K[i, 1] * normals[i, 1]),
+                    -(K[i, 0] * normals[i, 0]),
+                    -(K[i, 1] * normals[i, 1]),
+                    -(K[i, 0] * normals[i, 1] - K[i, 1] * normals[i, 0])
+                ]
+            )
+        )
 
     return [
         dict(
@@ -291,26 +338,7 @@ def make_H_bc(nodes, groups, K, Div_K, normals):
             )
         ),
 
-        dict(
-            name="outlet",
-            diffs=[
-                [1, 0],
-                [0, 1],
-                [2, 0],
-                [0, 2],
-                [1, 1]
-            ],
-            coeffs_func=lambda i: (
-                [[1, 0], [0, 1], [2, 0], [0, 2], [1, 1]],
-                [
-                    -(Div_K[i, 0] * normals[i, 0] + Div_K[i, 2] * normals[i, 1]),
-                    -(Div_K[i, 3] * normals[i, 0] + Div_K[i, 1] * normals[i, 1]),
-                    -(K[i, 0] * normals[i, 0]),
-                    -(K[i, 1] * normals[i, 1]),
-                    -(K[i, 0] * normals[i, 1] - K[i, 1] * normals[i, 0])
-                ]
-            )
-        )
+        outlet_bc,
     ]
 
 def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
@@ -747,9 +775,18 @@ def H_vector(H, M_right, delta_p, groups, nodes, N, operador=None, Qout_n=0, Qou
     b[idx] = aux[idx]
     apply_boundary(b, nodes, groups.get('ghosts:inlet', []),
                     In_h(p.zi_max, p.inlet_z_t, p.inlet_z_t, p.inlet_a))
-    # apply_boundary(b, nodes, groups.get('ghosts:outlet', []),
-    #                 In_h(zo_max, zo_min, 0.4*zo_max + 0.6*zo_min,
-    #                       outlet_a, outlet_a/150))
+
+    # bc_outlet_mode="fem": imponer K∇H·n = h_outlet(z) en la salida.
+    # El operador de la BC es -(K∇H·n) = b, así que b = -h_outlet(z).
+    # Como outlet_a < 0, -outlet_a > 0 y el perfil resultante es ≥ 0,
+    # coherente con ∂H/∂x > 0 (gradiente hidráulico de derecha a izquierda).
+    if getattr(p, "bc_outlet_mode", "pfs") == "fem":
+        apply_boundary(
+            b, nodes, groups.get('ghosts:outlet', []),
+            In_h(p.zo_max, p.zo_min,
+                 0.4 * p.zo_max + 0.6 * p.zo_min,
+                 -p.outlet_a, -p.outlet_a / 150)
+        )
 
     return b
 

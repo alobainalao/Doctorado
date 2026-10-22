@@ -38,8 +38,12 @@ LABEL_M = {"adr": "ADR", "mrmt_semi": "MRMT Semi", "mrmt_block": "MRMT Bloque"}
 LABEL_B = {"bfr": "BFR (RBF-FD)", "fenicsx": "FEniCS (FEM)"}
 
 _suffix   = f"/{run_type}" if run_type else ""
-root_data = f"./data/output/{metodo}/data/real/{model}{_suffix}"
-root_fig  = f"./data/output/{metodo}/figures/real/{model}{_suffix}"
+# EXP_ROOT (experimentos/): datos en <EXP_ROOT>/<model>/<metodo>/ (ver experimentos/README.md)
+_exp_root = os.environ.get("EXP_ROOT")
+def _data_dir(b, m):
+    return f"{_exp_root}/{m}/{b}" if _exp_root else f"./data/output/{b}/data/real/{m}{_suffix}"
+root_data = _data_dir(metodo, model)
+root_fig  = f"{root_data}/figures" if _exp_root else f"./data/output/{metodo}/figures/real/{model}{_suffix}"
 
 sim_path = f"{root_data}/simulation_results.npz"
 if not os.path.exists(sim_path):

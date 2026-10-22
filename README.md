@@ -22,7 +22,8 @@ acuíferos), con:
 - `io/`: carga/guardado
 - `postprocessing/`: curvas de llegada (BTCs)
 - `config/`: parámetros (`default.json`) y geometría
-- `scripts/`: variantes usadas para figuras/datos de la tesis
+- `experimentos/`: casos de estudio BFR vs FEniCS (catálogo, lanzador, comparación) — ver `experimentos/README.md`
+- `scripts/`: figuras, animaciones y análisis; `scripts/legacy/` = scripts retirados
 
 ## Uso
 

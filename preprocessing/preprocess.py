@@ -23,7 +23,18 @@ def run_preprocess():
 
     print(">>> Ejecutando preprocesamiento...")
 
-    nodes, groups, normals, simplices, pozo_cor = build_nodes_var()
+    mesh_pkl = getattr(p, "mesh_pkl", None)
+    if mesh_pkl:
+        # Malla congelada (experimentos/): se reusan los nodos exactos y sólo se
+        # reconstruyen los operadores con los parámetros de esta corrida
+        # (dt, theta, sigma_fuente, bc_outlet_mode, …).
+        with open(mesh_pkl, "rb") as f:
+            _m = pickle.load(f)
+        nodes, groups, normals = _m["nodes"], _m["groups"], _m["normals"]
+        simplices, pozo_cor = _m["simplices"], _m["pozo_cor"]
+        print(f">>> Malla congelada: {mesh_pkl} ({len(nodes)} nodos)")
+    else:
+        nodes, groups, normals, simplices, pozo_cor = build_nodes_var()
 
     hU = local_lengthscale(nodes, k=p.n_stencil-1)
     eps_arr_ = eps_from_h(hU, scale=1.0)

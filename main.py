@@ -29,7 +29,10 @@ def main():
         # o reusa la cacheada. Guardado/animación/postproceso los maneja el
         # forward según save_dat/animate/postproc (ver solve_forward_fenicsx).
         from fenicsx.mesh import get_mesh, build_mesh_from_bfr_pkl
-        if getattr(p, "bfr_mesh", False):
+        if getattr(p, "mesh_pkl", None):
+            # Malla congelada compartida con BFR (experimentos/).
+            mesh_cache = build_mesh_from_bfr_pkl(p.mesh_pkl)
+        elif getattr(p, "bfr_mesh", False):
             pkl_path = f"data/input/bfr/real/{p.model}/preproceso.pkl"
             mesh_cache = build_mesh_from_bfr_pkl(pkl_path)
         else:
