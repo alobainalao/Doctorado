@@ -43,6 +43,7 @@ data/output/experimentos/resumen.csv   una fila por caso comparado
 cd codigo
 python -m experimentos.correr --list                       # catálogo
 python -m experimentos.correr --grupo A_terminos --dry-run # qué se correría
+python -m experimentos.correr --todos --comparar           # todo A–F (38 corridas) + comparación
 python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
 python -m experimentos.correr --caso A3_fuente_pozo --backend bfr --force
 python -m experimentos.correr --caso A3_fuente_pozo --smoke --comparar  # 2 pasos, prueba

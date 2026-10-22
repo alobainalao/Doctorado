@@ -2,6 +2,7 @@
 Lanzador único de experimentos BFR vs FEniCS (ver experimentos/README.md).
 
     python -m experimentos.correr --list
+    python -m experimentos.correr --todos --comparar          # grupos A–F completos
     python -m experimentos.correr --grupo A_terminos
     python -m experimentos.correr --caso A0_sin_fuente_sin_pozo --backend bfr
     python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
@@ -126,6 +127,8 @@ def animar_presentacion(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="listar grupos y casos")
+    ap.add_argument("--todos", action="store_true",
+                    help="todos los grupos de comparación (A–F); P_presentacion va aparte")
     ap.add_argument("--grupo", nargs="+", help="grupos a correr")
     ap.add_argument("--caso", nargs="+", help="casos a correr (nombre o grupo/caso)")
     ap.add_argument("--backend", nargs="+", choices=BACKENDS, help="limitar backends")
@@ -142,8 +145,10 @@ def main():
     if args.list:
         listar()
         return
+    if args.todos:
+        args.grupo = [g for g, gs in GRUPOS.items() if gs.get("comparar", True)]
     if not (args.grupo or args.caso or args.animar):
-        ap.error("indica --grupo, --caso o --list")
+        ap.error("indica --todos, --grupo, --caso o --list")
 
     for g in args.grupo or []:
         if g not in GRUPOS:
