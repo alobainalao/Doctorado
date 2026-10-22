@@ -28,12 +28,15 @@ experimentos/
   correr.py      lanzador (cada backend en su entorno conda)
   _worker.py     corre un caso dentro del entorno (lo usa correr.py)
   comparar.py    métricas BFR vs FEM + figuras + resumen.csv
+  animar.py      videos H/C/|U| por backend + grilla BFR|FEM por caso
   verificar.py   malla congelada (hash) y CI ≥ 0, antes de correr
 
 data/output/experimentos/<grupo>/<caso>/
-  bfr/          simulation_results.npz, config.json (la usada), run.log
+  bfr/          simulation_results.npz, config.json (la usada), run.log,
+                figures/{H,C,V}.mp4
   fenicsx/      ídem
-  comparacion/  metrics.json, series.png
+  comparacion/  metrics.json, series.png, grid.mp4 (filas H/C/|U| ×
+                columnas BFR/FEM), grid_final.png
 data/output/experimentos/resumen.csv   una fila por caso comparado
 ```
 
@@ -48,6 +51,8 @@ python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
 python -m experimentos.correr --caso A3_fuente_pozo --backend bfr --force
 python -m experimentos.correr --caso A3_fuente_pozo --smoke --comparar  # 2 pasos, prueba
 python -m experimentos.comparar --todos                    # recomparar lo que haya
+python -m experimentos.correr --todos --comparar --animar  # + videos y grillas
+python -m experimentos.animar --todos [--force] [--jobs 4] # sólo videos de lo que haya
 ```
 
 No hace falta activar un entorno: `correr.py` lanza BFR en `bfr_env` y FEniCS
@@ -79,6 +84,9 @@ MRMT, poner `"model": "mrmt_semi"` en su `cfg`.
   (informe de la rama `audit/bfr-fenicsx-validation`); el grupo B lo prueba
   con la malla actual.
 - `upwind_transport` sólo existe en BFR.
+- Videos: rangos de color fijos por caso y comunes a BFR y FEM (H y |U| por
+  percentiles 0.5–99.5, C en [0, máx]); los nodos fantasma BFR se excluyen.
+  En B y F la columna FEM de la grilla es la de `ref_fem`.
 - El recorte C ≥ 0 se aplica en cada paso en ambos backends
   (`docs/clip_positividad_C.md`).
 

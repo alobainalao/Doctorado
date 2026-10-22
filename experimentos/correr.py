@@ -6,6 +6,7 @@ Lanzador único de experimentos BFR vs FEniCS (ver experimentos/README.md).
     python -m experimentos.correr --grupo A_terminos
     python -m experimentos.correr --caso A0_sin_fuente_sin_pozo --backend bfr
     python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
+    python -m experimentos.correr --todos --comparar --animar   # + videos y grillas
     python -m experimentos.correr --grupo P_presentacion --animar --publicar
     python -m experimentos.correr --caso A3_fuente_pozo --smoke   # prueba rápida (2 pasos)
 
@@ -138,7 +139,8 @@ def main():
                     help="prueba rápida: T=2·dt, salida en data/output/experimentos_smoke/")
     ap.add_argument("--keep-pre", action="store_true", help="conservar preproceso.pkl de cada caso BFR")
     ap.add_argument("--comparar", action="store_true", help="comparar BFR vs FEM al terminar")
-    ap.add_argument("--animar", action="store_true", help="grupo P: generar videos")
+    ap.add_argument("--animar", action="store_true",
+                    help="videos H/C/|U| por backend + grilla de comparación (grupo P: videos de la presentación)")
     ap.add_argument("--publicar", action="store_true", help="grupo P: copiar videos a la presentación")
     args = ap.parse_args()
 
@@ -178,7 +180,12 @@ def main():
             _conda("bfr_env", cmd + (["--smoke"] if args.smoke else []))
 
     if args.animar and not args.dry_run:
-        animar_presentacion(args)
+        casos = sorted({f"{g}/{c}" for g, c in hechos if GRUPOS[g].get("comparar", True)})
+        if casos:
+            _conda("bfr_env", ["-m", "experimentos.animar", "--caso"] + casos
+                   + (["--force"] if args.force else []))
+        if any(g == "P_presentacion" for g, _ in hechos) or not hechos:
+            animar_presentacion(args)
 
     if fallos:
         print("\n[correr] FALLARON:\n  " + "\n  ".join(fallos))
