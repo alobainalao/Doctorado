@@ -799,7 +799,6 @@ class Simulation:
                                          eps_M=d.eps_M, K=d.K, grad=d.grad, pho=d.pho, D_f=d.D_f, A_right=d.A_right,
                                          delta_p=d.delta_p, gauss_p=d.gauss_p, gauss_f=d.gauss_f, Qout_n=self.Qout[k][step-1],
                                          Qout_N=self.Qout[k][step], t=self.t, T=p.T, exp_lam_dt=d.exp_lam_dt)
-            np.maximum(self.C[k], 0.0, out=self.C[k])  # positividad física
 
 
             if visuals is not None:

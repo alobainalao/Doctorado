@@ -334,10 +334,7 @@ def _solve_forward(ctx, Q, zp):
         bC.destroy()
         A2.destroy()
 
-        # (el forward físico recorta C≥0; aquí NO se recorta para no romper la
-        # diferenciabilidad del funcional — el checkpoint compara J diferenciable)
-
-        # MRMT: post-procesamiento sobre los DOF de C_cur (sin recortar).
+        # MRMT: post-procesamiento sobre los DOF de C_cur (antes del recorte).
         # Guarda C_im ANTES del update (estado en n) para el adjunto.
         C_im_snap = None
         C_pre_mrmt_snap = None   # C_t^n (pre-MRMT) para grad en adjunto
@@ -363,6 +360,10 @@ def _solve_forward(ctx, Q, zp):
                 for r in range(int(p.Nr)):
                     acc += _mrmt_alpha_r[r] * C_im[r]
                 C_im_sum_func.x.array[:] = acc
+
+        # Positividad física: C ≥ 0 en cada paso, igual que el forward físico.
+        # Nota: el recorte no es diferenciable donde C<0; el adjunto lo ignora.
+        C_cur.x.array[:] = np.maximum(C_cur.x.array, 0.0)
 
         # --- funcional J1 = γ ∫δₚ C² dΩ  (consistente con BFR: J₁=γ∫gₚC²dΩ) ---
         C2well = ctx.comm.allreduce(

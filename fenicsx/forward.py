@@ -543,6 +543,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef)
             _update_C_im_sum(C_im_sum, C_im, np.array(p.alpha_r))
 
+        C_raw = np.maximum(C_raw, 0.0)  # positividad física (igual que BFR en funtions/step_time.py)
         C_n.x.array[:] = C_raw
         Src_n.x.array[:] = Src.x.array[:]
         u_n.x.array[:] = u.x.array[:]

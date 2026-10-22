@@ -52,7 +52,6 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
             C_im_new_r = C_new + (C_im[r] - C_new) * e_r
             C_new = C_new + p.beta[r] * (C_im[r] - C_im_new_r)
             C_im_new[r] = C_im_new_r
-        C_new = np.maximum(C_new, 0.0)
 
     elif p.model == "mrmt_block":
 
@@ -63,6 +62,8 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
             + (1 - 2*coef[:, None]) * C_im[:, idx]
         )
 
+    # Positividad física: C ≥ 0 en cada paso (mismo criterio que fenicsx/forward.py)
+    C_new = np.maximum(C_new, 0.0)
 
     return H, U, C_new, C_im_new
 
