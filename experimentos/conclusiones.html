@@ -1,0 +1,122 @@
+<h2 id="revision">Revisión del experimento (24 oct 2026)</h2>
+
+<div class="callout bad">
+  <p><b>Problema crítico encontrado: los resultados venían de dos mallas y dos configuraciones distintas.</b>
+  Los grupos A, B, C, E y F se corrieron el 21 oct con la malla anterior (16&nbsp;552 nodos), <code>Q_std = 1e-3</code>,
+  <code>θ = 0.9</code> y sin <code>r_pozo</code>. El 22 oct se cambiaron la malla congelada (ahora 14&nbsp;417 nodos), <code>base.json</code>
+  y el código. Solo se volvió a correr D, porque <code>correr.py</code> se saltaba cualquier caso que ya tuviera
+  <code>simulation_results.npz</code>. Por eso <code>resumen.csv</code> y las grillas mezclaban ambos estados sin avisar.</p>
+  <p><b>Corrección.</b> Los resultados viejos se movieron (no se borraron) a <code>data/output/experimentos_obsoleto_2026-10-21/</code>,
+  junto con los casos D de <code>Q_std</code> que ya no están en el catálogo. Los 30 casos A–F se volvieron a correr con la config actual.
+  <code>correr.py</code> ahora repite un caso si su <code>config.json</code> o sus nodos no coinciden con los actuales.</p>
+</div>
+
+<div class="callout warn">
+  <p><b>Sesgos del comparador anterior</b> (<code>comparar.py</code> + <code>animar.py</code>, que eran dos procesos separados):</p>
+  <ul>
+    <li><b>Normas sin pesos.</b> Las normas nodales daban el mismo peso a un nodo de 4&nbsp;m (pozo, fuente) que a uno de 60&nbsp;m,
+        así que el error del entorno del pozo dominaba. Ahora se usa la norma L2(Ω) con pesos de área nodal sobre la triangulación de FEniCS.</li>
+    <li><b>Error de H relativo a ‖H‖.</b> Con un nivel base de unos 300&nbsp;m, el error relativo salía alrededor de 1e-3 aunque el cono difiriera.
+        Ahora el error de H se da en metros (RMS y máximo) y como fracción del rango de H.</li>
+    <li><b>«Masa» como suma nodal</b> (<code>C_suma_ratio</code>), que también depende de la densidad de nodos. Ahora es ∫C dΩ.</li>
+    <li><b>C en el pozo leída en un solo nodo.</b> Ahora es la media de C con la gaussiana del sumidero (ε = r_pozo/3), la misma en ambos backends.</li>
+    <li><b>Videos y métricas sobre datos distintos.</b> La grilla se remuestreaba a una imagen de 500&nbsp;px (interpolación Delaunay) y filtraba nodos
+        con un polígono fijo, mientras que las métricas emparejaban nodos con KD-tree. Ahora una sola pasada calcula las métricas y dibuja cada cuadro
+        con <code>tripcolor</code> Gouraud sobre la misma triangulación P1 (el campo exacto, sin remuestreo). El PNG final es el último cuadro del video
+        y las gráficas de este informe usan esas mismas series, con un cursor que sigue al video.</li>
+  </ul>
+</div>
+
+<div class="callout warn">
+  <p><b>Otras observaciones del código (no corregidas, requieren tu decisión):</b></p>
+  <ul>
+    <li><b>Regla 6 de CLAUDE.md:</b> <code>config/default.json</code> tiene cambios sin commit (<code>Q_std</code> 1e-3 → 0.3, <code>θ</code> 0.9 → 1.0,
+        <code>r_pozo</code>, <code>norm_delta_pozo</code>). Esa config es el benchmark y no debería cambiar. Los experimentos no la usan
+        (leen <code>experimentos/base.json</code>), pero conviene revertirla o mover esos valores a un archivo aparte.</li>
+    <li><code>config/parameters.py</code> cambió su <code>json_path</code> por defecto a <code>config/malla_sp60.json</code>: en modo terminal
+        <code>Parameters()</code> ya no lee <code>default.json</code>.</li>
+    <li>BFR pasa <code>Qout_n = Qout[step−1]</code>, que en el paso 0 es <code>Qout[−1]</code> (el último valor), mientras que FEM usa <code>Qout[step]</code>.
+        Aquí no influye porque Q es constante, pero con un Q(t) variable (optimización) desfasa un paso el arranque.</li>
+    <li>El polígono <code>DOMINIO</code> fijo en <code>animar.py</code> encierra 18.44&nbsp;km², y la triangulación real 18.17&nbsp;km² (1.5&nbsp;% menos).
+        Ya no se usa para comparar.</li>
+  </ul>
+</div>
+
+<h2 id="conclusiones">Conclusiones</h2>
+<p>Las conclusiones se basan en 38 corridas recalculadas el 24 oct 2026, todas con la malla congelada de 14&nbsp;417 nodos
+(13&nbsp;940 sin fantasmas) y la config actual de <code>base.json</code>. Ningún caso se rechazó por diferencias de malla o de config.
+Los valores son a t = 30 días.</p>
+
+<div class="box">
+<h3>1. Flujo (H, |U|): BFR y FEM coinciden a centímetros, salvo en dos zonas</h3>
+<ul>
+  <li><b>Coincidencia global.</b> ΔH RMS = 0.027&nbsp;m con pozo y 0.052&nbsp;m sin pozo, sobre un rango de H de unos 3&nbsp;m. El nivel en el pozo
+      difiere 0.04&nbsp;m (BFR más bajo).</li>
+  <li><b>Primera zona: un punto fijo.</b> El ΔH máximo es <b>0.187&nbsp;m en todos los casos salvo el grupo B</b>, siempre en el mismo nodo (x ≈ 9682, z ≈ −813),
+      junto a la pared inferior derecha. Ahí BFR muestra franjas oscilantes (un artefacto del stencil RBF-FD cerca de la frontera, visible en la
+      columna «BFR − FEM» de los videos). No depende de Q, de la fuente ni de dt.</li>
+  <li><b>Segunda zona: deriva sin pozo.</b> Sin pozo, el lado izquierdo (salida) se separa de forma lenta y extendida, unos −0.1&nbsp;m en más de
+      6&nbsp;000 nodos. El error absoluto de |U| es 5.5e-5&nbsp;m/s frente a 1.6e-5 con pozo: el pozo «ancla» el nivel en ambos backends.
+      Las curvas de los videos muestran que esta deriva crece durante los 30 días, es decir, no se ha estabilizado.</li>
+  <li><b>dt no influye (grupo E).</b> Con dt = 36&nbsp;000, 18&nbsp;000 y 7&nbsp;200&nbsp;s los errores son idénticos a tres cifras
+      (C L2 = 0.258, ΔH RMS = 0.027&nbsp;m). La diferencia BFR↔FEM es <b>espacial o de formulación, no temporal</b>.</li>
+</ul>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>2. BC de salida tipo FEM en BFR (grupo B): inestable con la malla actual</h3>
+<p>Con <code>bc_outlet_mode=fem</code>, BFR reduce el error de |U| (L2 rel 0.14 frente a 0.56 en A0), lo que confirma que la BC de salida
+   <code>pfs</code> es la causa principal de la deriva del punto anterior. Pero H <b>diverge exponencialmente desde el día 10</b> en un nodo de esquina
+   de la pared (x ≈ 825, z ≈ −2670): ΔH máx = 194&nbsp;m y ΔH RMS = 0.81&nbsp;m. La inestabilidad que señaló la rama
+   <code>audit/bfr-fenicsx-validation</code> <b>persiste</b>. Para usar esa BC hay que corregir el tratamiento del nodo de esquina salida/pared.</p>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>3. Transporte (C): diferencia estable de ~23–29&nbsp;% en L2, concentrada en la fuente</h3>
+<ul>
+  <li>C L2 rel final entre 0.21 y 0.29 en todos los casos sin upwind. Crece de forma monótona con el tiempo; no hay explosión.</li>
+  <li>La diferencia está en el <b>núcleo de la fuente</b>: BFR conserva un pico más alto y estrecho, y FEM lo reparte más (difusión numérica de Galerkin).
+      Una fuente más ancha reduce la discrepancia (grupo C): σ = 0.5 → 0.29, σ = 1 → 0.26, σ = 2 → 0.24, σ = 4 → 0.22 (con pozo).</li>
+  <li>La masa total ∫C dΩ coincide al <b>1–2&nbsp;%</b> (BFR/FEM = 0.984–0.988). Los dos esquemas reparten distinto una masa casi igual.</li>
+</ul>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>4. Pozo: BFR extrae unas 3.6 veces menos contaminante que FEM</h3>
+<p>La concentración extraída (media gaussiana del sumidero) da BFR/FEM = <b>0.28</b> con pozo (A2, A3, C, E) y entre 0.20 y 0.33 en el grupo D.
+   Sin pozo, en el mismo punto la razón es 0.51. Por tanto la brecha no es solo la llegada de la pluma: el <b>sumidero de C</b> actúa distinto en los
+   dos backends, aunque ambos usan la misma ε = r_pozo/3 = 6.7&nbsp;m. Con h_min ≈ 2.4&nbsp;m cerca del pozo, el kernel abarca pocos nodos.
+   Como el funcional de la optimización (J₁) usa justo esta cantidad, <b>este es el punto que más afecta a los resultados de optimización</b>
+   y el primero que conviene investigar.</p>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>5. Conservación de masa: producción espuria con caudal alto (ambos backends)</h3>
+<p>Sin fuente, ∫C dΩ no debería superar su valor inicial. Con <code>Q_std = 0.7</code> (D_Q7e-1) <b>lo supera en ambos backends</b>:
+   FEM sube un 4&nbsp;% de forma transitoria y BFR termina en 1.018 veces el valor inicial.
+   Además, A2 (solo pozo) pierde menos masa que A0 (sin nada): 0.997 frente a 0.931 en FEM.
+   Una parte puede ser física (el pozo desvía agua que antes salía por la frontera), pero el exceso sobre la masa inicial no lo es.
+   Mi hipótesis, aún no verificada: la forma advectiva no conservativa <code>u·∇C</code> junto con ∇·u ≠ 0 en flujo transitorio
+   (almacenamiento y sumidero), más el recorte C ≥ 0. Siguiente paso: un balance de masa paso a paso (∂ₜ∫C contra flujo por fronteras,
+   sumidero y recorte).</p>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>6. Upwind direccional en BFR (grupo F): no usar en su forma actual</h3>
+<p>Con <code>upwind_transport</code>, BFR se aleja de FEM en lugar de acercarse: C L2 = 0.66 (F1) y 1.30 (F3), frente a 0.25 sin upwind.
+   En F3 aparece un <b>punto caliente creciente</b> de C cerca de x ≈ 3500&nbsp;m en la parte superior (C máx unas 5 veces la de FEM) y
+   la masa BFR crece de forma exponencial desde el día 20 (BFR/FEM = 1.12). Es una inestabilidad, no estabilización.</p>
+</div>
+
+<div class="box" style="margin-top:12px">
+<h3>Qué es fiable hoy y qué no</h3>
+<ul>
+  <li><b>Fiable:</b> flujo con pozo (ΔH ≈ 3&nbsp;cm), masa total de C (1–2&nbsp;%), independencia de dt y forma general de la pluma.
+      La configuración de referencia (A3: <code>pfs</code>, sin upwind, θ = 1) es estable en ambos backends.</li>
+  <li><b>No fiable todavía:</b> la C extraída en el pozo (factor 3.6 entre backends), la conservación de masa con caudales altos y
+      las variantes <code>bc_outlet_mode=fem</code> y <code>upwind_transport</code> de BFR (inestables).</li>
+  <li><b>Prioridades sugeridas:</b> (1) balance de masa y sumidero del pozo; (2) nodo de esquina con la BC <code>fem</code>;
+      (3) oscilación de frontera en (9682, −813). Los experimentos están listos para repetirse con
+      <code>python -m experimentos.correr --todos --comparar</code> y <code>python -m experimentos.informe</code>.</li>
+</ul>
+</div>

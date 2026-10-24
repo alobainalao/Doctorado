@@ -36,7 +36,7 @@ GRUPOS = {
                 "cfg": {**SIN_POZO},
             },
             "A2_solo_pozo": {
-                "desc": "Pozo activo (Q_std=1e-3), fuente apagada",
+                "desc": "Pozo activo (Q_std=0.3), fuente apagada",
                 "cfg": {**SIN_FUENTE},
             },
             "A3_fuente_pozo": {
@@ -80,7 +80,7 @@ GRUPOS = {
         },
     },
 
-    # ── D. Caudal del pozo, sin fuente (Q_std = 1e-3 está en A2) ─────────────
+    # ── D. Caudal del pozo, sin fuente (Q_std = 0.3 está en A2) ──────────────
     "D_caudal_pozo": {
         "desc": "Caudal de extracción Q_std (cono de depresión), sin fuente",
         "casos": {
@@ -88,7 +88,7 @@ GRUPOS = {
                 "desc": f"Q_std={q:g}, sin fuente",
                 "cfg": {"Q_std": q, **SIN_FUENTE},
             }
-            for q in (1e-4, 5e-4, 2e-3, 5e-3)
+            for q in (1e-2, 3e-2, 1e-1, 7e-1)
         },
     },
 

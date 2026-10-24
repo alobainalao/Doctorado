@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Experimentos BFR vs FEniCS</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f7f5; --surface: #fcfcfb; --border: #dddcd6; --grid: #e8e7e2;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7973;
+  --bfr: #2a78d6; --fem: #eb6834; --e1: #6250d6; --e2: #1baf7a;
+  --ok: #008300; --warn: #b26b00; --bad: #c62f2e; --accent-bg: #eef3fb;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --border: #34332f; --grid: #2a2a27;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+    --bfr: #3987e5; --fem: #d95926; --e1: #9085e9; --e2: #199e70;
+    --ok: #3fb33f; --warn: #e0a030; --bad: #e66767; --accent-bg: #1c2633;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1a1a19; --border: #34332f; --grid: #2a2a27;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+  --bfr: #3987e5; --fem: #d95926; --e1: #9085e9; --e2: #199e70;
+  --ok: #3fb33f; --warn: #e0a030; --bad: #e66767; --accent-bg: #1c2633;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 80px; }
+h1 { font-size: 28px; margin: 8px 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 21px; margin: 44px 0 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+h3 { font-size: 16px; margin: 0 0 4px; }
+p, li { color: var(--text-2); max-width: 78ch; }
+code { font-size: 0.9em; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
+.sub { color: var(--muted); margin: 0 0 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+.chip { font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: var(--text-2); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 18px 0 0; font-size: 14px; }
+nav.toc a { color: var(--bfr); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+.box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.callout { background: var(--accent-bg); border-left: 3px solid var(--bfr); border-radius: 6px; padding: 12px 16px; margin: 14px 0; }
+.callout.bad { border-left-color: var(--bad); }
+.callout.warn { border-left-color: var(--warn); }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--text-2); font-weight: 600; background: var(--surface); position: sticky; top: 0; cursor: pointer; user-select: none; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+tbody tr:hover { background: var(--accent-bg); }
+td a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--muted); }
+.cell { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.bar { height: 6px; border-radius: 0 3px 3px 0; background: var(--muted); opacity: 0.45; }
+.grp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0 6px; }
+.caso { margin: 18px 0; }
+.caso-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; margin-bottom: 8px; }
+.caso-head .desc { color: var(--text-2); font-size: 14px; }
+.kpis { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--text-2); margin: 4px 0 10px; }
+.kpis b { color: var(--text); font-variant-numeric: tabular-nums; }
+video { width: 100%; border-radius: 6px; background: #000; display: block; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin-top: 10px; }
+.chart { position: relative; }
+.chart .ttl { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 2px 4px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin: 0 0 0 4px; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
+.legend i.dash { border-top-style: dashed; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; z-index: 2; font-variant-numeric: tabular-nums; }
+.axis text { fill: var(--muted); font-size: 10px; }
+.axis line, .axis path { stroke: var(--grid); }
+.falta { color: var(--bad); }
+.theme-btn { float: right; font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; }
+@media (max-width: 640px) { h1 { font-size: 23px; } .box { padding: 12px; } }
+</style>
+</head>
+<body>
+<main>
+  <button class="theme-btn" id="themeBtn" type="button">Tema</button>
+  <h1>Experimentos BFR (RBF-FD) vs FEniCS (FEM)</h1>
+  <p class="sub" id="sub"></p>
+  <div class="chips" id="chips"></div>
+  <nav class="toc" id="toc"></nav>
+
+  <!--__CONCLUSIONES__-->
+
+  <h2 id="resumen">Resumen de todos los casos</h2>
+  <p>Valores en t = 30 días (último paso). Clic en una columna para ordenar. Todos se calcularon en la misma
+     pasada que generó el video de cada caso. Las normas usan pesos de área nodal sobre la triangulación de FEniCS.</p>
+  <div class="tbl-wrap"><table id="tabla"></table></div>
+
+  <div id="grupos"></div>
+</main>
+
+<script>
+const DATOS = /*__DATOS__*/null;
+
+// ── tema ────────────────────────────────────────────────────────────────────
+(function () {
+  const btn = document.getElementById("themeBtn");
+  let t = null;
+  try { t = localStorage.getItem("informe-tema"); } catch (e) {}
+  if (t) document.documentElement.dataset.theme = t;
+  btn.onclick = () => {
+    const dark = getComputedStyle(document.documentElement).colorScheme.includes("dark");
+    const nuevo = dark ? "light" : "dark";
+    document.documentElement.dataset.theme = nuevo;
+    try { localStorage.setItem("informe-tema", nuevo); } catch (e) {}
+    redibujar();
+  };
+})();
+
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt = (x, d = 2) => {
+  if (x === null || x === undefined || !isFinite(x)) return "—";
+  const a = Math.abs(x);
+  if (a !== 0 && (a < 1e-2 || a >= 1e4)) return x.toExponential(d);
+  return x.toFixed(a < 1 ? d + 1 : d);
+};
+// Etiqueta de eje: 3 cifras significativas, exponencial si es muy chica/grande.
+const fmtEje = (v) => {
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  return (a < 1e-2 || a >= 1e4) ? v.toExponential(1) : String(+v.toPrecision(3));
+};
+const pct = (x) => isFinite(x) ? (100 * x).toFixed(1) + " %" : "—";
+const el = (tag, attrs = {}, html = "") => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (html) e.innerHTML = html;
+  return e;
+};
+const NS = "http://www.w3.org/2000/svg";
+const S = (tag, attrs = {}) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  return e;
+};
+
+// ── cabecera ────────────────────────────────────────────────────────────────
+const b = DATOS.base;
+document.getElementById("sub").textContent =
+  "Malla congelada compartida · ADR · comparación nodo a nodo sin interpolación · " +
+  DATOS.grupos.reduce((n, g) => n + g.casos.filter(c => !c.falta).length, 0) + " casos comparados";
+[["Q_std", b.Q_std + " m³/s"], ["dt", b.dt + " s"], ["T", (b.T / 86400) + " días"], ["θ flujo", b.theta],
+ ["θ_C", b.theta_C], ["r_pozo", b.r_pozo + " m"], ["δ pozo", b.norm_delta_pozo], ["σ fuente", b.sigma_fuente],
+ ["n_stencil", b.n_stencil], ["BC salida BFR", b.bc_outlet_mode]].forEach(([k, v]) =>
+  document.getElementById("chips").appendChild(el("span", { class: "chip" }, `${k} = ${v}`)));
+const toc = document.getElementById("toc");
+[["#revision", "Revisión"], ["#conclusiones", "Conclusiones"], ["#resumen", "Resumen"]]
+  .concat(DATOS.grupos.map(g => ["#" + g.grupo, g.grupo.replace(/_/g, " ")]))
+  .forEach(([h, t]) => { if (document.querySelector(h) || !["#revision", "#conclusiones"].includes(h))
+    toc.appendChild(el("a", { href: h }, t)); });
+
+// ── tabla resumen ───────────────────────────────────────────────────────────
+const COLS = [
+  ["grupo", "Grupo", r => r.grupo.split("_")[0]],
+  ["caso", "Caso", r => r.caso],
+  ["H_rms_final_m", "ΔH RMS (m)", r => r.H_rms_final_m, true],
+  ["H_max_final_m", "ΔH máx (m)", r => r.H_max_final_m, true],
+  ["C_L2_rel_final", "C L2 rel", r => r.C_L2_rel_final, true],
+  ["V_L2_rel_final", "|U| L2 rel", r => r.V_L2_rel_final, true],
+  ["masa_ratio_final", "Masa BFR/FEM", r => r.masa_ratio_final, false],
+  ["cpozo_ratio", "C pozo BFR/FEM", r => r.Cpozo_fem_final > 0 ? r.Cpozo_bfr_final / r.Cpozo_fem_final : NaN, false],
+  ["Hpozo_dif", "H pozo BFR−FEM (m)", r => r.Hpozo_bfr_final - r.Hpozo_fem_final, false],
+];
+const FILAS = DATOS.grupos.flatMap(g => g.casos.filter(c => !c.falta).map(c => c.resumen));
+let orden = { col: null, asc: true };
+function tabla() {
+  const t = document.getElementById("tabla");
+  t.innerHTML = "";
+  const thead = el("thead"), tr = el("tr");
+  COLS.forEach(([k, lab]) => {
+    const th = el("th", { scope: "col" }, lab + (orden.col === k ? (orden.asc ? " ▲" : " ▼") : ""));
+    th.onclick = () => { orden = { col: k, asc: orden.col === k ? !orden.asc : true }; tabla(); };
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr); t.appendChild(thead);
+  const filas = FILAS.slice();
+  if (orden.col) {
+    const f = COLS.find(c => c[0] === orden.col)[2];
+    filas.sort((a, b) => { const x = f(a), y = f(b);
+      return (typeof x === "string" ? x.localeCompare(y) : (x - y)) * (orden.asc ? 1 : -1); });
+  }
+  const maxes = {};
+  COLS.forEach(([k, , f, barra]) => { if (barra) maxes[k] = Math.max(...FILAS.map(f).filter(isFinite)); });
+  const tb = el("tbody");
+  filas.forEach(r => {
+    const tr = el("tr");
+    COLS.forEach(([k, , f, barra]) => {
+      const v = f(r);
+      let html;
+      if (k === "caso") html = `<a href="#${r.grupo}--${r.caso}">${v}</a>`;
+      else if (typeof v === "string") html = v;
+      else if (barra) html = `<span class="cell">${fmt(v)}<span class="bar" style="width:${Math.max(2, 46 * v / maxes[k])}px"></span></span>`;
+      else html = fmt(v, 3);
+      tr.appendChild(el("td", {}, html));
+    });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+}
+tabla();
+
+// ── gráfica de líneas con cursor y tooltip ──────────────────────────────────
+const GRAFICAS = [];
+function lineChart(cont, { titulo, x, series, log = false, xlab = "t (días)", tipoX = "t", soloPuntos = false }) {
+  const box = el("div", { class: "chart" });
+  box.appendChild(el("div", { class: "ttl" }, titulo));
+  const leg = el("div", { class: "legend" });
+  series.forEach(s => leg.appendChild(el("span", {}, `<i class="${s.dash ? "dash" : ""}" style="border-color:var(${s.color})"></i>${s.nombre}`)));
+  box.appendChild(leg);
+  const W = 320, H = 190, m = { l: 52, r: 10, t: 10, b: 30 };
+  const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": titulo });
+  box.appendChild(svg);
+  const tip = el("div", { class: "tip" });
+  box.appendChild(tip);
+  cont.appendChild(box);
+
+  const g = { svg, tip, x, series, log, W, H, m, cursor: null, titulo, xlab, tipoX, soloPuntos };
+  GRAFICAS.push(g);
+  dibujar(g);
+
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) * (W / r.width);
+    const i = idxCercano(g, g.sx.invert(px));
+    marcar(g, i, true);
+    const xpos = (g.sx(x[i]) / W) * r.width;
+    tip.style.display = "block";
+    tip.style.left = Math.min(Math.max(xpos + 10, 0), r.width - 150) + "px";
+    tip.style.top = "30px";
+  });
+  svg.addEventListener("pointerleave", () => { tip.style.display = "none"; if (g.cursorFijo !== undefined) marcar(g, g.cursorFijo, false); });
+  return g;
+}
+function idxCercano(g, xv) {
+  let best = 0, d = Infinity;
+  g.x.forEach((v, i) => { const e = Math.abs(v - xv); if (e < d) { d = e; best = i; } });
+  return best;
+}
+function escala(d0, d1, r0, r1, log) {
+  const f = log ? Math.log10 : (v) => v;
+  const a = f(d0), b = f(d1) === a ? a + 1 : f(d1);
+  const s = (v) => r0 + (f(v) - a) / (b - a) * (r1 - r0);
+  s.invert = (p) => { const v = a + (p - r0) / (r1 - r0) * (b - a); return log ? 10 ** v : v; };
+  return s;
+}
+function ticks(d0, d1, log, n = 4) {
+  if (log) {
+    const out = [];
+    for (let e = Math.floor(Math.log10(d0)); e <= Math.ceil(Math.log10(d1)); e++) { const v = 10 ** e; if (v >= d0 * 0.999 && v <= d1 * 1.001) out.push(v); }
+    return out.length ? out : [d0, d1];
+  }
+  const paso = 10 ** Math.floor(Math.log10((d1 - d0) / n || 1));
+  const p = [1, 2, 2.5, 5, 10].map(k => k * paso).find(k => (d1 - d0) / k <= n) || paso * 10;
+  const out = [];
+  for (let v = Math.ceil(d0 / p) * p; v <= d1 + 1e-12 * Math.abs(d1); v += p) out.push(+v.toPrecision(12));
+  return out;
+}
+function dibujar(g) {
+  const { svg, x, series, W, H, m } = g;
+  svg.innerHTML = "";
+  let ys = series.flatMap(s => s.y).filter(v => isFinite(v) && (!g.log || v > 0));
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  if (!g.log) { const pad = (y1 - y0) * 0.06 || Math.abs(y1) * 0.05 || 1; y0 -= pad; y1 += pad; }
+  else { y0 /= 1.5; y1 *= 1.5; }
+  const padX = g.soloPuntos ? 0.4 : 0;
+  g.sx = escala(x[0] - padX, x[x.length - 1] + padX, m.l, W - m.r, false);
+  g.sy = escala(y0, y1, H - m.b, m.t, g.log);
+  const ax = S("g", { class: "axis" });
+  ticks(y0, y1, g.log).forEach(v => {
+    const yy = g.sy(v);
+    ax.appendChild(S("line", { x1: m.l, x2: W - m.r, y1: yy, y2: yy }));
+    const t = S("text", { x: m.l - 6, y: yy + 3, "text-anchor": "end" }); t.textContent = fmtEje(v); ax.appendChild(t);
+  });
+  (g.tipoX === "t" ? ticks(x[0], x[x.length - 1], false, 5) : x).forEach(v => {
+    const t = S("text", { x: g.sx(v), y: H - m.b + 14, "text-anchor": "middle" }); t.textContent = +v.toFixed(2); ax.appendChild(t);
+  });
+  const xl = S("text", { x: (m.l + W - m.r) / 2, y: H - 2, "text-anchor": "middle" }); xl.textContent = g.xlab; ax.appendChild(xl);
+  svg.appendChild(ax);
+  g.puntos = [];
+  series.forEach(s => {
+    if (g.soloPuntos) {           // categorías: puntos sin unir
+      s.y.forEach((v, i) => { if (isFinite(v) && (!g.log || v > 0))
+        svg.appendChild(S("circle", { cx: g.sx(x[i]), cy: g.sy(v), r: 5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2 })); });
+      const c = S("circle", { r: 7, fill: "none", stroke: css(s.color), "stroke-width": 2, visibility: "hidden" });
+      svg.appendChild(c); g.puntos.push(c);
+      return;
+    }
+    const d = s.y.map((v, i) => (isFinite(v) && (!g.log || v > 0)) ? `${g.sx(x[i]).toFixed(1)},${g.sy(v).toFixed(1)}` : null)
+      .reduce((acc, p) => { if (p === null) acc.push(""); else acc[acc.length - 1] += (acc[acc.length - 1] ? " L" : "M") + p; return acc; }, [""])
+      .join(" ");
+    svg.appendChild(S("path", { d, fill: "none", stroke: css(s.color), "stroke-width": 2, "stroke-dasharray": s.dash ? "5 3" : "", "stroke-linejoin": "round" }));
+    const c = S("circle", { r: 4, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2, visibility: "hidden" });
+    svg.appendChild(c); g.puntos.push(c);
+  });
+  g.cursor = S("line", { y1: m.t, y2: H - m.b, stroke: css("--muted"), "stroke-width": 1, visibility: "hidden" });
+  svg.appendChild(g.cursor);
+  svg.appendChild(S("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }));
+  if (g.cursorFijo !== undefined) marcar(g, g.cursorFijo, false);
+}
+function marcar(g, i, conTip) {
+  const xx = g.sx(g.x[i]);
+  g.cursor.setAttribute("x1", xx); g.cursor.setAttribute("x2", xx); g.cursor.setAttribute("visibility", "visible");
+  g.series.forEach((s, k) => {
+    const v = s.y[i], c = g.puntos[k];
+    if (isFinite(v) && (!g.log || v > 0)) { c.setAttribute("cx", xx); c.setAttribute("cy", g.sy(v)); c.setAttribute("visibility", "visible"); }
+    else c.setAttribute("visibility", "hidden");
+  });
+  if (conTip) g.tip.innerHTML = `<b>${g.tipoX === "t" ? "t = " + fmt(g.x[i]) + " días" : g.tipoX[i]}</b><br>` +
+    g.series.map(s => `<span style="color:var(--text-2)">${s.nombre}:</span> ${fmt(s.y[i], 3)}`).join("<br>");
+}
+function redibujar() { GRAFICAS.forEach(dibujar); }
+
+// ── gráficas comunes de un caso: las mismas cuatro del video ───────────────
+function graficasCaso(cont, s) {
+  const t = s.t_dias;
+  return [
+    lineChart(cont, { titulo: "Error de H (m)", x: t, log: true, series: [
+      { nombre: "RMS", y: s.H_rms_m, color: "--e1" }, { nombre: "máx", y: s.H_max_m, color: "--e2", dash: true }] }),
+    lineChart(cont, { titulo: "Error relativo L2", x: t, log: true, series: [
+      { nombre: "C", y: s.C_L2_rel, color: "--e1" }, { nombre: "|U|", y: s.V_L2_rel, color: "--e2", dash: true }] }),
+    lineChart(cont, { titulo: "Masa ∫C dΩ", x: t, series: [
+      { nombre: "BFR", y: s.masa_bfr, color: "--bfr" }, { nombre: "FEM", y: s.masa_fem, color: "--fem", dash: true }] }),
+    lineChart(cont, { titulo: "C extraída en el pozo", x: t, series: [
+      { nombre: "BFR", y: s.Cpozo_bfr, color: "--bfr" }, { nombre: "FEM", y: s.Cpozo_fem, color: "--fem", dash: true }] }),
+  ];
+}
+
+// ── secciones por grupo ─────────────────────────────────────────────────────
+const raiz = document.getElementById("grupos");
+DATOS.grupos.forEach(G => {
+  const sec = el("section", { id: G.grupo });
+  sec.appendChild(el("h2", {}, G.grupo.replace(/_/g, " ")));
+  sec.appendChild(el("p", {}, G.desc));
+  const ok = G.casos.filter(c => !c.falta);
+  // Comparación entre casos del grupo: valor final de cada métrica por caso.
+  if (ok.length > 1) {
+    const mg = el("div", { class: "mini-grid" });
+    const nombres = ok.map(c => c.caso);
+    const comp = (titulo, f, log) => {
+      lineChart(mg, { titulo, x: nombres.map((_, i) => i), xlab: "caso (índice)", tipoX: nombres, log, soloPuntos: true,
+        series: [{ nombre: "t = 30 d", y: ok.map(c => f(c.resumen)), color: "--e1" }] });
+    };
+    comp("ΔH RMS final (m) por caso", r => r.H_rms_final_m, true);
+    comp("C L2 rel final por caso", r => r.C_L2_rel_final, true);
+    comp("Masa BFR/FEM final por caso", r => r.masa_ratio_final, false);
+    sec.appendChild(el("p", { class: "sub" }, "Eje x: " + nombres.map((n, i) => `${i} = ${n}`).join(" · ")));
+    sec.appendChild(mg);
+  }
+  G.casos.forEach(c => {
+    const box = el("div", { class: "box caso", id: `${G.grupo}--${c.caso}` });
+    const head = el("div", { class: "caso-head" });
+    head.appendChild(el("h3", {}, c.caso));
+    head.appendChild(el("span", { class: "desc" }, c.desc || (c.resumen && c.resumen.desc) || ""));
+    box.appendChild(head);
+    if (c.falta) { box.appendChild(el("p", { class: "falta" }, "Sin metricas.json: el caso no se comparó (ver log de comparar.py).")); sec.appendChild(box); return; }
+    const r = c.resumen, s = c.series;
+    if (r.ref_fem !== `${r.grupo}/${r.caso}`) box.appendChild(el("p", { class: "sub" }, `Columna FEM tomada de ${r.ref_fem} (el caso sólo cambia BFR).`));
+    box.appendChild(el("div", { class: "kpis" },
+      `<span>ΔH RMS <b>${fmt(r.H_rms_final_m)} m</b> (${pct(r.H_rms_sobre_rango)} del rango de H)</span>` +
+      `<span>C L2 rel <b>${fmt(r.C_L2_rel_final)}</b></span><span>|U| L2 rel <b>${fmt(r.V_L2_rel_final)}</b></span>` +
+      `<span>Masa BFR/FEM <b>${fmt(r.masa_ratio_final, 3)}</b></span>` +
+      `<span>C pozo BFR / FEM <b>${fmt(r.Cpozo_bfr_final)} / ${fmt(r.Cpozo_fem_final)}</b></span>` +
+      `<span>C mín BFR / FEM <b>${fmt(r.Cmin_bfr)} / ${fmt(r.Cmin_fem)}</b></span>`));
+    let graf = [];
+    if (c.video) {
+      const v = el("video", { controls: "", preload: "metadata", playsinline: "", muted: "",
+        src: c.video, poster: c.video.replace("comparacion.mp4", "comparacion_final.png") });
+      box.appendChild(v);
+      const tc = s.t_cuadros || [];
+      v.addEventListener("timeupdate", () => {
+        if (!tc.length) return;
+        const k = Math.min(tc.length - 1, Math.floor(v.currentTime * 12));
+        graf.forEach(g => { g.cursorFijo = idxCercano(g, tc[k]); marcar(g, g.cursorFijo, false); });
+      });
+    } else box.appendChild(el("p", { class: "falta" }, "Video no generado (comparar.py --sin-video)."));
+    const ch = el("div", { class: "charts" });
+    box.appendChild(ch);
+    graf = graficasCaso(ch, s);
+    sec.appendChild(box);
+  });
+  raiz.appendChild(sec);
+});
+</script>
+</body>
+</html>

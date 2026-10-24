@@ -3,8 +3,9 @@ Animaciones de los experimentos BFR (RBF-FD) vs FEniCS (FEM).
 
 Por caso genera:
     <caso>/<backend>/figures/{H,C,V}.mp4    un video por campo y backend
-    <caso>/comparacion/grid.mp4             grilla 3×2: (H, C, |U|) × (BFR, FEM)
-    <caso>/comparacion/grid_final.png       último cuadro de la grilla
+
+La comparación BFR vs FEM (grilla con diferencia y curvas) NO está aquí: la
+hace experimentos/comparar.py junto con las métricas, en una sola pasada.
 
 Rangos de color fijos por caso y comunes a ambos backends (los mismos en los
 videos individuales y en la grilla), para que BFR y FEM se lean igual. En los
@@ -25,6 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.animation import FFMpegWriter  # noqa: E402
+from matplotlib.colors import LogNorm, Normalize  # noqa: E402
 from matplotlib.patches import Polygon as MplPolygon  # noqa: E402
 from matplotlib.path import Path as MplPath  # noqa: E402
 from scipy import sparse  # noqa: E402
@@ -103,6 +105,8 @@ def _cargar(path):
 
 def _img(d, campo, k):
     im = (d["Mg"] @ d[campo][k]).reshape(NZ, NX)
+    if campo == "V":                      # LogNorm: sin ceros
+        im = np.maximum(im, 1e-30)
     return np.ma.masked_where(d["fuera"], im)
 
 
@@ -114,12 +118,15 @@ def _flechas(d, k):
 
 def _rangos(datos):
     """(vmin, vmax) por campo, comunes a todos los backends del caso.
-    H y |U| con percentiles para que un nodo aislado no aplaste la escala."""
+    Rango completo: recortar por percentiles escondía el cono del pozo (el
+    mínimo de H y el pico de |U| están en unos pocos nodos). |U| va en escala
+    log (ver _panel), con piso en el percentil 1 para no irse a cero."""
     r = {}
     todo = {c: np.concatenate([d[c].ravel() for d in datos]) for c, _, _ in CAMPOS}
-    r["H"] = tuple(np.percentile(todo["H"], [0.5, 99.5]))
+    r["H"] = (float(todo["H"].min()), float(todo["H"].max()))
     r["C"] = (0.0, max(float(todo["C"].max()), 1e-30))
-    r["V"] = (0.0, max(float(np.percentile(todo["V"], 99.5)), 1e-30))
+    vmax = max(float(todo["V"].max()), 1e-30)
+    r["V"] = (min(max(float(np.percentile(todo["V"], 1)), 1e-30), vmax / 10), vmax)
     return r
 
 
@@ -132,7 +139,8 @@ def _panel(ax, d, campo, vmin, vmax, cmap):
     cm = copy.copy(cmap)
     cm.set_bad("white")
     im = ax.imshow(_img(d, campo, 0), origin="lower", extent=[XMIN, XMAX, ZMIN, ZMAX],
-                   vmin=vmin, vmax=vmax, cmap=cm, aspect="equal", interpolation="antialiased")
+                   norm=LogNorm(vmin, vmax) if campo == "V" else Normalize(vmin, vmax),
+                   cmap=cm, aspect="equal", interpolation="antialiased")
     im.set_clip_path(clip)
     ax.add_patch(MplPolygon(DOMINIO, fc="none", ec="#999999", lw=0.6))
     q = None
@@ -173,40 +181,6 @@ def video_backend(d, backend, titulo, rangos, out_dir):
         plt.close(fig)
 
 
-def video_grilla(datos, titulo, rangos, out_dir):
-    """grid.mp4 (+ grid_final.png): filas H, C, |U|; columnas BFR, FEM."""
-    os.makedirs(out_dir, exist_ok=True)
-    backends = list(datos)
-    fig, axs = plt.subplots(3, 2, figsize=(16, 7.4),
-                            gridspec_kw=dict(left=0.03, right=0.9, top=0.89, bottom=0.01,
-                                             wspace=0.03, hspace=0.06))
-    paneles = []
-    for i, (campo, etiqueta, cmap) in enumerate(CAMPOS):
-        for j, b in enumerate(backends):
-            im, q = _panel(axs[i, j], datos[b], campo, *rangos[campo], cmap)
-            paneles.append((im, q, datos[b], campo))
-            if i == 0:
-                axs[i, j].set_title(LABEL_B[b], fontsize=14, fontweight="bold")
-        axs[i, 0].text(-0.015, 0.5, etiqueta, transform=axs[i, 0].transAxes, rotation=90,
-                       ha="right", va="center", fontsize=13, fontweight="bold")
-        pos = axs[i, 1].get_position()
-        cax = fig.add_axes([0.91, pos.y0 + 0.1 * pos.height, 0.012, 0.8 * pos.height])
-        fig.colorbar(im, cax=cax).ax.tick_params(labelsize=9)
-    sup = fig.suptitle("", fontsize=15)
-
-    d0 = datos[backends[0]]
-    Nt = min(d["H"].shape[0] for d in datos.values())
-    writer = FFMpegWriter(**WRITER_KW)
-    with writer.saving(fig, os.path.join(out_dir, "grid.mp4"), dpi=110):
-        for k in range(Nt):
-            for im, q, d, campo in paneles:
-                _actualizar(im, q, d, campo, k)
-            sup.set_text(f"{titulo}   |   t = {_t_dias(d0, k):.2f} días")
-            writer.grab_frame()
-    fig.savefig(os.path.join(out_dir, "grid_final.png"), dpi=130)
-    plt.close(fig)
-
-
 def animar_caso(g, c, spec, force=False):
     caso_dir = os.path.join(OUT_ROOT, g, c)
     ref = spec.get("ref_fem", f"{g}/{c}")
@@ -218,20 +192,19 @@ def animar_caso(g, c, spec, force=False):
     if not fuentes:
         print(f"[animar] ⏭  {tag}: sin resultados", flush=True)
         return False
-    grid = os.path.join(caso_dir, "comparacion", "grid.mp4")
-    if os.path.exists(grid) and not force:
+    hecho = os.path.join(fuentes.get("bfr", caso_dir), "figures", "C.mp4")
+    if os.path.exists(hecho) and not force:
         print(f"[animar] ⏭  {tag}: ya animado (usar --force)", flush=True)
         return True
 
     datos = {b: _cargar(os.path.join(p, "simulation_results.npz")) for b, p in fuentes.items()}
     rangos = _rangos(list(datos.values()))
-    titulo = c if ref == tag else f"{c}  (FEM: {ref.split('/')[-1]})"
     # Videos individuales sólo de los backends corridos en este caso (no de ref_fem).
     for b, d in datos.items():
         if fuentes[b].startswith(caso_dir):
             video_backend(d, b, c, rangos, os.path.join(fuentes[b], "figures"))
-    if len(datos) == 2:
-        video_grilla(datos, titulo, rangos, os.path.join(caso_dir, "comparacion"))
+    # La grilla BFR|FEM ya no se hace aquí: la comparación (con diferencia y
+    # curvas) la genera comparar.py en la misma pasada que las métricas.
     print(f"[animar] ✓  {tag}", flush=True)
     return True
 

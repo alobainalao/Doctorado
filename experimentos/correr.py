@@ -63,6 +63,29 @@ def listar():
             print(f"  {c:<28} {bks:<12} {spec['desc']}{ref}")
 
 
+def _desactualizado(cfg, out_dir, res):
+    """Motivo por el que un resultado existente no corresponde a `cfg` y a la
+    malla congelada actual, o None si sigue vigente."""
+    import numpy as np
+    cfg_path = os.path.join(out_dir, "config.json")
+    if not os.path.exists(cfg_path):
+        return "sin config.json"
+    with open(cfg_path) as f:
+        prev = json.load(f)
+    dif = sorted(k for k in set(cfg) | set(prev)
+                 if k not in ("keep_pre",) and prev.get(k) != cfg.get(k))
+    if dif:
+        return "config distinta en " + ", ".join(dif)
+    import pickle
+    with open(os.path.join(CODIGO_DIR, cfg["mesh_pkl"]), "rb") as f:
+        n_malla = len(pickle.load(f)["nodes"])
+    n_res = len(np.load(res, allow_pickle=True)["nodes"])
+    # BFR guarda todos los nodos (con fantasmas); FEM sólo los del dominio.
+    if (n_res != n_malla) if cfg["metodo"] == "bfr" else (n_res > n_malla):
+        return f"{n_res} nodos en el resultado, {n_malla} en la malla"
+    return None
+
+
 def correr_caso(base, g, c, spec, backend, args):
     cfg = config_caso(base, g, c, spec, backend, _out_root(args))
     if args.smoke:
@@ -74,8 +97,13 @@ def correr_caso(base, g, c, spec, backend, args):
     tag = f"{g}/{c} [{backend}]"
 
     if os.path.exists(res) and not args.force:
-        print(f"[correr] ⏭  {tag}: ya existe (usar --force para repetir)")
-        return True
+        motivo = _desactualizado(cfg, out_dir, res)
+        if not motivo:
+            print(f"[correr] ⏭  {tag}: ya existe (usar --force para repetir)")
+            return True
+        # Un resultado de otra config o de otra malla sesga la comparación:
+        # se repite en vez de reutilizarlo en silencio.
+        print(f"[correr] ⚠  {tag}: resultado desactualizado ({motivo}); se repite")
     if args.dry_run:
         dif = {**spec.get("cfg", {}), **spec.get(backend, {})}
         print(f"[correr] (dry-run) {tag}: {dif or 'base'}")

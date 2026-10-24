@@ -1,8 +1,8 @@
 """
 Verificaciones previas a cualquier experimento (las corre correr.py).
 
-1. Malla congelada: existe, tiene 16 552 nodos y su hash coincide con el
-   registrado al congelarla (nadie la regeneró).
+1. Malla congelada: existe, su número de nodos y su hash coinciden con los
+   registrados al congelarla (nadie la regeneró).
 2. n_stencil de base.json = n_stencil con que se construyó la malla.
 3. CI (data/input/funcion.h5): C ≥ 0.
 
@@ -18,7 +18,6 @@ import numpy as np
 
 CODIGO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_JSON = os.path.join(CODIGO_DIR, "experimentos", "base.json")
-N_NODOS = 16552
 
 
 def verificar():
@@ -35,8 +34,8 @@ def verificar():
         nodes = np.ascontiguousarray(m["nodes"], dtype=np.float64)
         sha = hashlib.sha256(nodes.tobytes()).hexdigest()
         meta = m.get("meta", {})
-        if len(nodes) != N_NODOS:
-            errores.append(f"malla con {len(nodes)} nodos (esperado {N_NODOS})")
+        if len(nodes) != meta.get("n_nodos"):
+            errores.append(f"malla con {len(nodes)} nodos (registrado {meta.get('n_nodos')})")
         if sha != meta.get("nodes_sha256"):
             errores.append("hash de nodos distinto al registrado: la malla cambió")
         if meta.get("n_stencil") != base["n_stencil"]:
