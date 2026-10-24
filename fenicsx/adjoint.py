@@ -128,11 +128,12 @@ def build_context(pozo, p, mesh_cache):
     ctx.xp = float(pozo[0])
 
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
-    ctx.ef = float(p.spacing)                      # sumidero de flujo
+    _r = getattr(p, "r_pozo", None)
+    ctx.ef = float(p.epsilon_pozo if _r else p.spacing)   # sumidero de flujo
     ctx.es = float(phys["epsilon_sink"])           # sumidero de transporte
     ctx.ex = float(phys.get("epsilon_x", 0.5 * p.spacing))   # fuente de contaminante
     ctx.ey = float(phys.get("epsilon_y", p.spacing))
-    ctx.ep = float(phys.get("epsilon_p", p.spacing))  # observación en el pozo (J1)
+    ctx.ep = float(p.epsilon_pozo if _r else phys.get("epsilon_p", p.spacing))  # observación en el pozo (J1)
     return ctx
 
 
@@ -172,12 +173,18 @@ def _Dm(u, a_l, a_t, eps):
 # `ufl.derivative(R, estado)` dé los bloques Jacobianos del adjunto, y las formas
 # de sensibilidad ∂R/∂θ (respecto a Q y z_p) se escriban explícitas.
 # ---------------------------------------------------------------------------
+def _const_theta(ctx, theta):
+    """θ como Constant: con θ = 1, UFL reduce (1−θ)·expr a Zero y la integral
+    pierde su dominio ("missing an integration domain")."""
+    return fem.Constant(ctx.domain, PETSc.ScalarType(theta))
+
+
 def _flow_residual(ctx, h_cur, h_prev, Qc, zp_c):
     """R^h_n(h_cur; h_prev, Q_n, z_p) = 0."""
     p, phys = ctx.p, ctx.phys
     x = SpatialCoordinate(ctx.domain)
     g = TestFunction(ctx.G)
-    theta, K_z, alpha = phys["theta"], ctx.K_z, phys["alpha"]
+    theta, K_z, alpha = _const_theta(ctx, phys["theta"]), ctx.K_z, phys["alpha"]
     gauss_flow = _gauss(x, ctx.xp, zp_c, ctx.ef)
     return (
         inner(ctx.phi * (h_cur - h_prev) / p.dt + Qc * gauss_flow, g) * dx
@@ -196,7 +203,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     p, phys = ctx.p, ctx.phys
     x = SpatialCoordinate(ctx.domain)
     z = TestFunction(ctx.Q)
-    theta, R, landa = phys["theta_C"], phys["R"], phys["landa"]
+    theta, R, landa = _const_theta(ctx, phys["theta_C"]), phys["R"], phys["landa"]
     a_l, a_t, eps = phys["a_l"], phys["a_t"], phys["eps"]
 
     u_new = _u_expr(h_cur, ctx.K_z, phys["alpha"])
@@ -222,7 +229,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     )
     if C_im_sum is not None and alpha_sum:
         F_C += (
-            R * alpha_sum * inner(ctx.phi * (C_cur + C_prev), z) * dx
+            2.0 * R * alpha_sum * inner(ctx.phi * (theta * C_cur + (1 - theta) * C_prev), z) * dx
             - 2.0 * R * inner(ctx.phi * C_im_sum, z) * dx
         )
     return F_C
@@ -353,8 +360,10 @@ def _solve_forward(ctx, Q, zp):
                 C_old_n = C_prev.x.array[:]  # C del paso anterior (antes del solve)
                 C_new_arr = C_cur.x.array[:]
                 coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+                th = float(phys["theta_C"])
                 for r in range(int(p.Nr)):
-                    C_im[r] = coef[r] * (C_new_arr + C_old_n) + (1.0 - 2.0 * coef[r]) * C_im[r]
+                    C_im[r] = (2.0 * coef[r] * (th * C_new_arr + (1.0 - th) * C_old_n)
+                               + (1.0 - 2.0 * coef[r]) * C_im[r])
                 # Actualizar C_im_sum para el próximo paso
                 acc = np.zeros(C_im_sum_func.x.array.shape[0])
                 for r in range(int(p.Nr)):
@@ -407,7 +416,7 @@ def _solve_adjoint_grad(ctx, states):
     zp = states["zp"]
     Nt = len(Q)
     dt = p.dt
-    theta = phys["theta_C"]
+    theta = _const_theta(ctx, phys["theta_C"])
     gamma = float(getattr(p, "gamma", 1.0))
     koppa = float(getattr(p, "koppa", 1.0))
     z0 = float(getattr(p, "z0", 0.0))
@@ -526,7 +535,9 @@ def _solve_adjoint_grad(ctx, states):
         # MRMT Block: agregar Σ_r coef_r·ψ_C_im_r^{n+1} al RHS del adjunto
         # (adjunto de la fuente 4R·α_r·φ·C_im en la forma de transporte).
         if p.model == "mrmt_block" and psiC_im_N is not None:
+            # ∂C_im^n/∂C^n = 2·θ_C·coef (= coef con θ_C = 0.5)
             coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+            coef = 2.0 * float(phys["theta_C"]) * coef
             for r in range(int(p.Nr)):
                 rhsC.array[:] += coef[r] * psiC_im_N[r]
 
@@ -645,7 +656,9 @@ def _solve_adjoint_grad(ctx, states):
         # MRMT Block: agregar coef_r·ψ_C_im^n al carry-over hacia C^{n-1}.
         # (adjunto de la dependencia C_im^n[r] = coef_r*(C^n + C^{n-1}) + ...)
         if psiC_im_N_prev is not None:
+            # ∂C_im^n/∂C^{n-1} = 2·(1−θ_C)·coef (= coef con θ_C = 0.5; 0 con θ_C = 1)
             coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+            coef = 2.0 * (1.0 - float(phys["theta_C"])) * coef
             for r in range(int(p.Nr)):
                 termC_next.array[:] += coef[r] * psiC_im_N_prev[r]
 

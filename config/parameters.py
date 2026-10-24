@@ -6,7 +6,7 @@ from config.geometry import build_geometry
 
 class Parameters:
 
-    def __init__(self, env=None, json_path="config/default.json", config=None):
+    def __init__(self, env=None, json_path="config/malla_sp60.json", config=None):
 
         # =========================
         # 1. CARGA BASE
@@ -50,7 +50,8 @@ class Parameters:
                 "bfr_mesh",
                 # Experimentos (experimentos/): BC de salida BFR, malla congelada
                 # y carpeta de salida propia por caso.
-                "bc_outlet_mode", "mesh_pkl", "exp_dir",
+                "bc_outlet_mode", "mesh_pkl", "exp_dir", "r_pozo",
+                "norm_delta_pozo", "theta_C",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -173,6 +174,23 @@ class Parameters:
         geom = build_geometry(self.domain, self.spacing, getattr(self, "sigma_fuente", 1.0))
         for k, v in geom.items():
             setattr(self, k, v)
+
+        # Soporte de los kernels del pozo [m], fijo e independiente de la malla.
+        # r_pozo = radio del Wendland C2 del sumidero de flujo; las gaussianas
+        # del pozo (sumidero de C, observación J1, adjuntos) usan ε = r_pozo/3
+        # (~99 % de la masa dentro de r_pozo). Sin r_pozo se conserva el
+        # comportamiento anterior (radio 2.5·spacing, ε = epsilon_y en bfr).
+        self.r_pozo = getattr(self, "r_pozo", None)
+        if self.r_pozo:
+            self.radio_delta_pozo = float(self.r_pozo)
+            self.epsilon_pozo = float(self.r_pozo) / 3.0
+        else:
+            self.radio_delta_pozo = 2.5 * self.spacing
+            self.epsilon_pozo = self.epsilon_y
+        # Normalización de la delta del sumidero de flujo: "suma" (Σδ_i = 1,
+        # histórico: el caudal efectivo escala con el área nodal) o "area"
+        # (∫δ dΩ = 1: el caudal extraído es Q, independiente de la malla).
+        self.norm_delta_pozo = getattr(self, "norm_delta_pozo", "suma")
 
         # =========================
         # GRIDS

@@ -83,10 +83,14 @@ def _config_phys(p):
     phys = dict(FEM_DEFAULTS)
     for k in _SHARED_WITH_BFR:
         phys[k] = getattr(p, k)
-    phys["theta_C"] = phys["theta"]   # bfr usa un único theta para flujo y transporte
+    # θ del transporte: theta_C si se da (mismo parámetro que bfr), si no el θ del flujo.
+    phys["theta_C"] = float(getattr(p, "theta_C", phys["theta"]))
     # Anchos de la fuente de contaminante: misma fórmula que bfr (geometry.py líneas 83-84)
     phys["epsilon_x"] = getattr(p, "epsilon_x", 0.5 * p.spacing)
     phys["epsilon_y"] = getattr(p, "epsilon_y", p.spacing)
+    # Con r_pozo, el sumidero gaussiano de C usa el mismo ε que bfr (gauss_p).
+    if getattr(p, "r_pozo", None):
+        phys["epsilon_sink"] = p.epsilon_pozo
 
     # Geometría de las fronteras de flujo: tomar de `p` (config/geometry.py) los
     # mismos valores que usa bfr al aplicar In_h/Out_h (ver H_vector), en vez de
@@ -283,10 +287,12 @@ def _mrmt_semi_step(C_arr, C_im, exp_lam_dt, beta):
     return C_arr, C_im
 
 
-def _mrmt_block_step(C_arr, C_prev_arr, C_im, coef):
-    """Actualiza C_im con el esquema θ tras el solve Block MRMT."""
+def _mrmt_block_step(C_arr, C_prev_arr, C_im, coef, theta_C=0.5):
+    """Actualiza C_im con el esquema θ tras el solve Block MRMT:
+    C_im^{n+1} = 2·coef·(θ_C·C^{n+1} + (1−θ_C)·C^n) + (1 − 2·coef)·C_im^n."""
     for r in range(len(coef)):
-        C_im[r] = coef[r] * (C_arr + C_prev_arr) + (1.0 - 2.0 * coef[r]) * C_im[r]
+        C_im[r] = (2.0 * coef[r] * (theta_C * C_arr + (1.0 - theta_C) * C_prev_arr)
+                   + (1.0 - 2.0 * coef[r]) * C_im[r])
     return C_im
 
 
@@ -304,6 +310,9 @@ def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
     """Formas (bilineal, lineal) del flujo θ-implícito. Se reusan tal cual
     para el spin-up estacionario (con otro dt), única fuente de verdad."""
     g_t = TestFunction(G)
+    # θ como Constant: con θ = 1, UFL reduce (1−θ)·expr a Zero y la integral
+    # pierde su dominio ("missing an integration domain").
+    theta = fem.Constant(G.mesh, PETSc.ScalarType(theta))
     F_h = (
         inner(S_s * (h - h_n) / dt + QOut_const * delta, g_t) * dx
         + theta * _K_ope(h, g_t, K_z, alpha) * dx
@@ -321,6 +330,7 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
     """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
     alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
     z_t = TestFunction(Q)
+    theta_C = fem.Constant(Q.mesh, PETSc.ScalarType(theta_C))   # ver _flow_forms
 
     a_h, L_h = _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, delta)
@@ -345,7 +355,7 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
     # para evitar multiplicación de DOF arrays de distintos espacios.
     if alpha_sum and C_im_sum is not None:
         F_C += (
-            R * alpha_sum * inner(phi * (C + C_n), z_t) * dx
+            2.0 * R * alpha_sum * inner(phi * (theta_C * C + (1 - theta_C) * C_n), z_t) * dx
             - 2.0 * R * inner(phi * C_im_sum, z_t) * dx
         )
 
@@ -394,14 +404,19 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     # Sumidero de flujo del pozo: kernel Wendland C2 normalizado a Σ=1 sobre los
     # DOF de G, réplica del discrete_delta de bfr (funtions/utils.py) — misma
     # convención de pesos que bfr para que el drawdown del pozo tenga la misma
-    # escala. Radio de soporte 2.5·spacing, igual que bfr.
+    # escala. Radio de soporte p.radio_delta_pozo (r_pozo, o 2.5·spacing), igual que bfr.
     delta = fem.Function(G)
     _gc = G.tabulate_dof_coordinates()[:, :2]
-    _q = np.sqrt((_gc[:, 0] - pozo[0]) ** 2 + (_gc[:, 1] - pozo[1]) ** 2) / (2.5 * float(p.spacing))
+    _q = np.sqrt((_gc[:, 0] - pozo[0]) ** 2 + (_gc[:, 1] - pozo[1]) ** 2) / float(p.radio_delta_pozo)
     _w = np.where(_q < 1.0, (1.0 - np.minimum(_q, 1.0)) ** 4 * (4.0 * _q + 1.0), 0.0)
     if _w.sum() > 0:
         _w = _w / _w.sum()
     delta.x.array[:] = _w
+    if getattr(p, "norm_delta_pozo", "suma") == "area":
+        # ∫δ dΩ = 1 (mismo criterio que bfr): el caudal extraído es Q.
+        _int = fem.assemble_scalar(fem.form(delta * dx(domain=domain)))
+        if _int > 0:
+            delta.x.array[:] = _w / _int
     delta_C = fem.Function(Q)
 
     h = TrialFunction(G)
@@ -540,7 +555,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_raw, C_im = _mrmt_semi_step(C_raw, C_im, mrmt_exp_lam_dt, mrmt_beta)
         elif model == "mrmt_block":
             C_prev_arr = C_n.x.array.copy()
-            C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef)
+            C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef, phys["theta_C"])
             _update_C_im_sum(C_im_sum, C_im, np.array(p.alpha_r))
 
         C_raw = np.maximum(C_raw, 0.0)  # positividad física (igual que BFR en funtions/step_time.py)

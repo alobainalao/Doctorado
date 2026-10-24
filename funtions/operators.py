@@ -369,9 +369,19 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
 # =========================================================
 # 5. BUILD TRANSPORT MATRIX (UNIFICADO)
 # =========================================================
+def peso_theta_C(p, sig):
+    """Peso temporal del operador de transporte en la escala de Crank–Nicolson
+    (2/dt en la identidad): 2θ_C en el lado implícito (sig<0) y 2(1−θ_C) en el
+    explícito (sig>0). θ_C = 0.5 (default) reproduce el CN original; θ_C = 1 es
+    Euler implícito (incluidos sumidero del pozo, decaimiento y fuente)."""
+    th = float(getattr(p, "theta_C", 0.5))
+    return 2.0 * th if sig < 0 else 2.0 * (1.0 - th)
+
+
 def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig, gauss_p):
     
     U_div_D = (V - Div_D[:, :2]) / 2.0
+    w = peso_theta_C(p, sig)
 
     idx_dom = np.hstack([
         groups['interior'],
@@ -386,16 +396,17 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
     # Sumidero de contaminante en el pozo: el agua bombeada arrastra C disuelto.
     # Análogo al término `delta_C * C` de FEniCS. Default True en default.json.
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= sig * gauss_p
+        coef_identity -= w * sig * gauss_p
 
     if p.model == "adr":
-        coef_identity -= base * sig * p.landa
+        coef_identity -= w * base * sig * p.landa
     elif p.model == "mrmt_block":
         # Factor 2: complemento de Schur tras eliminar C_im analíticamente.
-        # La diagonal del sistema Schur-reducido lleva ±2·base·Σ_r α_r en LHS/RHS.
-        # El RHS acoplado lleva 4·base·α_r·C_im_r^n (ver C_vector).
+        # La diagonal del sistema Schur-reducido lleva ±2·base·Σ_r α_r en LHS/RHS,
+        # ponderada por w (θ_C·C^{n+1} + (1−θ_C)·C^n en el intercambio).
+        # El RHS acoplado lleva 4·base·α_r·C_im_r^n (ver C_vector), sin peso θ.
         # Derivación: alpha_r = κ_r·β_r/dt; ver config/parameters.py.
-        coef_identity -= 2 * base * sig * p.alpha_sum
+        coef_identity -= w * 2 * base * sig * p.alpha_sum
     elif p.model != "mrmt_semi":
         raise ValueError(f"Modelo no válido: {p.model}")
 
@@ -411,10 +422,10 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
         ],
         coeffs_func=lambda i: [
             coef_identity[i],
-            sig * D[i, 0],
-            sig * D[i, 1],
-            -sig * U_div_D[i, 0],
-            -sig * U_div_D[i, 1],
+            w * sig * D[i, 0],
+            w * sig * D[i, 1],
+            -w * sig * U_div_D[i, 0],
+            -w * sig * U_div_D[i, 1],
         ]
     )
 
@@ -819,7 +830,8 @@ def C_vector(C, M_right, gauss_f, groups, t, T, N, C_im, pho):
     if p.model not in ("adr", "mrmt_semi", "mrmt_block"):
         raise ValueError(f"Modelo no válido: {p.model}")
     if getattr(p, "activate_fuente", True):
-        fuente = (fuente_C(t, T) + fuente_C(t - p.dt, T)) * gauss_f
+        fuente = (peso_theta_C(p, -1) * fuente_C(t, T)
+                  + peso_theta_C(p, +1) * fuente_C(t - p.dt, T)) * gauss_f
         b[idx] += fuente[idx]
 
     # 🔹 Acoplamiento MRMT block: C_im^n → C (complemento de Schur).

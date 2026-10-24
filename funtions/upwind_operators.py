@@ -152,8 +152,10 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
         apply_boundary_conditions, make_transport_bc,
         bc_block, build_operator_block
     )
-    from funtions.operators import rbf_op
+    from funtions.operators import rbf_op, peso_theta_C
     from scipy.sparse import eye as speye
+
+    w = peso_theta_C(p, sig)
 
     N = len(nodes)
     idx_dom = np.hstack([
@@ -167,12 +169,12 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
     coef_identity = base * (2.0 / p.dt)
 
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= sig * gauss_p
+        coef_identity -= w * sig * gauss_p
 
     if p.model == "adr":
-        coef_identity -= base * sig * p.landa
+        coef_identity -= w * base * sig * p.landa
     elif p.model == "mrmt_block":
-        coef_identity -= 2 * base * sig * p.alpha_sum
+        coef_identity -= w * 2 * base * sig * p.alpha_sum
     elif p.model != "mrmt_semi":
         raise ValueError(f"Modelo no válido: {p.model}")
 
@@ -183,8 +185,8 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
         diffs=[[0, 0], [2, 0], [0, 2]],
         coeffs_func=lambda i: [
             coef_identity[i],
-            sig * D[i, 0],
-            sig * D[i, 1],
+            w * sig * D[i, 0],
+            w * sig * D[i, 1],
         ]
     )
     A_diff = apply_boundary_conditions(
@@ -215,8 +217,8 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
     # Construir diagonal de coeficientes para idx_dom
     from scipy.sparse import diags as sp_diags
     cx = np.zeros(N); cy = np.zeros(N)
-    cx[idx_dom] = -sig * U_div_D[idx_dom, 0]
-    cy[idx_dom] = -sig * U_div_D[idx_dom, 1]
+    cx[idx_dom] = -w * sig * U_div_D[idx_dom, 0]
+    cy[idx_dom] = -w * sig * U_div_D[idx_dom, 1]
 
     A_adv = sp_diags(cx) @ Dx_upw + sp_diags(cy) @ Dy_upw
 

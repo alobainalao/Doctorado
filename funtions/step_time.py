@@ -56,9 +56,12 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     elif p.model == "mrmt_block":
 
         coef = p.dt * p.alpha_r / p.beta 
+        th = float(getattr(p, "theta_C", 0.5))
 
+        # C_im^{n+1} = C_im^n + 2·coef·(θ_C·C^{n+1} + (1−θ_C)·C^n − C_im^n);
+        # θ_C = 0.5 → coef·(C^{n+1} + C^n) + (1 − 2·coef)·C_im^n (CN original).
         C_im_new[:, idx] = (
-            coef[:, None] * (C_new[idx] + C[idx])
+            2 * coef[:, None] * (th * C_new[idx] + (1 - th) * C[idx])
             + (1 - 2*coef[:, None]) * C_im[:, idx]
         )
 
@@ -196,7 +199,9 @@ def step_adjoint(
     # antes de resolver A_C^T·φ_C = rhs_C.
     # --------------------------------------------------
     if p.model == "mrmt_block" and psiC_im_N is not None:
+        # ∂C_im^{n+1}/∂C^{n+1} = 2·θ_C·coef (= coef con θ_C = 0.5).
         coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
+        coef = 2.0 * float(getattr(p, "theta_C", 0.5)) * coef
         for r in range(p.Nr):
             rhs_C[idx_dom] += coef[r] * psiC_im_N[r][idx_dom]
 

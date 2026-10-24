@@ -76,6 +76,14 @@ def fuente_C(t, T):
 
     return 1e-11 * t/T * np.exp(-8*t/T) + 1e-12 * (1 - np.exp(-8*t/T))
 
+def normalizar_delta_area(delta, wi):
+    """Reescala la delta discreta (Σδ_i = 1) para que ∫δ dΩ ≈ Σ δ_i·w_i = 1,
+    con w_i los pesos de cuadratura (área nodal). Así el caudal extraído es Q
+    y no Q·(área de los nodos cerca del pozo): no depende de la malla."""
+    s = float(np.sum(delta * wi))
+    return delta / s if s > 0 else delta
+
+
 def discrete_delta(nodes, x_p, radius):
     """
     Delta discreta compacta sobre nube de puntos.
@@ -130,10 +138,15 @@ def update_pozo(d, pozo_cor):
 
     d.pozo_cor = pozo_cor
 
-    d.delta_p = discrete_delta(d.nodes, pozo_cor, 2.5*p.spacing)
+    d.delta_p = discrete_delta(d.nodes, pozo_cor, p.radio_delta_pozo)
+    if p.norm_delta_pozo == "area":
+        from funtions.operators import rbf_integration_weights
+        wi = getattr(d, "wi", None)
+        d.delta_p = normalizar_delta_area(
+            d.delta_p, wi if wi is not None else rbf_integration_weights(d.nodes))
 
     d.gauss_p = gaussian_2d(
-        d.nodes, pozo_cor, 1, p.epsilon_y
+        d.nodes, pozo_cor, 1, p.epsilon_pozo
     )
 
     return d
@@ -174,7 +187,7 @@ def d_g_dz(d):
     dz = d.nodes[:, 1]-d.pozo_cor[1]
 
     return d.gauss_p * (
-        dz/(p.epsilon_y**2)
+        dz/(p.epsilon_pozo**2)
     )
 
 
@@ -500,11 +513,11 @@ def apply_boundary(U, nodes, dirich_nd, inlet_obj: In_h):
     if dirich_nd is None or len(dirich_nd) == 0:
         return
 
-    # extraer z de los nodos en la frontera (segunda columna)
-    z = nodes[dirich_nd, 1]
-
-    # asignar valores a U en los nodos de frontera
-    U[dirich_nd] = inlet_obj(z)
+    # In_h lee z como x[1] (convención de fenicsx: x de forma (gdim, n)), así
+    # que se le pasan las coordenadas completas transpuestas. Pasarle sólo el
+    # vector z hacía que x[1] fuera el z del 2.º nodo → flujo uniforme en
+    # toda la frontera en vez del perfil.
+    U[dirich_nd] = inlet_obj(nodes[dirich_nd].T)
 
 def get_init_values(new_nodes):
     p = RUNTIME.get()

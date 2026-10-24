@@ -62,9 +62,11 @@ def run_preprocess():
     A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, pho, K, div_K, eps_M, 1)
     
 
-    delta_p = discrete_delta(nodes, np.array(p.pozo), 2.5*p.spacing)
+    delta_p = discrete_delta(nodes, np.array(p.pozo), p.radio_delta_pozo)
+    if p.norm_delta_pozo == "area":
+        delta_p = normalizar_delta_area(delta_p, rbf_integration_weights(nodes))
     # delta_p = delta_char(nodes, pozo_cor, 1e-6)
-    gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_y)
+    gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_pozo)
 
     # Detectar si existe el nodo forzado en p.pozo y precomputar pesos IDW
     # para corregir la oscilación espuria del adjunto en ese nodo.
