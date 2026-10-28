@@ -129,3 +129,19 @@ python -m experimentos.correr --grupo P_presentacion --animar --publicar  # + co
 Los videos usan `scripts/animate_{forward,adjunto,grid}.py` con
 `EXP_ROOT=data/output/experimentos/P_presentacion` (sin `EXP_ROOT` esos
 scripts leen las rutas antiguas, como antes).
+
+## Sumidero W₋ del pozo (grupo S)
+
+ADR de referencia con `factor_sumidero_C = 1` (S1, modelo anterior) y `= 0`
+(S0, W₋ anulado: valor por defecto desde la comparativa del cuadrado de la rama
+`exp/sumidero-W`), en BFR y FEniCS.
+
+```bash
+python -m experimentos.correr --grupo S_sumidero --comparar
+python -m experimentos.grilla_sumidero [--campo C|H|V]   # grilla 2×2 backend × término
+```
+
+Salida en `data/output/experimentos/S_sumidero/`: `grilla_C.mp4`,
+`grilla_C_final.png`, `resumen.txt`. A 30 d, ∫C con/sin W₋ = 0.9998 (BFR) y
+0.9999 (FEM): el término sólo cambia C junto al pozo (C captada 8× menor en BFR
+y 4× en FEM con W₋).

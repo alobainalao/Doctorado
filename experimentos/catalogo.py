@@ -129,6 +129,22 @@ GRUPOS = {
         },
     },
 
+    # ── S. Sumidero W- del pozo (decisión 1) ─────────────────────────────────
+    # W- = χ(Q) g_ε C escalado por factor_sumidero_C (0 por defecto desde la
+    # comparativa del cuadrado, rama exp/sumidero-W). Configuración de
+    # referencia ADR con el término (1) y sin él (0), en ambos backends.
+    # Grilla 2×2 (backend × término): python -m experimentos.grilla_sumidero
+    "S_sumidero": {
+        "desc": "ADR de referencia con y sin el sumidero W- del pozo, BFR y FEniCS",
+        "pregunta": "¿Cuánto cambia la solución (C, masa, C captada) al anular W-?",
+        "casos": {
+            "S1_con_termino": {"desc": "factor_sumidero_C = 1 (modelo anterior)",
+                               "cfg": {"factor_sumidero_C": 1.0}},
+            "S0_sin_termino": {"desc": "factor_sumidero_C = 0 (W- anulado)",
+                               "cfg": {"factor_sumidero_C": 0.0}},
+        },
+    },
+
     # ── P. Presentación: 6 variantes con adjunto (videos de grilla 3×2) ─────
     # Sustituye a scripts/generar_comparacion.py y run_all_6_variants.py.
     # Los casos se llaman como el modelo para que EXP_ROOT funcione con
