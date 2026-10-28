@@ -22,6 +22,7 @@ ENVS = {"bfr": "bfr_env", "fenicsx": "fenics_env"}
 SIN_FUENTE = {"activate_fuente": False}
 SIN_POZO = {"activate_ext": False}
 T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
+T_Z = 90 * 86400       # horizonte del grupo Z (limpieza completa del cuadrado)
 
 GRUPOS = {
     # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
@@ -155,8 +156,9 @@ GRUPOS = {
             f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
                 "desc": f"{'Con' if con else 'Sin'} W-, cuadrado C=1, pfs en todo el borde",
                 "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                        "extract_C": con, "bc_outlet_mode": "pfs", "phi_const": 0.1,
+                        "extract_C": con, "bc_outlet_mode": "pfs_nn", "phi_const": 0.1,
                         "C_init_const": 1.0, "h_init_const": 300.0,
+                        "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
                         "spacing": 30, "min_sp": 4},
                 "backends": ("bfr",),
             }

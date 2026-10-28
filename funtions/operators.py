@@ -295,6 +295,29 @@ def make_H_bc(nodes, groups, K, Div_K, normals):
                 ]
             )
         )
+    elif bc_outlet_mode == "pfs_nn":
+        # Variante invariante de la condición libre: ∂_n(u·n) = 0, es decir
+        # Σ_ij n_i n_j ∂_j(K_i ∂_i H) = 0 (exp/sumidero-W, decisión 2).
+        outlet_bc = dict(
+            name="outlet",
+            diffs=[
+                [1, 0],
+                [0, 1],
+                [2, 0],
+                [0, 2],
+                [1, 1]
+            ],
+            coeffs_func=lambda i: (
+                [[1, 0], [0, 1], [2, 0], [0, 2], [1, 1]],
+                [
+                    -normals[i, 0] * (Div_K[i, 0] * normals[i, 0] + Div_K[i, 2] * normals[i, 1]),
+                    -normals[i, 1] * (Div_K[i, 3] * normals[i, 0] + Div_K[i, 1] * normals[i, 1]),
+                    -(K[i, 0] * normals[i, 0] ** 2),
+                    -(K[i, 1] * normals[i, 1] ** 2),
+                    -(K[i, 0] + K[i, 1]) * normals[i, 0] * normals[i, 1]
+                ]
+            )
+        )
     else:
         # Condición de radiación de 2.º orden original (modo "pfs")
         outlet_bc = dict(

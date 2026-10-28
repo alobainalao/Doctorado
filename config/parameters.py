@@ -171,7 +171,8 @@ class Parameters:
         # =========================
         # GEOMETRÍA
         # =========================
-        geom = build_geometry(self.domain, self.spacing, getattr(self, "sigma_fuente", 1.0))
+        geom = build_geometry(self.domain, self.spacing, getattr(self, "sigma_fuente", 1.0),
+                              getattr(self, "lado_cuadrado", 1000.0))
         for k, v in geom.items():
             setattr(self, k, v)
 

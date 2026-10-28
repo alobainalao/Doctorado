@@ -523,10 +523,16 @@ def get_init_values(new_nodes):
     p = RUNTIME.get()
 
     if p.domain == "cuadrado":
-        # CI uniforme: carga constante (u = 0) y dominio contaminado.
+        # CI: carga constante (u = 0) y dominio contaminado salvo una franja
+        # limpia de ancho C_banda_limpia junto al borde, por donde entra agua
+        # limpia hacia el pozo (transición suave de 15 m).
         n = len(new_nodes)
+        x, z = new_nodes[:, 0], new_nodes[:, 1]
+        d = np.minimum.reduce([x - p.xmin, p.xmax - x, z - p.ymin, p.ymax - z])
+        banda = float(getattr(p, "C_banda_limpia", 0.0))
+        perfil = 0.5 * (1 + np.tanh((d - banda) / 15.0)) if banda > 0 else np.ones(n)
         return (np.full(n, float(getattr(p, "h_init_const", 300.0))),
-                np.full(n, float(getattr(p, "C_init_const", 1.0))))
+                float(getattr(p, "C_init_const", 1.0)) * perfil)
 
     if p.domain == "real":
         filename="./data/input/funcion.h5"

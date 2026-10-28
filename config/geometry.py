@@ -16,7 +16,7 @@ def dv(x0, xb):
 # GEOMETRÍA PRINCIPAL
 # ==========================================================
 
-def build_geometry(domain="real", spacing=30, sigma_fuente=1.0):
+def build_geometry(domain="real", spacing=30, sigma_fuente=1.0, lado=1000.0):
     """
     Construye la geometría del dominio dependiendo del escenario.
 
@@ -69,20 +69,21 @@ def build_geometry(domain="real", spacing=30, sigma_fuente=1.0):
 
     elif domain == "cuadrado":
 
-        # Cuadrado de 1 km con el pozo en el centro y la condición libre de
-        # salida (pfs) en todo el borde: sólo dinámica del pozo (exp/sumidero-W).
+        # Cuadrado de lado `lado` con el pozo en el centro y la condición libre
+        # de salida (pfs) en todo el borde: sólo dinámica del pozo (exp/sumidero-W).
+        L = float(lado)
         vert = np.array([
-            [0, -1000],
-            [1000, -1000],
-            [1000, 0],
+            [0, -L],
+            [L, -L],
+            [L, 0],
             [0, 0]
         ])
 
-        pozo = np.array([500, -500])
-        fnte = np.array([500, -500])   # sin fuente; coincide con el pozo para no refinar otra zona
+        pozo = np.array([L / 2, -L / 2])
+        fnte = pozo.copy()   # sin fuente; coincide con el pozo para no refinar otra zona
 
-        zi_max, zo_max, z_min = 0, 0, -1000
-        inlet_z_t, zo_min = -500, -1000
+        zi_max, zo_max, z_min = 0, 0, -L
+        inlet_z_t, zo_min = -L / 2, -L
         inlet_a = 0.0
 
     else:
