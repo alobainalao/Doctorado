@@ -15,7 +15,7 @@ Sesgos que se evitan
 * Config: las config.json de ambos backends deben coincidir salvo `metodo`,
   `exp_dir` y los cambios propios de cada backend declarados en el catálogo.
 * Densidad de nodos: normas y masa con pesos de área nodal (P1 concentrada)
-  sobre la triangulación CDT que usa FEniCS, no sumas nodales (la malla es
+  sobre la triangulación que usa FEniCS, no sumas nodales (la malla es
   15× más fina cerca del pozo y la fuente).
 * H: error en metros (RMS y máx.), no relativo a ‖H‖ (≈ 200 m de nivel
   base hacen que el relativo sea ~1e-4 aunque el cono difiera).
@@ -28,7 +28,8 @@ Sesgos que se evitan
     python -m experimentos.comparar --grupo A_terminos D_caudal_pozo
     python -m experimentos.comparar --todos [--jobs 4] [--sin-video]
 
-Salidas: <caso>/comparacion/{metricas.json, comparacion.mp4, comparacion_final.png}
+Salidas: <caso>/comparacion/{metricas.json, comparacion_{H,C,V}.{mp4,webm},
+                             comparacion_{H,C,V}_final.png}
          data/output/experimentos/resumen.csv (una fila por caso)
 """
 import argparse
@@ -45,6 +46,7 @@ from scipy.spatial import cKDTree
 CODIGO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, CODIGO_DIR)
 
+from config.geometry import build_geometry  # noqa: E402
 from experimentos.catalogo import GRUPOS, iter_casos  # noqa: E402
 
 OUT_ROOT = os.path.join(CODIGO_DIR, "data", "output", "experimentos")
@@ -61,9 +63,8 @@ class ErrorCaso(Exception):
 # ── Malla común ──────────────────────────────────────────────────────────────
 
 def malla_comun():
-    """Nodos sin fantasmas, triángulos CDT (los mismos que construye
+    """Nodos sin fantasmas, triángulos (los mismos que usa FEniCS, ver
     fenicsx.mesh.build_mesh_from_bfr_pkl), pesos de área nodal y nodo del pozo."""
-    import triangle as tr
     with open(MALLA_PKL, "rb") as f:
         m = pickle.load(f)
     todos, groups = np.asarray(m["nodes"], float), m["groups"]
@@ -76,15 +77,22 @@ def malla_comun():
     old2new[keep] = np.arange(len(keep))
     nodes = todos[keep]
 
-    bnd = np.concatenate([groups[k] for k in groups if k.startswith("boundary")])
-    pts = todos[bnd]
-    c0 = pts.mean(axis=0)
-    orden = old2new[bnd[np.argsort(np.arctan2(pts[:, 1] - c0[1], pts[:, 0] - c0[0]))]]
-    segs = np.column_stack([orden, np.roll(orden, -1)]).astype(np.int32)
-    cdt = tr.triangulate({"vertices": nodes, "segments": segs}, "pq20S0")
-    if len(cdt["vertices"]) != len(nodes):
-        raise ErrorCaso("la CDT añadió nodos Steiner: no coincide con la malla FEM")
-    tris = cdt["triangles"].astype(np.int64)
+    if "triangles" in m:
+        # Malla saneada (preprocessing/malla_compartida.py): triángulos guardados.
+        tris = old2new[np.asarray(m["triangles"], np.int64)]
+    else:
+        import triangle as tr
+        bnd = np.concatenate([groups[k] for k in groups if k.startswith("boundary")])
+        pts = todos[bnd]
+        c0 = pts.mean(axis=0)
+        orden = old2new[bnd[np.argsort(np.arctan2(pts[:, 1] - c0[1], pts[:, 0] - c0[0]))]]
+        segs = np.column_stack([orden, np.roll(orden, -1)]).astype(np.int32)
+        cdt = tr.triangulate({"vertices": nodes, "segments": segs}, "pq20S0")
+        if len(cdt["vertices"]) != len(nodes):
+            raise ErrorCaso("la CDT añadió nodos Steiner: no coincide con la malla FEM")
+        tris = cdt["triangles"].astype(np.int64)
+    if (tris < 0).any():
+        raise ErrorCaso("hay triángulos con nodos fantasma")
 
     p = nodes[tris]
     area = 0.5 * np.abs((p[:, 1, 0] - p[:, 0, 0]) * (p[:, 2, 1] - p[:, 0, 1])
@@ -176,6 +184,7 @@ def metricas(datos, dt, cfg, M):
         s[f"Cpozo_{bk}"] = d["C"] @ gw                    # C extraída
         s[f"Hpozo_{bk}"] = d["H"] @ gw                    # nivel en el pozo
         s[f"Cmax_{bk}"] = d["C"].max(axis=1)
+        s[f"Vmedia_{bk}"] = d["V"] @ w / W                # |U| media en Ω
 
     rango_H = float(max(np.ptp(f["H"][-1]), 1e-30))
     r = dict(
@@ -194,17 +203,48 @@ def metricas(datos, dt, cfg, M):
     return s, r
 
 
-# ── Video: campos + diferencia + curvas con cursor, cuadro a cuadro ─────────
+# ── Video: un video por campo (BFR / FEM / BFR−FEM + curvas con cursor) ─────
 
-def video(datos, s, titulo, M, out_dir):
+COLOR_BFR = "#dc2626"     # rojo: BFR, como en la presentación (avance1-doc)
+COLOR_FEM = "#2563eb"     # azul: FEniCS
+COLOR_ERR = "#374151"     # gris: errores BFR−FEM
+CAMPOS_VIDEO = ("H", "C", "V")
+QNX, QNZ = 44, 14         # rejilla de flechas (como scripts/animate_forward.py)
+
+
+def _bary(tri, pts):
+    """Matriz (len(pts) × N) de interpolación P1 sobre la triangulación común
+    (el mismo campo que dibuja tripcolor, sin remuestreo de Delaunay)."""
+    from scipy import sparse
+    t = tri.get_trifinder()(pts[:, 0], pts[:, 1])
+    ok = t >= 0
+    pts, t = pts[ok], t[ok]
+    v = tri.triangles[t]
+    x, y = tri.x[v], tri.y[v]
+    det = (y[:, 1] - y[:, 2]) * (x[:, 0] - x[:, 2]) + (x[:, 2] - x[:, 1]) * (y[:, 0] - y[:, 2])
+    l1 = ((y[:, 1] - y[:, 2]) * (pts[:, 0] - x[:, 2]) + (x[:, 2] - x[:, 1]) * (pts[:, 1] - y[:, 2])) / det
+    l2 = ((y[:, 2] - y[:, 0]) * (pts[:, 0] - x[:, 2]) + (x[:, 0] - x[:, 2]) * (pts[:, 1] - y[:, 2])) / det
+    w = np.column_stack([l1, l2, 1 - l1 - l2])
+    filas = np.repeat(np.arange(len(pts)), 3)
+    return pts, sparse.csr_matrix((w.ravel(), (filas, v.ravel())), shape=(len(pts), len(tri.x)))
+
+
+def video(datos, s, titulo, M, out_dir, fuente=None):
+    """comparacion_{H,C,V}.mp4: cada uno con BFR, FEM y BFR−FEM a todo el ancho
+    y dos o tres curvas con un cursor en el instante del cuadro.  Paletas de
+    view.plot.get_colormaps() (las de los videos de las demás variantes):
+    H y |U| con la turbo, C con la inferno; |U| lineal saturado en el pozo y
+    con flechas de dirección (normalizadas) como en animate_forward.py."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.animation import FFMpegWriter
-    from matplotlib.colors import LogNorm, Normalize, TwoSlopeNorm
+    from matplotlib.colors import Normalize, TwoSlopeNorm
     from matplotlib.tri import Triangulation
     from view.plot import get_colormaps
 
+    plt.rcParams.update({"font.size": 15, "axes.titlesize": 17, "axes.labelsize": 15,
+                         "xtick.labelsize": 13, "ytick.labelsize": 13, "legend.fontsize": 13})
     cmap_main, cmap_c = get_colormaps()
     tri = Triangulation(M["nodes"][:, 0], M["nodes"][:, 1], M["tris"])
     b, f = datos["bfr"], datos["fenicsx"]
@@ -213,87 +253,138 @@ def video(datos, s, titulo, M, out_dir):
     cuadros = list(range(paso - 1, Nt, paso))
     if cuadros[-1] != Nt - 1:
         cuadros.append(Nt - 1)
+    t = s["t_dias"]
+
+    x0, x1 = M["nodes"][:, 0].min(), M["nodes"][:, 0].max()
+    z0, z1 = M["nodes"][:, 1].min(), M["nodes"][:, 1].max()
+    qx, qz = np.meshgrid(np.linspace(x0, x1, QNX + 2)[1:-1], np.linspace(z0, z1, QNZ + 2)[1:-1])
+    q_pts, Bq = _bary(tri, np.column_stack([qx.ravel(), qz.ravel()]))
 
     def todo(campo):
         return np.concatenate([b[campo].ravel(), f[campo].ravel()])
 
-    vmax_v = max(float(todo("V").max()), 1e-30)
-    vmin_v = min(max(float(np.percentile(todo("V"), 1)), 1e-30), vmax_v / 10)
-    filas = (
-        ("H", "H (m)", cmap_main, Normalize(float(todo("H").min()), float(todo("H").max()))),
-        ("C", "C (kg/m³)", cmap_c, Normalize(0.0, max(float(todo("C").max()), 1e-30))),
-        ("V", "|U| (m/s)", cmap_main, LogNorm(vmin_v, vmax_v)),
-    )
-
-    fig = plt.figure(figsize=(18, 11))
-    gs = fig.add_gridspec(4, 4, height_ratios=[1, 1, 1, 1.05], width_ratios=[1, 1, 1, 0.001],
-                          left=0.035, right=0.965, top=0.93, bottom=0.06, hspace=0.18, wspace=0.12)
-    paneles = []
-    for i, (campo, etiqueta, cmap, norm) in enumerate(filas):
-        dif = b[campo] - f[campo]
-        lim = max(float(np.abs(dif).max()), 1e-30)
-        cols = ((b[campo], cmap, norm, "BFR (RBF-FD)"),
-                (f[campo], cmap, norm, "FEniCS (FEM)"),
-                (dif, "RdBu_r", TwoSlopeNorm(0.0, -lim, lim), "BFR − FEM"))
-        for j, (arr, cm, nm, col) in enumerate(cols):
-            ax = fig.add_subplot(gs[i, j])
-            vals = np.maximum(arr[0], vmin_v) if (campo == "V" and j < 2) else arr[0]
-            tp = ax.tripcolor(tri, vals, shading="gouraud", cmap=cm, norm=nm, rasterized=True)
-            ax.plot(*M["pozo"], marker="v", ms=5, mec="k", mfc="w", lw=0)
-            ax.set_aspect("equal")
-            ax.axis("off")
-            if i == 0:
-                ax.set_title(col, fontsize=13, fontweight="bold")
-            if j == 0:
-                ax.text(-0.02, 0.5, etiqueta, transform=ax.transAxes, rotation=90,
-                        ha="right", va="center", fontsize=12, fontweight="bold")
-            cax = ax.inset_axes([0.60, 0.04, 0.36, 0.05])
-            cb = fig.colorbar(tp, cax=cax, orientation="horizontal")
-            cb.ax.tick_params(labelsize=7)
-            paneles.append((tp, arr, campo == "V" and j < 2))
-
-    t = s["t_dias"]
-    ga = gs[3, :3].subgridspec(1, 4, wspace=0.32)
-    curvas = (
-        ("Error de H (m)", [("H_rms_m", "RMS", "-"), ("H_max_m", "máx", "--")], "log"),
-        ("Error relativo L2", [("C_L2_rel", "C", "-"), ("V_L2_rel", "|U|", "-")], "log"),
-        ("Masa ∫C dΩ", [("masa_bfr", "BFR", "-"), ("masa_fem", "FEM", "--")], "linear"),
-        ("C extraída en el pozo", [("Cpozo_bfr", "BFR", "-"), ("Cpozo_fem", "FEM", "--")], "linear"),
-    )
-    cursores, puntos = [], []
-    for j, (tit, series, escala) in enumerate(curvas):
-        ax = fig.add_subplot(ga[0, j])
-        for clave, lab, ls in series:
-            y = np.asarray(s[clave])
-            ax.plot(t, y, ls, lw=1.6, label=lab)
-            pt, = ax.plot(t[0], y[0], "o", ms=5, color=ax.lines[-1].get_color())
-            puntos.append((pt, y))
-        if escala == "log" and all((np.asarray(s[k]) > 0).all() for k, _, _ in series):
-            ax.set_yscale("log")
-        cursores.append(ax.axvline(t[0], color="k", lw=0.8, alpha=0.6))
-        ax.set_title(tit, fontsize=11)
-        ax.set_xlabel("t (días)", fontsize=9)
-        ax.tick_params(labelsize=8)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=8, loc="best")
-    sup = fig.suptitle("", fontsize=15)
+    v_sat = float(np.percentile(todo("V"), 99.0))
+    conf = {
+        "H": dict(nombre="Carga hidráulica H", unidad="m", cmap=cmap_main,
+                  norm=Normalize(float(todo("H").min()), float(todo("H").max())), ext="neither",
+                  curvas=(("Error de H: BFR − FEM (m)", [("H_rms_m", "RMS en Ω", "-", COLOR_ERR),
+                                                         ("H_max_m", "máximo", "--", COLOR_ERR)], "log"),
+                          ("H en el pozo (m)", [("Hpozo_bfr", "BFR", "-", COLOR_BFR),
+                                                ("Hpozo_fem", "FEM", "--", COLOR_FEM)], "linear"))),
+        "C": dict(nombre="Concentración C", unidad="kg/m³", cmap=cmap_c,
+                  norm=Normalize(0.0, max(float(todo("C").max()), 1e-30)), ext="neither",
+                  curvas=(("Error relativo L2 de C", [("C_L2_rel", "‖ΔC‖/‖C_FEM‖", "-", COLOR_ERR)], "log"),
+                          ("Masa ∫C dΩ", [("masa_bfr", "BFR", "-", COLOR_BFR),
+                                          ("masa_fem", "FEM", "--", COLOR_FEM)], "linear"),
+                          ("C extraída en el pozo", [("Cpozo_bfr", "BFR", "-", COLOR_BFR),
+                                                     ("Cpozo_fem", "FEM", "--", COLOR_FEM)], "linear"))),
+        "V": dict(nombre="Velocidad de Darcy |U|", unidad="m/s", cmap=cmap_main,
+                  norm=Normalize(0.0, max(v_sat, 1e-30)), ext="max",
+                  curvas=(("Error relativo L2 de |U|", [("V_L2_rel", "‖Δ|U|‖/‖|U|_FEM‖", "-", COLOR_ERR)], "log"),
+                          ("|U| media en Ω (m/s)", [("Vmedia_bfr", "BFR", "-", COLOR_BFR),
+                                                    ("Vmedia_fem", "FEM", "--", COLOR_FEM)], "linear"))),
+    }
 
     os.makedirs(out_dir, exist_ok=True)
-    writer = FFMpegWriter(fps=12, codec="h264", extra_args=["-pix_fmt", "yuv420p", "-crf", "23"])
-    with writer.saving(fig, os.path.join(out_dir, "comparacion.mp4"), dpi=90):
-        for k in cuadros:
-            for tp, arr, piso in paneles:
-                tp.set_array(np.maximum(arr[k], vmin_v) if piso else arr[k])
-            for cur in cursores:
-                cur.set_xdata([t[k], t[k]])
-            for pt, y in puntos:
-                pt.set_data([t[k]], [y[k]])
-            sup.set_text(f"{titulo}   |   t = {t[k]:.2f} días")
-            writer.grab_frame()
-    # El PNG es el último cuadro del video, no una figura aparte.
-    fig.savefig(os.path.join(out_dir, "comparacion_final.png"), dpi=90)
-    plt.close(fig)
+    for campo in CAMPOS_VIDEO:
+        cf = conf[campo]
+        dif = b[campo] - f[campo]
+        # Diferencia saturada en el percentil 99.5: con el máximo, unos pocos
+        # nodos del pozo dejaban el resto del panel en blanco.
+        lim_max = max(float(np.abs(dif).max()), 1e-30)
+        lim = max(float(np.percentile(np.abs(dif), 99.5)), lim_max * 1e-3)
+        fig = plt.figure(figsize=(13, 14.2))
+        gs = fig.add_gridspec(3, 2, width_ratios=[1, 0.02], left=0.01, right=0.92,
+                              top=0.945, bottom=0.27, hspace=0.06, wspace=0.015)
+        filas = ((b[campo], cf["cmap"], cf["norm"], "BFR (RBF-FD)", COLOR_BFR, b),
+                 (f[campo], cf["cmap"], cf["norm"], "FEniCS (FEM)", COLOR_FEM, f),
+                 (dif, "RdBu_r", TwoSlopeNorm(0.0, -lim, lim), "BFR − FEM", COLOR_ERR, None))
+        paneles = []
+        for i, (arr, cm, nm, etiqueta, color, fuente_U) in enumerate(filas):
+            ax = fig.add_subplot(gs[i, 0])
+            tp = ax.tripcolor(tri, arr[0], shading="gouraud", cmap=cm, norm=nm, rasterized=True)
+            ax.plot(*M["pozo"], marker="v", ms=11, mec="k", mfc="w", lw=0, zorder=6)
+            if fuente is not None:
+                ax.plot(*fuente, marker="*", ms=15, mec="k", mfc="w", lw=0, zorder=6)
+            ax.set_aspect("equal")
+            ax.set_xlim(x0, x1)
+            ax.set_ylim(z0, z1)
+            ax.axis("off")
+            ax.text(0.006, 0.97, etiqueta, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=18, fontweight="bold", color="white",
+                    bbox=dict(boxstyle="round,pad=0.3", fc=color, ec="none"))
+            q = None
+            if campo == "V" and fuente_U is not None:
+                q = ax.quiver(q_pts[:, 0], q_pts[:, 1], *_dir(Bq, fuente_U["U"][0]), scale=60,
+                              scale_units="width", width=0.0016, headwidth=4, headlength=4,
+                              color="black", alpha=0.75, zorder=5)
+            cax = fig.add_subplot(gs[i, 1])
+            cb = fig.colorbar(tp, cax=cax, extend=cf["ext"] if i < 2 else
+                              ("both" if lim < lim_max else "neither"))
+            cb.set_label(("Δ" if i == 2 else "") + f"{campo if campo != 'V' else '|U|'} ({cf['unidad']})")
+            if campo == "C" or campo == "V" or i == 2:
+                cb.formatter.set_powerlimits((-2, 3))
+            paneles.append((tp, arr, q, fuente_U))
+
+        ga = fig.add_gridspec(1, len(cf["curvas"]), left=0.085, right=0.985, top=0.225,
+                              bottom=0.045, wspace=0.3)
+        cursores, puntos = [], []
+        for j, (tit, series, escala) in enumerate(cf["curvas"]):
+            ax = fig.add_subplot(ga[0, j])
+            for clave, lab, ls, color in series:
+                y = np.asarray(s[clave])
+                ax.plot(t, y, ls, lw=2.4, color=color, label=lab)
+                pt, = ax.plot(t[0], y[0], "o", ms=8, color=color)
+                puntos.append((pt, y))
+            ys = np.concatenate([np.asarray(s[k]) for k, *_ in series])
+            if escala == "log" and (ys > 0).all() and ys.max() > 10 * ys.min():
+                ax.set_yscale("log")
+            else:
+                ax.ticklabel_format(axis="y", style="sci", scilimits=(-3, 4), useMathText=True)
+            cursores.append(ax.axvline(t[0], color="k", lw=1.2, alpha=0.6))
+            ax.set_title(tit)
+            ax.set_xlabel("t (días)")
+            ax.grid(alpha=0.3)
+            ax.legend(loc="best", framealpha=0.85)
+        sup = fig.suptitle("", fontsize=21, fontweight="bold")
+
+        writer = FFMpegWriter(fps=12, codec="h264",
+                              extra_args=["-pix_fmt", "yuv420p", "-crf", "23", "-movflags", "+faststart"])
+        with writer.saving(fig, os.path.join(out_dir, f"comparacion_{campo}.mp4"), dpi=90):
+            for k in cuadros:
+                for tp, arr, q, fuente_U in paneles:
+                    tp.set_array(arr[k])
+                    if q is not None:
+                        q.set_UVC(*_dir(Bq, fuente_U["U"][k]))
+                for cur in cursores:
+                    cur.set_xdata([t[k], t[k]])
+                for pt, y in puntos:
+                    pt.set_data([t[k]], [y[k]])
+                texto = f"{cf['nombre']}  ·  {titulo}  ·  t = {t[k]:.1f} días"
+                sup.set_text(texto)
+                sup.set_fontsize(min(21, 21 * 62 / len(texto)))     # títulos largos (B, F)
+                writer.grab_frame()
+        # El PNG es el último cuadro del video, no una figura aparte.
+        fig.savefig(os.path.join(out_dir, f"comparacion_{campo}_final.png"), dpi=60)
+        plt.close(fig)
+        _webm(os.path.join(out_dir, f"comparacion_{campo}.mp4"))
     return [float(t[k]) for k in cuadros]
+
+
+def _webm(mp4):
+    """Copia VP9 del mismo video: los Chromium sin códecs propietarios (p. ej.
+    los de Playwright) no reproducen H.264; el informe ofrece ambos."""
+    import subprocess
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", mp4, "-c:v", "libvpx-vp9",
+                    "-b:v", "0", "-crf", "36", "-row-mt", "1", "-deadline", "good", "-cpu-used", "4",
+                    mp4[:-4] + ".webm"], check=True)
+
+
+def _dir(B, U):
+    """Dirección de U (vector unitario) en los puntos de las flechas."""
+    ux, uz = B @ U[:, 0], B @ U[:, 1]
+    mag = np.maximum(np.hypot(ux, uz), 1e-30)
+    return ux / mag, uz / mag
 
 
 # ── Orquestación ─────────────────────────────────────────────────────────────
@@ -310,7 +401,8 @@ def comparar_caso(g, c, spec, con_video=True):
     s, r = metricas(datos, dt, cfg, _M)
     titulo = c if ref == f"{g}/{c}" else f"{c}  (FEM: {ref.split('/')[-1]})"
     if con_video:
-        t_cuadros = video(datos, s, titulo, _M, out)
+        t_cuadros = video(datos, s, titulo, _M, out,
+                          fuente=build_geometry(cfg["domain"])["fnte"] if cfg.get("activate_fuente") else None)
         r["cuadros_video"] = len(t_cuadros)
         s["t_cuadros"] = t_cuadros          # t de cada cuadro: el informe sincroniza el cursor
     r = {"grupo": g, "caso": c, "ref_fem": ref, "desc": spec["desc"], **r}
@@ -320,7 +412,8 @@ def comparar_caso(g, c, spec, con_video=True):
                    "malla": {"area_m2": _M["area"], "n_nodos": len(_M["nodes"]),
                              "n_fantasmas": _M["n_fantasmas"]}}, fh)
     # metrics.json/series.png del comparador anterior quedarían desfasados.
-    for viejo in ("metrics.json", "series.png", "grid.mp4", "grid_final.png"):
+    for viejo in ("metrics.json", "series.png", "grid.mp4", "grid_final.png",
+                  "comparacion.mp4", "comparacion_final.png"):
         if os.path.exists(os.path.join(out, viejo)):
             os.remove(os.path.join(out, viejo))
     return r

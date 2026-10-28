@@ -26,7 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.animation import FFMpegWriter  # noqa: E402
-from matplotlib.colors import LogNorm, Normalize  # noqa: E402
+from matplotlib.colors import Normalize  # noqa: E402
 from matplotlib.patches import Polygon as MplPolygon  # noqa: E402
 from matplotlib.path import Path as MplPath  # noqa: E402
 from scipy import sparse  # noqa: E402
@@ -105,8 +105,6 @@ def _cargar(path):
 
 def _img(d, campo, k):
     im = (d["Mg"] @ d[campo][k]).reshape(NZ, NX)
-    if campo == "V":                      # LogNorm: sin ceros
-        im = np.maximum(im, 1e-30)
     return np.ma.masked_where(d["fuera"], im)
 
 
@@ -118,15 +116,14 @@ def _flechas(d, k):
 
 def _rangos(datos):
     """(vmin, vmax) por campo, comunes a todos los backends del caso.
-    Rango completo: recortar por percentiles escondía el cono del pozo (el
-    mínimo de H y el pico de |U| están en unos pocos nodos). |U| va en escala
-    log (ver _panel), con piso en el percentil 1 para no irse a cero."""
+    H y C en su rango completo (recortar por percentiles escondía el cono del
+    pozo); |U| lineal como en scripts/animate_forward.py, saturado en el
+    percentil 99 (el pico del pozo está en unos pocos nodos)."""
     r = {}
     todo = {c: np.concatenate([d[c].ravel() for d in datos]) for c, _, _ in CAMPOS}
     r["H"] = (float(todo["H"].min()), float(todo["H"].max()))
     r["C"] = (0.0, max(float(todo["C"].max()), 1e-30))
-    vmax = max(float(todo["V"].max()), 1e-30)
-    r["V"] = (min(max(float(np.percentile(todo["V"], 1)), 1e-30), vmax / 10), vmax)
+    r["V"] = (0.0, max(float(np.percentile(todo["V"], 99.0)), 1e-30))
     return r
 
 
@@ -139,7 +136,7 @@ def _panel(ax, d, campo, vmin, vmax, cmap):
     cm = copy.copy(cmap)
     cm.set_bad("white")
     im = ax.imshow(_img(d, campo, 0), origin="lower", extent=[XMIN, XMAX, ZMIN, ZMAX],
-                   norm=LogNorm(vmin, vmax) if campo == "V" else Normalize(vmin, vmax),
+                   norm=Normalize(vmin, vmax),
                    cmap=cm, aspect="equal", interpolation="antialiased")
     im.set_clip_path(clip)
     ax.add_patch(MplPolygon(DOMINIO, fc="none", ec="#999999", lw=0.6))
@@ -169,7 +166,8 @@ def video_backend(d, backend, titulo, rangos, out_dir):
         ax = fig.add_axes([0.01, 0.02, 0.98, 0.86])
         im, q = _panel(ax, d, campo, *rangos[campo], cmap)
         cax = ax.inset_axes([0.62, 0.05, 0.33, 0.06])
-        fig.colorbar(im, cax=cax, orientation="horizontal", label=etiqueta)
+        fig.colorbar(im, cax=cax, orientation="horizontal", label=etiqueta,
+                     extend="max" if campo == "V" else "neither")
         sup = fig.suptitle("", fontsize=14)
         writer = FFMpegWriter(**WRITER_KW)
         with writer.saving(fig, os.path.join(out_dir, f"{campo}.mp4"), dpi=110):

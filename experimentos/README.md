@@ -6,12 +6,16 @@ los lanzadores sueltos que ahora están en `scripts/legacy/`
 
 ## Principios
 
-1. **Malla congelada y compartida.** `data/input/malla_compartida/malla.pkl`
-   (16 552 nodos, malla de 4 niveles 4/16/30/60 m, `n_stencil=35`). BFR
-   reconstruye sus operadores sobre esos nodos exactos en cada caso
-   (`mesh_pkl` en `preprocessing/preprocess.py`); FEniCS construye su malla
-   P1 con esos mismos nodos (`build_mesh_from_bfr_pkl`). La comparación es
-   nodo a nodo, sin interpolación.
+1. **Malla congelada y compartida, saneada.** `data/input/malla_compartida/malla.pkl`
+   la genera `python -m preprocessing.malla_compartida` (bfr_env), sin depender
+   del backend: los nodos de BFR (4 niveles 4/16/30/60 m, `n_stencil=35`) con
+   frontera exacta (nodo en cada esquina), sin nodos pegados al borde y una
+   triangulación restringida con ángulo mínimo ≥ 28°. Guarda nodos, grupos,
+   normales, fantasmas **y triángulos**: BFR reconstruye sus operadores sobre
+   esos nodos (`mesh_pkl` en `preprocessing/preprocess.py`) y FEniCS usa esos
+   mismos triángulos sin retriangular (`build_mesh_from_bfr_pkl`). La
+   comparación es nodo a nodo, sin interpolación. `malla.png` muestra la malla
+   y los zooms de esquinas y pozo.
 2. **Misma CI.** `data/input/funcion.h5` (C ≥ 0), vía `get_init_values`.
 3. **Config completa y explícita.** `base.json` contiene *todas* las claves
    y se pasa con `Parameters(config=...)`, que no descarta nada. (El modo env
@@ -27,10 +31,12 @@ experimentos/
   catalogo.py    grupos y casos
   correr.py      lanzador (cada backend en su entorno conda)
   _worker.py     corre un caso dentro del entorno (lo usa correr.py)
-  comparar.py    UNA pasada por caso: métricas + video de comparación con
+  comparar.py    UNA pasada por caso: métricas + videos de comparación con
                  los mismos arreglos (sin figuras de postproceso aparte)
   informe.py     informe.html general (lee metricas.json + videos; no recalcula)
   conclusiones.html  texto de revisión y conclusiones que inserta informe.py
+  analisis_casos.json  análisis escrito de cada caso (con las métricas con que
+                 se escribió: el informe avisa si quedó desactualizado)
   animar.py      videos H/C/|U| sueltos por backend (opcional)
   verificar.py   malla congelada (hash) y CI ≥ 0, antes de correr
 
@@ -38,9 +44,10 @@ data/output/experimentos/<grupo>/<caso>/
   bfr/          simulation_results.npz, config.json (la usada), run.log,
                 figures/{H,C,V}.mp4
   fenicsx/      ídem
-  comparacion/  metricas.json, comparacion.mp4 (filas H/C/|U| × columnas
-                BFR / FEM / BFR−FEM + curvas con cursor), comparacion_final.png
-                (= último cuadro del video)
+  comparacion/  metricas.json, comparacion_{H,C,V}.{mp4,webm} (un video por
+                campo: BFR / FEM / BFR−FEM a todo el ancho, flechas de
+                dirección en |U|, curvas con cursor), comparacion_{H,C,V}_final.png
+                (= último cuadro de cada video)
 data/output/experimentos/resumen.csv   una fila por caso comparado
 data/output/experimentos/informe.html  informe general con videos
 ```
@@ -77,6 +84,9 @@ terminar salvo `--keep-pre`.
 - Normas y masa con pesos de área nodal (la malla es 15× más fina en pozo y
   fuente); ΔH en metros; C del pozo = media con la gaussiana del sumidero.
 - Video, PNG, métricas e informe salen de los mismos arreglos.
+- Paletas de `view.plot.get_colormaps()` (las de los videos de las demás
+  variantes): H y |U| turbo, C inferno; |U| lineal saturado en el percentil 99.
+  En curvas e informe, BFR en rojo y FEniCS en azul, como en la presentación.
 
 ## Catálogo (ADR)
 
@@ -99,13 +109,13 @@ MRMT, poner `"model": "mrmt_semi"` en su `cfg`.
 
 ### Notas
 
-- `bc_outlet_mode=fem` divergía en el dominio real con la malla anterior
-  (informe de la rama `audit/bfr-fenicsx-validation`); el grupo B lo prueba
-  con la malla actual.
+- `bc_outlet_mode=fem` divergía en una esquina con las mallas anteriores
+  (nodos de frontera desplazados hacia dentro); con la malla saneada es
+  estable y es la variante BFR que más se parece a FEM (grupo B).
 - `upwind_transport` sólo existe en BFR.
 - Videos: rangos de color fijos por caso y comunes a BFR y FEM (H y C en
-  [mín, máx], |U| en escala log); los nodos fantasma BFR se excluyen.
-  En B y F la columna FEM de la grilla es la de `ref_fem`.
+  [mín, máx], |U| lineal hasta el percentil 99); los nodos fantasma BFR se
+  excluyen. En B y F el FEM es el de `ref_fem`.
 - El recorte C ≥ 0 se aplica en cada paso en ambos backends
   (`docs/clip_positividad_C.md`).
 

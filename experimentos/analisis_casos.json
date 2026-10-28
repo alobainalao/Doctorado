@@ -1,0 +1,200 @@
+{
+ "A_terminos/A0_sin_fuente_sin_pozo": {
+  "html": "<p>Sólo la CI transportada por el flujo, sin fuente ni pozo. Aquí está la <b>mayor diferencia de flujo</b> del catálogo: ΔH 7.3&nbsp;cm RMS y |U| 72&nbsp;%. Sin el pozo, nada ancla el nivel, y la salida <code>pfs</code> de BFR deja que el lado izquierdo baje unos 8&nbsp;cm respecto a FEM (en el video de H, la mancha azul que ocupa la mitad izquierda del panel de diferencia). El error de |U| tiene un pico de 1.0 hacia el día 5: es el transitorio con el que BFR se aleja de la CI, que viene del FEM. La pluma (C) difiere un 22&nbsp;% y la masa coincide al 2&nbsp;%; ambas pierden un 7–9&nbsp;% por la salida. Comparar con <a href=\"#B_bc_salida_fem--B0_sin_fuente_sin_pozo\">B0</a>, mismo caso con la salida tipo FEM.</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.21819,
+   "masa_ratio_final": 0.98124
+  }
+ },
+ "A_terminos/A1_solo_fuente": {
+  "html": "<p>Igual que A0 más la fuente. El flujo es idéntico a A0, porque la fuente sólo entra en el transporte. C L2 sube de 0.22 a 0.23: la fuente añade poca discrepancia frente a la que ya trae el transporte de la CI. En el video de C, la diferencia BFR − FEM es roja en el núcleo de la ★ (BFR más concentrado, menos difusión numérica) y azul alrededor.</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.23001,
+   "masa_ratio_final": 0.97888
+  }
+ },
+ "A_terminos/A2_solo_pozo": {
+  "html": "<p>Sólo el pozo. El pozo <b>ancla el nivel</b> en ambos backends: ΔH baja a 3.8&nbsp;cm y |U| a 13&nbsp;%. El ΔH máximo (0.13&nbsp;m) ya no está en la salida, sino en la franja de K baja (x ≈ 9 400, z ≈ −750). La C extraída por BFR es <b>un cuarto</b> de la de FEM (0.24), aunque el nivel del pozo difiere sólo 7&nbsp;cm: el problema está en el sumidero de C, no en el flujo (ver <a href=\"#B_bc_salida_fem--B2_solo_pozo\">B2</a>). Sin fuente, la masa de FEM sube un 1.5&nbsp;% por encima de la inicial a mitad de la corrida: es la producción espuria de la conclusión 4.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.23712,
+   "masa_ratio_final": 0.98451
+  }
+ },
+ "A_terminos/A3_fuente_pozo": {
+  "html": "<p><b>Configuración de referencia.</b> Flujo: 3.8&nbsp;cm RMS, máx 0.13&nbsp;m en la franja de K baja; |U| 13&nbsp;% al final, tras un transitorio con pico de 0.78 hacia el día 5. Transporte: 25&nbsp;% en L2 con la masa al 2&nbsp;%. Pozo: BFR extrae 0.24 veces lo de FEM. Las curvas muestran que el error de C <b>sigue creciendo</b> al día 30 y el de |U| sigue bajando: 30 días no bastan para un estado estacionario de la comparación.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.24542,
+   "masa_ratio_final": 0.98198
+  }
+ },
+ "B_bc_salida_fem/B0_sin_fuente_sin_pozo": {
+  "html": "<p>A0 con la salida tipo FEM en BFR. <b>El error de H cae de 7.3 a 1.05&nbsp;cm y el de |U| de 72 a 10&nbsp;%.</b> En la zona de salida, ΔH pasa de 10.6 a 0.3&nbsp;cm. El panel de diferencia de H queda casi blanco, salvo la franja de K baja (máx 0.13&nbsp;m, idéntico a A2/A3). El pico del transitorio de |U| baja de 1.0 a 0.3. La C en el punto del pozo (que aquí está apagado) llega casi igual: 0.83, frente a 0.47 con <code>pfs</code>. <b>Es la prueba de que la diferencia de flujo es de la condición de salida.</b> Con la malla anterior este caso divergía en una esquina.</p>",
+  "ref": {
+   "H_rms_final_m": 0.0105,
+   "V_L2_rel_final": 0.0999,
+   "C_L2_rel_final": 0.20842,
+   "masa_ratio_final": 1.03233
+  }
+ },
+ "B_bc_salida_fem/B1_solo_fuente": {
+  "html": "<p>A1 con la salida tipo FEM. El flujo coincide como en B0 (1.05&nbsp;cm, |U| 10&nbsp;%). C L2 = 0.22, prácticamente igual que en A1: <b>mejorar el flujo no mejora el transporte</b>, porque la diferencia de C es del esquema de transporte. La masa de BFR queda un 2.6&nbsp;% por encima de la de FEM.</p>",
+  "ref": {
+   "H_rms_final_m": 0.0105,
+   "V_L2_rel_final": 0.0999,
+   "C_L2_rel_final": 0.22187,
+   "masa_ratio_final": 1.02594
+  }
+ },
+ "B_bc_salida_fem/B2_solo_pozo": {
+  "html": "<p>A2 con la salida tipo FEM. El nivel del pozo coincide <b>al milímetro</b> (BFR − FEM = 0.000&nbsp;m) y |U| difiere un 10&nbsp;%, pero la C extraída por BFR sigue siendo 0.27 veces la de FEM. Con el flujo prácticamente igual, <b>la brecha del pozo es del sumidero de C</b>.</p>",
+  "ref": {
+   "H_rms_final_m": 0.01153,
+   "V_L2_rel_final": 0.10023,
+   "C_L2_rel_final": 0.22655,
+   "masa_ratio_final": 1.01436
+  }
+ },
+ "B_bc_salida_fem/B3_fuente_pozo": {
+  "html": "<p>A3 con la salida tipo FEM: <b>la mejor coincidencia global del catálogo</b>. ΔH 1.15&nbsp;cm RMS, |U| 10&nbsp;%, C 24&nbsp;%, masa al 1&nbsp;%. Sólo quedan la franja de K baja en H y el sumidero del pozo en C (0.27).</p>",
+  "ref": {
+   "H_rms_final_m": 0.01153,
+   "V_L2_rel_final": 0.10023,
+   "C_L2_rel_final": 0.23634,
+   "masa_ratio_final": 1.0096
+  }
+ },
+ "C_soporte_fuente/C_sigma0p5_sin_pozo": {
+  "html": "<p>Fuente estrecha (σ = 0.5) sin pozo. El flujo es igual que en A0/A1. C L2 = 0.26, la mayor de los casos sin pozo: cuanto más localizada la fuente, más pesa la diferencia de resolución del pico entre RBF-FD y P1.</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.26155,
+   "masa_ratio_final": 0.97807
+  }
+ },
+ "C_soporte_fuente/C_sigma2p0_sin_pozo": {
+  "html": "<p>σ = 2 sin pozo: C L2 = 0.21 (frente a 0.23 con σ = 1 en A1). La tendencia es monótona: una fuente más ancha reduce la discrepancia.</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.21071,
+   "masa_ratio_final": 0.97994
+  }
+ },
+ "C_soporte_fuente/C_sigma4p0_sin_pozo": {
+  "html": "<p>σ = 4 sin pozo: C L2 = 0.20, el mínimo del grupo. Aun con la fuente 8 veces más ancha que en σ = 0.5 queda un 20&nbsp;%, así que la diferencia no es sólo del pico de la fuente: también del transporte de la CI (A0 ya da 0.22).</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.19602,
+   "masa_ratio_final": 0.98093
+  }
+ },
+ "C_soporte_fuente/C_sigma0p5_con_pozo": {
+  "html": "<p>σ = 0.5 con pozo. C L2 = 0.27, la mayor del grupo. El pozo no cambia la tendencia; la C extraída sigue en 0.24 veces la de FEM.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.27278,
+   "masa_ratio_final": 0.98121
+  }
+ },
+ "C_soporte_fuente/C_sigma2p0_con_pozo": {
+  "html": "<p>σ = 2 con pozo: C L2 = 0.23 (frente a 0.25 en A3). Misma tendencia que sin pozo.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.22943,
+   "masa_ratio_final": 0.98302
+  }
+ },
+ "C_soporte_fuente/C_sigma4p0_con_pozo": {
+  "html": "<p>σ = 4 con pozo: C L2 = 0.22. La razón de C extraída no cambia con σ (0.24): <b>el problema del pozo es independiente de la fuente</b>.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.21758,
+   "masa_ratio_final": 0.98398
+  }
+ },
+ "D_caudal_pozo/D_Q1e-2": {
+  "html": "<p>Caudal mínimo (Q = 0.01), sin fuente. El pozo casi no ancla el nivel: el flujo se comporta como sin pozo (ΔH 7.2&nbsp;cm, |U| 70&nbsp;%). La C extraída por BFR es 0.15 veces la de FEM, la peor razón del grupo.</p>",
+  "ref": {
+   "H_rms_final_m": 0.07205,
+   "V_L2_rel_final": 0.7005,
+   "C_L2_rel_final": 0.21858,
+   "masa_ratio_final": 0.97963
+  }
+ },
+ "D_caudal_pozo/D_Q3e-2": {
+  "html": "<p>Q = 0.03, sin fuente. Muy parecido a Q = 0.01 (ΔH 7.0&nbsp;cm, |U| 66&nbsp;%). La razón de C extraída sube a 0.21.</p>",
+  "ref": {
+   "H_rms_final_m": 0.06967,
+   "V_L2_rel_final": 0.65974,
+   "C_L2_rel_final": 0.21983,
+   "masa_ratio_final": 0.97677
+  }
+ },
+ "D_caudal_pozo/D_Q1e-1": {
+  "html": "<p>Q = 0.1, sin fuente. Con más caudal, el pozo domina el campo cercano y el error de flujo baja (ΔH 6.1&nbsp;cm, |U| 51&nbsp;%).</p>",
+  "ref": {
+   "H_rms_final_m": 0.06138,
+   "V_L2_rel_final": 0.50649,
+   "C_L2_rel_final": 0.228,
+   "masa_ratio_final": 0.96981
+  }
+ },
+ "D_caudal_pozo/D_Q7e-1": {
+  "html": "<p>Caudal máximo (Q = 0.7), sin fuente. El flujo coincide mejor (ΔH 2.2&nbsp;cm), porque el pozo fija el nivel en ambos backends. Pero <b>la masa sin fuente supera la inicial en los dos</b>: FEM llega a 1.039 a mitad de la corrida y BFR termina en 1.016 (BFR/FEM = 1.06 al final). Es el caso más claro de producción espuria de masa (conclusión 4).</p>",
+  "ref": {
+   "H_rms_final_m": 0.02225,
+   "V_L2_rel_final": 0.33705,
+   "C_L2_rel_final": 0.23177,
+   "masa_ratio_final": 1.05919
+  }
+ },
+ "F_upwind_bfr/F1_upwind_solo_fuente": {
+  "html": "<p>A1 con upwind direccional en BFR. El flujo no cambia, porque el upwind sólo afecta al transporte. C L2 empeora de 0.23 a 0.39 y la masa de BFR acaba un 6&nbsp;% por encima de la de FEM, ya que el upwind añade masa. Ya no explota como con la malla anterior (C L2 = 0.66).</p>",
+  "ref": {
+   "H_rms_final_m": 0.07325,
+   "V_L2_rel_final": 0.72014,
+   "C_L2_rel_final": 0.38636,
+   "masa_ratio_final": 1.05812
+  }
+ },
+ "F_upwind_bfr/F3_upwind_fuente_pozo": {
+  "html": "<p>A3 con upwind en BFR. C L2 0.35 (frente a 0.25 sin upwind). En el video de C aparecen <b>puntos calientes</b> en la parte alta de la pluma (x ≈ 3 800 y 4 700&nbsp;m) y la masa de BFR crece más rápido que la de FEM al final (BFR/FEM = 1.06). Antes llegaba a 1.30 de C L2 y a un punto caliente explosivo; con la malla saneada el upwind es estable, pero sigue sin mejorar el transporte.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03839,
+   "V_L2_rel_final": 0.13023,
+   "C_L2_rel_final": 0.35131,
+   "masa_ratio_final": 1.05729
+  }
+ },
+ "E_paso_tiempo/E_dt36000": {
+  "html": "<p>A3 con el doble de paso (dt = 10&nbsp;h). Todas las métricas coinciden con A3 a dos o tres cifras (ΔH 3.82 frente a 3.84&nbsp;cm, C L2 0.244 frente a 0.245): el error temporal de θ = 1 con este dt es despreciable frente a la diferencia entre métodos.</p>",
+  "ref": {
+   "H_rms_final_m": 0.03821,
+   "V_L2_rel_final": 0.13115,
+   "C_L2_rel_final": 0.24429,
+   "masa_ratio_final": 0.98229
+  }
+ },
+ "E_paso_tiempo/E_dt7200": {
+  "html": "<p>A3 con dt = 2&nbsp;h (2.5 veces más fino, 360 pasos). Igual que A3 y E_dt36000 (ΔH 3.85&nbsp;cm, C L2 0.246, C pozo 0.243). Refinar en el tiempo no acerca los backends: <b>la diferencia es espacial o de formulación</b>.</p>",
+  "ref": {
+   "H_rms_final_m": 0.0385,
+   "V_L2_rel_final": 0.12969,
+   "C_L2_rel_final": 0.24618,
+   "masa_ratio_final": 0.98178
+  }
+ }
+}

@@ -77,12 +77,21 @@ def _desactualizado(cfg, out_dir, res):
     if dif:
         return "config distinta en " + ", ".join(dif)
     import pickle
+    from scipy.spatial import cKDTree
     with open(os.path.join(CODIGO_DIR, cfg["mesh_pkl"]), "rb") as f:
-        n_malla = len(pickle.load(f)["nodes"])
-    n_res = len(np.load(res, allow_pickle=True)["nodes"])
-    # BFR guarda todos los nodos (con fantasmas); FEM sólo los del dominio.
-    if (n_res != n_malla) if cfg["metodo"] == "bfr" else (n_res > n_malla):
-        return f"{n_res} nodos en el resultado, {n_malla} en la malla"
+        m = pickle.load(f)
+    malla = np.asarray(m["nodes"], float)
+    n_res = np.asarray(np.load(res, allow_pickle=True)["nodes"], float)
+    # BFR guarda todos los nodos (con fantasmas); FEM sólo los del dominio
+    # (en otro orden).  Se comparan coordenadas, no sólo el número de nodos.
+    if cfg["metodo"] == "bfr":
+        igual = n_res.shape == malla.shape and np.allclose(n_res, malla, atol=1e-6)
+    else:
+        fant = np.concatenate([m["groups"][k] for k in m["groups"] if k.startswith("ghost")])
+        dom = np.delete(malla, fant, axis=0)
+        igual = len(n_res) == len(dom) and cKDTree(dom).query(n_res)[0].max() < 1e-6
+    if not igual:
+        return f"{len(n_res)} nodos en el resultado que no son los de la malla ({len(malla)})"
     return None
 
 

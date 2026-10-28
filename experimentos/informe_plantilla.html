@@ -7,95 +7,177 @@
 <style>
 :root {
   color-scheme: light;
-  --bg: #f7f7f5; --surface: #fcfcfb; --border: #dddcd6; --grid: #e8e7e2;
-  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7973;
-  --bfr: #2a78d6; --fem: #eb6834; --e1: #6250d6; --e2: #1baf7a;
-  --ok: #008300; --warn: #b26b00; --bad: #c62f2e; --accent-bg: #eef3fb;
+  --bg: #f6f6f3; --surface: #ffffff; --border: #d9d8d2; --grid: #e9e8e3;
+  --text: #111110; --text-2: #3f3e3a; --muted: #6f6e68;
+  --bfr: #dc2626; --fem: #2563eb; --err: #4b5563; --err2: #7c3aed;
+  --ok: #15803d; --warn: #b45309; --bad: #b91c1c; --accent-bg: #eef2f8;
+  --ok-bg: #e8f5ec; --warn-bg: #fdf3e4; --bad-bg: #fbe9e9;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #121211; --surface: #1a1a19; --border: #34332f; --grid: #2a2a27;
-    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
-    --bfr: #3987e5; --fem: #d95926; --e1: #9085e9; --e2: #199e70;
-    --ok: #3fb33f; --warn: #e0a030; --bad: #e66767; --accent-bg: #1c2633;
+    --bg: #121211; --surface: #1b1b1a; --border: #383733; --grid: #2b2b28;
+    --text: #f2f1ee; --text-2: #d0cfc6; --muted: #9a9990;
+    --bfr: #f87171; --fem: #60a5fa; --err: #a8b0bd; --err2: #a78bfa;
+    --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --accent-bg: #1c2431;
+    --ok-bg: #15281c; --warn-bg: #2d2412; --bad-bg: #2f1717;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121211; --surface: #1a1a19; --border: #34332f; --grid: #2a2a27;
-  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
-  --bfr: #3987e5; --fem: #d95926; --e1: #9085e9; --e2: #199e70;
-  --ok: #3fb33f; --warn: #e0a030; --bad: #e66767; --accent-bg: #1c2633;
+  --bg: #121211; --surface: #1b1b1a; --border: #383733; --grid: #2b2b28;
+  --text: #f2f1ee; --text-2: #d0cfc6; --muted: #9a9990;
+  --bfr: #f87171; --fem: #60a5fa; --err: #a8b0bd; --err2: #a78bfa;
+  --ok: #4ade80; --warn: #fbbf24; --bad: #f87171; --accent-bg: #1c2431;
+  --ok-bg: #15281c; --warn-bg: #2d2412; --bad-bg: #2f1717;
 }
 * { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 80px; }
-h1 { font-size: 28px; margin: 8px 0 4px; letter-spacing: -0.01em; }
-h2 { font-size: 21px; margin: 44px 0 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-h3 { font-size: 16px; margin: 0 0 4px; }
-p, li { color: var(--text-2); max-width: 78ch; }
-code { font-size: 0.9em; background: var(--grid); padding: 1px 5px; border-radius: 4px; }
-.sub { color: var(--muted); margin: 0 0 16px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
-.chip { font-size: 12.5px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 99px;
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1320px; margin: 0 auto; padding: 28px 16px 96px; }
+h1 { font-size: 36px; line-height: 1.2; margin: 8px 0 6px; letter-spacing: -0.015em; }
+h2 { font-size: 28px; margin: 56px 0 12px; padding-top: 14px; border-top: 2px solid var(--border); }
+h3 { font-size: 22px; margin: 0 0 6px; }
+h4 { font-size: 18px; margin: 18px 0 6px; }
+p, li { color: var(--text-2); max-width: 82ch; }
+li { margin: 4px 0; }
+code { font-size: 0.88em; background: var(--grid); padding: 1px 6px; border-radius: 4px; }
+b, strong { color: var(--text); }
+.sub { color: var(--muted); margin: 0 0 16px; font-size: 18px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+.chip { font-size: 15px; padding: 4px 11px; border: 1px solid var(--border); border-radius: 99px;
   background: var(--surface); color: var(--text-2); }
-nav.toc { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 18px 0 0; font-size: 14px; }
-nav.toc a { color: var(--bfr); text-decoration: none; }
+.chip.cambio { border-color: var(--err2); color: var(--text); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 20px 0 0; font-size: 16px; }
+nav.toc a { color: var(--fem); text-decoration: none; font-weight: 500; }
 nav.toc a:hover { text-decoration: underline; }
-.box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
-.callout { background: var(--accent-bg); border-left: 3px solid var(--bfr); border-radius: 6px; padding: 12px 16px; margin: 14px 0; }
-.callout.bad { border-left-color: var(--bad); }
-.callout.warn { border-left-color: var(--warn); }
-.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
-th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+.box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; }
+.callout { background: var(--accent-bg); border-left: 4px solid var(--fem); border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+.callout.bad { border-left-color: var(--bad); background: var(--bad-bg); }
+.callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.callout.ok { border-left-color: var(--ok); background: var(--ok-bg); }
+.dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 18px; align-items: start; }
+.fig { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #fff; display: block; }
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 15.5px; font-variant-numeric: tabular-nums; }
+th, td { padding: 9px 12px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { color: var(--text-2); font-weight: 600; background: var(--surface); position: sticky; top: 0; cursor: pointer; user-select: none; }
 th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+table.glosario td, table.glosario th { white-space: normal; text-align: left; vertical-align: top; cursor: auto; }
+table.glosario td:first-child { white-space: nowrap; font-weight: 600; color: var(--text); }
 tbody tr:hover { background: var(--accent-bg); }
 td a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--muted); }
-.cell { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
-.bar { height: 6px; border-radius: 0 3px 3px 0; background: var(--muted); opacity: 0.45; }
-.grp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
-.mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0 6px; }
-.caso { margin: 18px 0; }
-.caso-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; margin-bottom: 8px; }
-.caso-head .desc { color: var(--text-2); font-size: 14px; }
-.kpis { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--text-2); margin: 4px 0 10px; }
-.kpis b { color: var(--text); font-variant-numeric: tabular-nums; }
-video { width: 100%; border-radius: 6px; background: #000; display: block; }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin-top: 10px; }
+.est { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; border-radius: 6px; padding: 1px 8px; }
+.est.ok { color: var(--ok); background: var(--ok-bg); }
+.est.warn { color: var(--warn); background: var(--warn-bg); }
+.est.bad { color: var(--bad); background: var(--bad-bg); }
+.mini-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; margin: 16px 0 8px; }
+.pregunta { font-size: 20px; color: var(--text); font-weight: 500; margin: 4px 0 10px; }
+.caso { margin: 26px 0; scroll-margin-top: 12px; }
+.caso-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; }
+.caso-head .desc { color: var(--text-2); font-size: 18px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 16px 0; }
+.kpi { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--bg); }
+.kpi .lab { font-size: 14px; color: var(--muted); }
+.kpi .val { font-size: 23px; font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.25; }
+.kpi .est { font-size: 13px; margin-top: 4px; }
+.lectura { margin: 8px 0 14px; padding-left: 0; list-style: none; }
+.lectura li { padding-left: 30px; position: relative; max-width: none; }
+.lectura li .ic { position: absolute; left: 0; top: 1px; font-weight: 700; width: 22px; text-align: center; border-radius: 5px; }
+.lectura li .ic.ok { color: var(--ok); background: var(--ok-bg); }
+.lectura li .ic.warn { color: var(--warn); background: var(--warn-bg); }
+.lectura li .ic.bad { color: var(--bad); background: var(--bad-bg); }
+.nota { border-left: 4px solid var(--err2); background: var(--accent-bg); border-radius: 8px; padding: 12px 16px; margin: 10px 0 16px; }
+.nota h4 { margin-top: 0; }
+.nota p { max-width: none; }
+.tabs { display: flex; gap: 6px; margin: 16px 0 8px; flex-wrap: wrap; }
+.tabs button { font: inherit; font-size: 16px; font-weight: 600; padding: 7px 16px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-2); }
+.tabs button[aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+video { display: block; margin: 0 auto; max-width: 100%; max-height: 90vh; width: auto; height: auto;
+  border-radius: 8px; background: #fff; border: 1px solid var(--border); }
+.vid-ayuda { font-size: 15px; color: var(--muted); margin: 6px 0 0; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; margin-top: 16px; }
 .chart { position: relative; }
-.chart .ttl { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 2px 4px; }
-.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
-.legend { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin: 0 0 0 4px; }
-.legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
+.chart .ttl { font-size: 16px; font-weight: 650; color: var(--text); margin: 0 0 2px 4px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; touch-action: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 14.5px; color: var(--text-2); margin: 0 0 0 4px; }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; vertical-align: middle; margin-right: 5px; }
 .legend i.dash { border-top-style: dashed; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none; z-index: 2; font-variant-numeric: tabular-nums; }
-.axis text { fill: var(--muted); font-size: 10px; }
+  border-radius: 8px; padding: 6px 10px; font-size: 14px; color: var(--text); white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0,0,0,.14); display: none; z-index: 2; font-variant-numeric: tabular-nums; }
+.axis text { fill: var(--muted); font-size: 13px; }
 .axis line, .axis path { stroke: var(--grid); }
 .falta { color: var(--bad); }
-.theme-btn { float: right; font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px;
+.theme-btn { float: right; font: inherit; font-size: 15px; padding: 5px 12px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; }
-@media (max-width: 640px) { h1 { font-size: 23px; } .box { padding: 12px; } }
+svg.dominio text { font-size: 15px; fill: var(--text-2); }
+@media (max-width: 640px) {
+  body { font-size: 16px; } h1 { font-size: 27px; } h2 { font-size: 23px; } .box { padding: 14px; }
+  .dos { grid-template-columns: 1fr; } .mini-grid, .charts { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
 <main>
-  <button class="theme-btn" id="themeBtn" type="button">Tema</button>
+  <button class="theme-btn" id="themeBtn" type="button">Tema claro/oscuro</button>
   <h1>Experimentos BFR (RBF-FD) vs FEniCS (FEM)</h1>
   <p class="sub" id="sub"></p>
   <div class="chips" id="chips"></div>
   <nav class="toc" id="toc"></nav>
 
+  <h2 id="experimento">1. Qué se compara y por qué</h2>
+  <div class="dos">
+    <div>
+      <p>El simulador resuelve el mismo problema con <b>dos métodos numéricos</b> distintos y este experimento mide
+         cuánto difieren sus resultados y <b>de dónde viene</b> la diferencia:</p>
+      <ul>
+        <li><b style="color:var(--bfr)">BFR</b>: diferencias finitas con funciones de base radial (RBF-FD), forma fuerte,
+            stencils de 35 vecinos y nodos fantasma en la frontera.</li>
+        <li><b style="color:var(--fem)">FEniCS</b>: elementos finitos P1 (Galerkin, forma débil) sobre triángulos.</li>
+      </ul>
+      <p>El modelo es el de la tesis (ADR): el <b>flujo</b> da la carga hidráulica <b>H</b> (con almacenamiento, ley de Darcy y el
+         sumidero del pozo), de ahí la <b>velocidad U = −K∇H</b>, que transporta la <b>concentración C</b> del contaminante
+         (advección + dispersión + fuente + extracción por el pozo). Se simulan 30 días.</p>
+      <p><b>Todo lo demás es idéntico en ambos backends</b>: los mismos nodos y triángulos (§2), la misma condición inicial
+         (<code>funcion.h5</code>), los mismos parámetros físicos (<code>experimentos/base.json</code>) y el mismo dt.
+         Así, la diferencia que se ve es sólo del método. Se compara nodo a nodo, sin interpolar.</p>
+      <p>Cada grupo de casos cambia <b>una sola cosa</b> respecto a la configuración de referencia (fuente y pozo activos, Q = 0.3 m³/s)
+         para aislar una causa: los términos fuente (A), la condición de salida (B), el ancho de la fuente (C),
+         el caudal (D), el paso de tiempo (E) y el upwind de BFR (F).</p>
+    </div>
+    <div class="box">
+      <h4 style="margin-top:0">Dominio (corte vertical del acuífero)</h4>
+      <svg class="dominio" id="dominio" viewBox="0 0 640 260" role="img" aria-label="Esquema del dominio"></svg>
+      <p class="vid-ayuda">El agua entra por la derecha (entrada) y sale por la izquierda (salida); el resto es pared impermeable.
+         ▼ pozo de extracción (3700, −700) · ★ fuente del contaminante (9116, 109). Escala vertical exagerada ×1.</p>
+    </div>
+  </div>
+
+  <h2 id="malla">2. La malla compartida (saneada)</h2>
+  <div class="dos">
+    <div>
+      <p>La malla se genera <b>una sola vez, sin depender del backend</b> (<code>python -m preprocessing.malla_compartida</code>),
+         con el mismo generador de nodos de BFR (4 niveles de espaciamiento) y después se <b>sanea</b>. BFR usa sus nodos
+         (más los fantasmas) y FEniCS sus <b>mismos triángulos</b>, sin volver a triangular.</p>
+      <div id="mallaKpis" class="kpis"></div>
+      <p id="mallaNota" class="vid-ayuda"></p>
+    </div>
+    <div><img class="fig" id="mallaFig" alt="Malla compartida con zooms de las esquinas y el pozo"></div>
+  </div>
+
+  <h2 id="como-leer">3. Cómo leer las métricas</h2>
+  <p>Todas se calculan en la <b>misma pasada</b> que dibuja los videos, con los arreglos tal cual salen de cada backend.
+     Las normas usan pesos de área nodal (la malla es 15 veces más fina en el pozo y la fuente que lejos; sin pesos,
+     esos nodos dominarían). Los umbrales de color son <b>orientativos</b>, elegidos para la escala de este problema.</p>
+  <div class="tbl-wrap"><table class="glosario" id="glosario"></table></div>
+
   <!--__CONCLUSIONES__-->
 
   <h2 id="resumen">Resumen de todos los casos</h2>
-  <p>Valores en t = 30 días (último paso). Clic en una columna para ordenar. Todos se calcularon en la misma
-     pasada que generó el video de cada caso. Las normas usan pesos de área nodal sobre la triangulación de FEniCS.</p>
+  <p>Valores al final (t = 30 días). Clic en una columna para ordenar, en un caso para ir a su análisis.</p>
   <div class="tbl-wrap"><table id="tabla"></table></div>
 
   <div id="grupos"></div>
@@ -103,6 +185,7 @@ video { width: 100%; border-radius: 6px; background: #000; display: block; }
 
 <script>
 const DATOS = /*__DATOS__*/null;
+const FPS = 12;
 
 // ── tema ────────────────────────────────────────────────────────────────────
 (function () {
@@ -126,7 +209,6 @@ const fmt = (x, d = 2) => {
   if (a !== 0 && (a < 1e-2 || a >= 1e4)) return x.toExponential(d);
   return x.toFixed(a < 1 ? d + 1 : d);
 };
-// Etiqueta de eje: 3 cifras significativas, exponencial si es muy chica/grande.
 const fmtEje = (v) => {
   if (v === 0) return "0";
   const a = Math.abs(v);
@@ -146,40 +228,112 @@ const S = (tag, attrs = {}) => {
   return e;
 };
 
+// ── métricas: definición, umbrales y lectura ────────────────────────────────
+const cpozo = r => r.Cpozo_fem_final > 0 ? r.Cpozo_bfr_final / r.Cpozo_fem_final : NaN;
+const METRICAS = [
+  { k: "H_rms_final_m", lab: "ΔH RMS", u: " m", f: r => r.H_rms_final_m, ok: 0.05, warn: 0.2,
+    def: "Raíz del error cuadrático medio de H<sub>BFR</sub> − H<sub>FEM</sub> en todo el dominio, en metros.",
+    lee: "Cuánto difiere el nivel del agua «en promedio». H varía unos 3 m en el dominio; centímetros es buena coincidencia." },
+  { k: "H_max_final_m", lab: "ΔH máx", u: " m", f: r => r.H_max_final_m, ok: 0.25, warn: 1,
+    def: "Mayor |H<sub>BFR</sub> − H<sub>FEM</sub>| en un nodo.",
+    lee: "Detecta artefactos locales (un nodo o una franja) que el RMS diluye. Buscar el punto rojo/azul intenso en el panel «BFR − FEM» del video de H." },
+  { k: "V_L2_rel_final", lab: "|U| L2 rel", u: "", f: r => r.V_L2_rel_final, ok: 0.1, warn: 0.3,
+    def: "‖ |U|<sub>BFR</sub> − |U|<sub>FEM</sub> ‖ / ‖ |U|<sub>FEM</sub> ‖ en L2(Ω).",
+    lee: "Diferencia de rapidez del agua. U depende del gradiente de H, así que amplifica las diferencias pequeñas de H." },
+  { k: "C_L2_rel_final", lab: "C L2 rel", u: "", f: r => r.C_L2_rel_final, ok: 0.1, warn: 0.3,
+    def: "‖ C<sub>BFR</sub> − C<sub>FEM</sub> ‖ / ‖ C<sub>FEM</sub> ‖ en L2(Ω).",
+    lee: "Diferencia de la pluma de contaminante. 0.25 = la diferencia es la cuarta parte del tamaño de la pluma." },
+  { k: "masa_ratio_final", lab: "Masa BFR/FEM", u: "", f: r => r.masa_ratio_final, ok: 0.02, warn: 0.05, rel1: true,
+    def: "∫C dΩ de BFR entre la de FEM.",
+    lee: "1 = la misma cantidad total de contaminante. Si la masa coincide pero C L2 no, los dos reparten distinto la misma masa." },
+  { k: "cpozo_ratio", lab: "C pozo BFR/FEM", u: "", f: cpozo, ok: 0.1, warn: 0.3, rel1: true,
+    def: "C extraída por el pozo (media de C con la gaussiana del sumidero, ε = r_pozo/3) de BFR entre la de FEM.",
+    lee: "Es la cantidad que usa el funcional de la optimización: si difiere, la optimización con uno u otro backend dará resultados distintos." },
+];
+function estado(m, v) {
+  if (!isFinite(v)) return "warn";
+  const x = m.rel1 ? Math.abs(v - 1) : Math.abs(v);
+  return x < m.ok ? "ok" : x < m.warn ? "warn" : "bad";
+}
+const EST_TXT = { ok: ["✓", "bien"], warn: ["!", "atención"], bad: ["✗", "grande"] };
+const estHtml = (e) => `<span class="est ${e}">${EST_TXT[e][0]} ${EST_TXT[e][1]}</span>`;
+const umbral = (m) => m.rel1 ? `|r − 1| < ${m.ok} · < ${m.warn}` : `< ${m.ok}${m.u} · < ${m.warn}${m.u}`;
+
 // ── cabecera ────────────────────────────────────────────────────────────────
 const b = DATOS.base;
+const nCasos = DATOS.grupos.reduce((n, g) => n + g.casos.filter(c => !c.falta).length, 0);
 document.getElementById("sub").textContent =
-  "Malla congelada compartida · ADR · comparación nodo a nodo sin interpolación · " +
-  DATOS.grupos.reduce((n, g) => n + g.casos.filter(c => !c.falta).length, 0) + " casos comparados";
-[["Q_std", b.Q_std + " m³/s"], ["dt", b.dt + " s"], ["T", (b.T / 86400) + " días"], ["θ flujo", b.theta],
- ["θ_C", b.theta_C], ["r_pozo", b.r_pozo + " m"], ["δ pozo", b.norm_delta_pozo], ["σ fuente", b.sigma_fuente],
+  `Modelo ADR · 30 días · ${nCasos} casos comparados nodo a nodo sobre la misma malla` +
+  (DATOS.malla.fecha ? ` · malla del ${DATOS.malla.fecha}` : "");
+[["Q pozo", b.Q_std + " m³/s"], ["dt", b.dt / 3600 + " h"], ["T", (b.T / 86400) + " días"], ["θ flujo", b.theta],
+ ["θ transporte", b.theta_C], ["r_pozo", b.r_pozo + " m"], ["σ fuente", b.sigma_fuente],
  ["n_stencil", b.n_stencil], ["BC salida BFR", b.bc_outlet_mode]].forEach(([k, v]) =>
   document.getElementById("chips").appendChild(el("span", { class: "chip" }, `${k} = ${v}`)));
 const toc = document.getElementById("toc");
-[["#revision", "Revisión"], ["#conclusiones", "Conclusiones"], ["#resumen", "Resumen"]]
-  .concat(DATOS.grupos.map(g => ["#" + g.grupo, g.grupo.replace(/_/g, " ")]))
-  .forEach(([h, t]) => { if (document.querySelector(h) || !["#revision", "#conclusiones"].includes(h))
+[["#experimento", "1. Qué se compara"], ["#malla", "2. Malla"], ["#como-leer", "3. Métricas"],
+ ["#revision", "Revisión"], ["#conclusiones", "Conclusiones"], ["#resumen", "Resumen"]]
+  .concat(DATOS.grupos.map(g => ["#" + g.grupo, g.grupo.split("_")[0] + ". " + g.grupo.split("_").slice(1).join(" ")]))
+  .forEach(([h, t]) => { if (!h.startsWith("#") || document.querySelector(h) || DATOS.grupos.some(g => "#" + g.grupo === h))
     toc.appendChild(el("a", { href: h }, t)); });
 
+// ── esquema del dominio (SVG nativo, desde las coordenadas reales) ──────────
+(function () {
+  const V = [[816, -2690.5], [4354, -1757.5], [10755, -768.5], [10755, 250.5], [816, 250.5]];
+  const sv = document.getElementById("dominio");
+  const W = 640, H = 260, m = 34;
+  const sx = x => m + (x - 816) / (10755 - 816) * (W - 2 * m);
+  const sy = z => 22 + (250.5 - z) / 2941 * (H - 70);
+  const p = V.map(([x, z]) => `${sx(x)},${sy(z)}`).join(" ");
+  sv.appendChild(S("polygon", { points: p, fill: "var(--accent-bg)", stroke: "var(--muted)", "stroke-width": 1.5 }));
+  const lado = (a, c, col, w) => sv.appendChild(S("line", { x1: sx(a[0]), y1: sy(a[1]), x2: sx(c[0]), y2: sy(c[1]), stroke: col, "stroke-width": w }));
+  lado(V[2], V[3], "var(--fem)", 6); lado(V[4], V[0], "var(--ok)", 6);
+  const txt = (x, y, t, anchor = "middle") => { const e = S("text", { x, y, "text-anchor": anchor }); e.textContent = t; sv.appendChild(e); };
+  txt(sx(10755) - 8, sy(-640), "entrada →", "end"); txt(sx(816) + 10, sy(-1200), "← salida", "start");
+  txt(sx(6500), sy(-1500) + 26, "pared impermeable (fondo)");
+  txt(sx(5800), sy(250.5) - 6, "pared (superficie)");
+  const pozo = [3700, -700], fnte = [9116, 109];
+  sv.appendChild(S("path", { d: `M${sx(pozo[0]) - 8},${sy(pozo[1]) - 7} h16 l-8,13 z`, fill: "#fff", stroke: "#000", "stroke-width": 1.5 }));
+  txt(sx(pozo[0]), sy(pozo[1]) + 24, "pozo");
+  const st = S("text", { x: sx(fnte[0]), y: sy(fnte[1]) + 7, "text-anchor": "middle", style: "font-size:22px;fill:#000;stroke:#fff;stroke-width:1" });
+  st.textContent = "★"; sv.appendChild(st);
+  txt(sx(fnte[0]), sy(fnte[1]) + 26, "fuente");
+  [[816, "816"], [10755, "10755 m"]].forEach(([x, t]) => txt(sx(x), H - 6, t));
+})();
+
+// ── malla ───────────────────────────────────────────────────────────────────
+(function () {
+  const M = DATOS.malla, q = M.calidad || {};
+  if (M.figura) document.getElementById("mallaFig").src = M.figura;
+  else document.getElementById("mallaFig").remove();
+  const k = document.getElementById("mallaKpis");
+  [["Nodos del dominio", M.n_dominio], ["Fantasmas (BFR)", M.n_fantasmas], ["Triángulos", q.n_triangulos],
+   ["Ángulo mínimo", isFinite(q.ang_min) ? q.ang_min.toFixed(1) + "°" : "—"],
+   ["Ángulo máximo", isFinite(q.ang_max) ? q.ang_max.toFixed(1) + "°" : "—"],
+   ["Espaciado mín / mediana", `${fmt(M.h_min, 1)} / ${fmt(M.h_mediana, 1)} m`],
+   ["Área (= polígono)", isFinite(q.area_m2) ? (q.area_m2 / 1e6).toFixed(2) + " km²" : "—"]]
+    .forEach(([l, v]) => k.appendChild(el("div", { class: "kpi" }, `<div class="lab">${l}</div><div class="val">${v ?? "—"}</div>`)));
+  document.getElementById("mallaNota").innerHTML = (M.nota || "") + (M.origen ? `<br>Origen: <code>${M.origen}</code>` : "");
+})();
+
+// ── glosario ────────────────────────────────────────────────────────────────
+(function () {
+  const t = document.getElementById("glosario");
+  t.innerHTML = "<thead><tr><th>Métrica</th><th>Qué es</th><th>Cómo leerla</th><th>Umbrales (✓ · !)</th></tr></thead>";
+  const tb = el("tbody");
+  METRICAS.forEach(m => tb.appendChild(el("tr", {}, `<td>${m.lab}</td><td>${m.def}</td><td>${m.lee}</td><td>${umbral(m)}</td>`)));
+  t.appendChild(tb);
+})();
+
 // ── tabla resumen ───────────────────────────────────────────────────────────
-const COLS = [
-  ["grupo", "Grupo", r => r.grupo.split("_")[0]],
-  ["caso", "Caso", r => r.caso],
-  ["H_rms_final_m", "ΔH RMS (m)", r => r.H_rms_final_m, true],
-  ["H_max_final_m", "ΔH máx (m)", r => r.H_max_final_m, true],
-  ["C_L2_rel_final", "C L2 rel", r => r.C_L2_rel_final, true],
-  ["V_L2_rel_final", "|U| L2 rel", r => r.V_L2_rel_final, true],
-  ["masa_ratio_final", "Masa BFR/FEM", r => r.masa_ratio_final, false],
-  ["cpozo_ratio", "C pozo BFR/FEM", r => r.Cpozo_fem_final > 0 ? r.Cpozo_bfr_final / r.Cpozo_fem_final : NaN, false],
-  ["Hpozo_dif", "H pozo BFR−FEM (m)", r => r.Hpozo_bfr_final - r.Hpozo_fem_final, false],
-];
 const FILAS = DATOS.grupos.flatMap(g => g.casos.filter(c => !c.falta).map(c => c.resumen));
 let orden = { col: null, asc: true };
 function tabla() {
+  const cols = [["grupo", "Grupo", r => r.grupo.split("_")[0]], ["caso", "Caso", r => r.caso]]
+    .concat(METRICAS.map(m => [m.k, m.lab + (m.u ? ` (${m.u.trim()})` : ""), m.f, m]));
   const t = document.getElementById("tabla");
   t.innerHTML = "";
   const thead = el("thead"), tr = el("tr");
-  COLS.forEach(([k, lab]) => {
+  cols.forEach(([k, lab]) => {
     const th = el("th", { scope: "col" }, lab + (orden.col === k ? (orden.asc ? " ▲" : " ▼") : ""));
     th.onclick = () => { orden = { col: k, asc: orden.col === k ? !orden.asc : true }; tabla(); };
     tr.appendChild(th);
@@ -187,22 +341,19 @@ function tabla() {
   thead.appendChild(tr); t.appendChild(thead);
   const filas = FILAS.slice();
   if (orden.col) {
-    const f = COLS.find(c => c[0] === orden.col)[2];
+    const f = cols.find(c => c[0] === orden.col)[2];
     filas.sort((a, b) => { const x = f(a), y = f(b);
       return (typeof x === "string" ? x.localeCompare(y) : (x - y)) * (orden.asc ? 1 : -1); });
   }
-  const maxes = {};
-  COLS.forEach(([k, , f, barra]) => { if (barra) maxes[k] = Math.max(...FILAS.map(f).filter(isFinite)); });
   const tb = el("tbody");
   filas.forEach(r => {
     const tr = el("tr");
-    COLS.forEach(([k, , f, barra]) => {
+    cols.forEach(([k, , f, m]) => {
       const v = f(r);
       let html;
       if (k === "caso") html = `<a href="#${r.grupo}--${r.caso}">${v}</a>`;
       else if (typeof v === "string") html = v;
-      else if (barra) html = `<span class="cell">${fmt(v)}<span class="bar" style="width:${Math.max(2, 46 * v / maxes[k])}px"></span></span>`;
-      else html = fmt(v, 3);
+      else { const e = estado(m, v); html = `<span class="est ${e}" title="${EST_TXT[e][1]}">${EST_TXT[e][0]} ${fmt(v, m.rel1 ? 3 : 2)}</span>`; }
       tr.appendChild(el("td", {}, html));
     });
     tb.appendChild(tr);
@@ -219,17 +370,15 @@ function lineChart(cont, { titulo, x, series, log = false, xlab = "t (días)", t
   const leg = el("div", { class: "legend" });
   series.forEach(s => leg.appendChild(el("span", {}, `<i class="${s.dash ? "dash" : ""}" style="border-color:var(${s.color})"></i>${s.nombre}`)));
   box.appendChild(leg);
-  const W = 320, H = 190, m = { l: 52, r: 10, t: 10, b: 30 };
+  const W = 420, H = 250, m = { l: 62, r: 12, t: 12, b: 38 };
   const svg = S("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": titulo });
   box.appendChild(svg);
   const tip = el("div", { class: "tip" });
   box.appendChild(tip);
   cont.appendChild(box);
-
   const g = { svg, tip, x, series, log, W, H, m, cursor: null, titulo, xlab, tipoX, soloPuntos };
   GRAFICAS.push(g);
   dibujar(g);
-
   svg.addEventListener("pointermove", (ev) => {
     const r = svg.getBoundingClientRect();
     const px = (ev.clientX - r.left) * (W / r.width);
@@ -237,8 +386,8 @@ function lineChart(cont, { titulo, x, series, log = false, xlab = "t (días)", t
     marcar(g, i, true);
     const xpos = (g.sx(x[i]) / W) * r.width;
     tip.style.display = "block";
-    tip.style.left = Math.min(Math.max(xpos + 10, 0), r.width - 150) + "px";
-    tip.style.top = "30px";
+    tip.style.left = Math.min(Math.max(xpos + 12, 0), r.width - 190) + "px";
+    tip.style.top = "36px";
   });
   svg.addEventListener("pointerleave", () => { tip.style.display = "none"; if (g.cursorFijo !== undefined) marcar(g, g.cursorFijo, false); });
   return g;
@@ -274,37 +423,37 @@ function dibujar(g) {
   let y0 = Math.min(...ys), y1 = Math.max(...ys);
   if (!g.log) { const pad = (y1 - y0) * 0.06 || Math.abs(y1) * 0.05 || 1; y0 -= pad; y1 += pad; }
   else { y0 /= 1.5; y1 *= 1.5; }
-  const padX = g.soloPuntos ? 0.4 : 0;
+  const padX = g.soloPuntos ? 0.5 : 0;
   g.sx = escala(x[0] - padX, x[x.length - 1] + padX, m.l, W - m.r, false);
   g.sy = escala(y0, y1, H - m.b, m.t, g.log);
   const ax = S("g", { class: "axis" });
   ticks(y0, y1, g.log).forEach(v => {
     const yy = g.sy(v);
     ax.appendChild(S("line", { x1: m.l, x2: W - m.r, y1: yy, y2: yy }));
-    const t = S("text", { x: m.l - 6, y: yy + 3, "text-anchor": "end" }); t.textContent = fmtEje(v); ax.appendChild(t);
+    const t = S("text", { x: m.l - 7, y: yy + 4, "text-anchor": "end" }); t.textContent = fmtEje(v); ax.appendChild(t);
   });
   (g.tipoX === "t" ? ticks(x[0], x[x.length - 1], false, 5) : x).forEach(v => {
-    const t = S("text", { x: g.sx(v), y: H - m.b + 14, "text-anchor": "middle" }); t.textContent = +v.toFixed(2); ax.appendChild(t);
+    const t = S("text", { x: g.sx(v), y: H - m.b + 17, "text-anchor": "middle" }); t.textContent = +v.toFixed(2); ax.appendChild(t);
   });
-  const xl = S("text", { x: (m.l + W - m.r) / 2, y: H - 2, "text-anchor": "middle" }); xl.textContent = g.xlab; ax.appendChild(xl);
+  const xl = S("text", { x: (m.l + W - m.r) / 2, y: H - 3, "text-anchor": "middle" }); xl.textContent = g.xlab; ax.appendChild(xl);
   svg.appendChild(ax);
   g.puntos = [];
   series.forEach(s => {
     if (g.soloPuntos) {           // categorías: puntos sin unir
       s.y.forEach((v, i) => { if (isFinite(v) && (!g.log || v > 0))
-        svg.appendChild(S("circle", { cx: g.sx(x[i]), cy: g.sy(v), r: 5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2 })); });
-      const c = S("circle", { r: 7, fill: "none", stroke: css(s.color), "stroke-width": 2, visibility: "hidden" });
+        svg.appendChild(S("circle", { cx: g.sx(x[i]), cy: g.sy(v), r: 6, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2 })); });
+      const c = S("circle", { r: 9, fill: "none", stroke: css(s.color), "stroke-width": 2, visibility: "hidden" });
       svg.appendChild(c); g.puntos.push(c);
       return;
     }
     const d = s.y.map((v, i) => (isFinite(v) && (!g.log || v > 0)) ? `${g.sx(x[i]).toFixed(1)},${g.sy(v).toFixed(1)}` : null)
       .reduce((acc, p) => { if (p === null) acc.push(""); else acc[acc.length - 1] += (acc[acc.length - 1] ? " L" : "M") + p; return acc; }, [""])
       .join(" ");
-    svg.appendChild(S("path", { d, fill: "none", stroke: css(s.color), "stroke-width": 2, "stroke-dasharray": s.dash ? "5 3" : "", "stroke-linejoin": "round" }));
-    const c = S("circle", { r: 4, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2, visibility: "hidden" });
+    svg.appendChild(S("path", { d, fill: "none", stroke: css(s.color), "stroke-width": 2.5, "stroke-dasharray": s.dash ? "6 4" : "", "stroke-linejoin": "round" }));
+    const c = S("circle", { r: 5, fill: css(s.color), stroke: css("--surface"), "stroke-width": 2, visibility: "hidden" });
     svg.appendChild(c); g.puntos.push(c);
   });
-  g.cursor = S("line", { y1: m.t, y2: H - m.b, stroke: css("--muted"), "stroke-width": 1, visibility: "hidden" });
+  g.cursor = S("line", { y1: m.t, y2: H - m.b, stroke: css("--muted"), "stroke-width": 1.2, visibility: "hidden" });
   svg.appendChild(g.cursor);
   svg.appendChild(S("rect", { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent" }));
   if (g.cursorFijo !== undefined) marcar(g, g.cursorFijo, false);
@@ -322,41 +471,68 @@ function marcar(g, i, conTip) {
 }
 function redibujar() { GRAFICAS.forEach(dibujar); }
 
-// ── gráficas comunes de un caso: las mismas cuatro del video ───────────────
+// ── gráficas de un caso (mismas series que las curvas de los videos) ────────
 function graficasCaso(cont, s) {
   const t = s.t_dias;
   return [
-    lineChart(cont, { titulo: "Error de H (m)", x: t, log: true, series: [
-      { nombre: "RMS", y: s.H_rms_m, color: "--e1" }, { nombre: "máx", y: s.H_max_m, color: "--e2", dash: true }] }),
+    lineChart(cont, { titulo: "Error de H: BFR − FEM (m)", x: t, log: true, series: [
+      { nombre: "RMS en Ω", y: s.H_rms_m, color: "--err" }, { nombre: "máximo", y: s.H_max_m, color: "--err2", dash: true }] }),
     lineChart(cont, { titulo: "Error relativo L2", x: t, log: true, series: [
-      { nombre: "C", y: s.C_L2_rel, color: "--e1" }, { nombre: "|U|", y: s.V_L2_rel, color: "--e2", dash: true }] }),
-    lineChart(cont, { titulo: "Masa ∫C dΩ", x: t, series: [
+      { nombre: "C", y: s.C_L2_rel, color: "--err" }, { nombre: "|U|", y: s.V_L2_rel, color: "--err2", dash: true }] }),
+    lineChart(cont, { titulo: "Masa de contaminante ∫C dΩ", x: t, series: [
       { nombre: "BFR", y: s.masa_bfr, color: "--bfr" }, { nombre: "FEM", y: s.masa_fem, color: "--fem", dash: true }] }),
     lineChart(cont, { titulo: "C extraída en el pozo", x: t, series: [
       { nombre: "BFR", y: s.Cpozo_bfr, color: "--bfr" }, { nombre: "FEM", y: s.Cpozo_fem, color: "--fem", dash: true }] }),
   ];
 }
 
+// ── lectura automática de un caso (a partir de sus métricas) ────────────────
+function lectura(r, s, cambios) {
+  const out = [];
+  const e = (k) => estado(METRICAS.find(m => m.k === k), METRICAS.find(m => m.k === k).f(r));
+  const n = s.t_dias.length, mitad = Math.floor(n / 2);
+  const crece = (y) => y[n - 1] > 1.3 * y[mitad] ? "y sigue creciendo al final" : y[n - 1] < 0.77 * y[mitad] ? "y va disminuyendo" : "y es estable en la segunda quincena";
+  out.push([e("H_rms_final_m"), `Flujo: el nivel H difiere <b>${fmt(100 * r.H_rms_final_m, 1)} cm</b> en promedio (${pct(r.H_rms_sobre_rango)} del rango de H) ` +
+    `${crece(s.H_rms_m)}; el peor nodo difiere ${fmt(r.H_max_final_m)} m.`]);
+  out.push([e("V_L2_rel_final"), `Velocidad: |U| difiere un <b>${pct(r.V_L2_rel_final)}</b> en L2.`]);
+  out.push([e("C_L2_rel_final"), `Transporte: la pluma difiere un <b>${pct(r.C_L2_rel_final)}</b> en L2 ${crece(s.C_L2_rel)}; ` +
+    `la masa total coincide al ${pct(Math.abs(r.masa_ratio_final - 1))} (BFR/FEM = ${fmt(r.masa_ratio_final, 3)}).`]);
+  const cp = cpozo(r);
+  if (isFinite(cp)) out.push([e("cpozo_ratio"), `Pozo: BFR extrae <b>${fmt(cp, 2)}×</b> la concentración de FEM` +
+    (cp < 1 ? ` (${fmt(1 / cp, 1)} veces menos).` : ".") + ` Nivel en el pozo: BFR − FEM = ${fmt(r.Hpozo_bfr_final - r.Hpozo_fem_final, 3)} m.`]);
+  const m0b = s.masa_bfr[0], m0f = s.masa_fem[0];
+  const sube = (y, y0) => Math.max(...y) > y0 * 1.005;
+  if (cambios.activate_fuente === false) {
+    if (sube(s.masa_bfr, m0b) || sube(s.masa_fem, m0f))
+      out.push(["bad", `Sin fuente, la masa no debería crecer y crece en ${[sube(s.masa_bfr, m0b) && "BFR", sube(s.masa_fem, m0f) && "FEM"].filter(Boolean).join(" y ")}.`]);
+  }
+  if (Math.min(r.Cmin_bfr, r.Cmin_fem) < 0) out.push(["warn", `Aparecen C negativas (mín BFR ${fmt(r.Cmin_bfr)}, FEM ${fmt(r.Cmin_fem)}).`]);
+  return out;
+}
+
 // ── secciones por grupo ─────────────────────────────────────────────────────
+const NOMBRE_CAMPO = { H: "Carga H", C: "Concentración C", V: "Velocidad |U| (con flechas)" };
+const AYUDA_CAMPO = {
+  H: "Arriba BFR, en medio FEM (misma escala de color), abajo la diferencia BFR − FEM (rojo = BFR más alto, azul = más bajo).",
+  C: "Misma escala de color para ambos backends; gris = C nula. Abajo la diferencia BFR − FEM.",
+  V: "Color = rapidez |U| (saturada cerca del pozo, flecha de la barra); flechas = dirección del flujo, interpoladas en la propia malla P1.",
+};
 const raiz = document.getElementById("grupos");
 DATOS.grupos.forEach(G => {
   const sec = el("section", { id: G.grupo });
-  sec.appendChild(el("h2", {}, G.grupo.replace(/_/g, " ")));
-  sec.appendChild(el("p", {}, G.desc));
+  sec.appendChild(el("h2", {}, `Grupo ${G.grupo.split("_")[0]}: ${G.desc}`));
+  if (G.pregunta) sec.appendChild(el("p", { class: "pregunta" }, G.pregunta));
   const ok = G.casos.filter(c => !c.falta);
-  // Comparación entre casos del grupo: valor final de cada métrica por caso.
   if (ok.length > 1) {
     const mg = el("div", { class: "mini-grid" });
     const nombres = ok.map(c => c.caso);
-    const comp = (titulo, f, log) => {
-      lineChart(mg, { titulo, x: nombres.map((_, i) => i), xlab: "caso (índice)", tipoX: nombres, log, soloPuntos: true,
-        series: [{ nombre: "t = 30 d", y: ok.map(c => f(c.resumen)), color: "--e1" }] });
-    };
-    comp("ΔH RMS final (m) por caso", r => r.H_rms_final_m, true);
-    comp("C L2 rel final por caso", r => r.C_L2_rel_final, true);
-    comp("Masa BFR/FEM final por caso", r => r.masa_ratio_final, false);
-    sec.appendChild(el("p", { class: "sub" }, "Eje x: " + nombres.map((n, i) => `${i} = ${n}`).join(" · ")));
+    const comp = (titulo, f, log) => lineChart(mg, { titulo, x: nombres.map((_, i) => i), xlab: "caso (ver índice abajo)",
+      tipoX: nombres, log, soloPuntos: true, series: [{ nombre: "t = 30 días", y: ok.map(c => f(c.resumen)), color: "--err2" }] });
+    comp("ΔH RMS final (m)", r => r.H_rms_final_m, true);
+    comp("C L2 rel final", r => r.C_L2_rel_final, true);
+    comp("C pozo BFR/FEM final", cpozo, false);
     sec.appendChild(mg);
+    sec.appendChild(el("p", { class: "vid-ayuda" }, "Índice de casos: " + nombres.map((n, i) => `<b>${i}</b> = ${n}`).join(" · ")));
   }
   G.casos.forEach(c => {
     const box = el("div", { class: "box caso", id: `${G.grupo}--${c.caso}` });
@@ -364,30 +540,66 @@ DATOS.grupos.forEach(G => {
     head.appendChild(el("h3", {}, c.caso));
     head.appendChild(el("span", { class: "desc" }, c.desc || (c.resumen && c.resumen.desc) || ""));
     box.appendChild(head);
-    if (c.falta) { box.appendChild(el("p", { class: "falta" }, "Sin metricas.json: el caso no se comparó (ver log de comparar.py).")); sec.appendChild(box); return; }
-    const r = c.resumen, s = c.series;
-    if (r.ref_fem !== `${r.grupo}/${r.caso}`) box.appendChild(el("p", { class: "sub" }, `Columna FEM tomada de ${r.ref_fem} (el caso sólo cambia BFR).`));
-    box.appendChild(el("div", { class: "kpis" },
-      `<span>ΔH RMS <b>${fmt(r.H_rms_final_m)} m</b> (${pct(r.H_rms_sobre_rango)} del rango de H)</span>` +
-      `<span>C L2 rel <b>${fmt(r.C_L2_rel_final)}</b></span><span>|U| L2 rel <b>${fmt(r.V_L2_rel_final)}</b></span>` +
-      `<span>Masa BFR/FEM <b>${fmt(r.masa_ratio_final, 3)}</b></span>` +
-      `<span>C pozo BFR / FEM <b>${fmt(r.Cpozo_bfr_final)} / ${fmt(r.Cpozo_fem_final)}</b></span>` +
-      `<span>C mín BFR / FEM <b>${fmt(r.Cmin_bfr)} / ${fmt(r.Cmin_fem)}</b></span>`));
-    let graf = [];
-    if (c.video) {
-      const v = el("video", { controls: "", preload: "metadata", playsinline: "", muted: "",
-        src: c.video, poster: c.video.replace("comparacion.mp4", "comparacion_final.png") });
-      box.appendChild(v);
-      const tc = s.t_cuadros || [];
-      v.addEventListener("timeupdate", () => {
-        if (!tc.length) return;
-        const k = Math.min(tc.length - 1, Math.floor(v.currentTime * 12));
-        graf.forEach(g => { g.cursorFijo = idxCercano(g, tc[k]); marcar(g, g.cursorFijo, false); });
-      });
-    } else box.appendChild(el("p", { class: "falta" }, "Video no generado (comparar.py --sin-video)."));
-    const ch = el("div", { class: "charts" });
+    const ch = el("div", { class: "chips" });
+    const cambios = Object.entries(c.cambios || {});
+    if (!cambios.length) ch.appendChild(el("span", { class: "chip" }, "configuración de referencia (sin cambios)"));
+    cambios.forEach(([k, v]) => ch.appendChild(el("span", { class: "chip cambio" }, `${k} = ${v}`)));
     box.appendChild(ch);
-    graf = graficasCaso(ch, s);
+    if (c.falta) { box.appendChild(el("p", { class: "falta" }, "Sin metricas.json: el caso no se comparó (ver la salida de comparar.py).")); sec.appendChild(box); return; }
+    const r = c.resumen, s = c.series;
+    if (r.ref_fem !== `${r.grupo}/${r.caso}`) box.appendChild(el("p", { class: "vid-ayuda" }, `Este caso sólo cambia BFR: el FEM de referencia es <b>${r.ref_fem}</b>.`));
+
+    const kp = el("div", { class: "kpis" });
+    METRICAS.forEach(m => { const v = m.f(r);
+      kp.appendChild(el("div", { class: "kpi" }, `<div class="lab">${m.lab}</div><div class="val">${fmt(v, m.rel1 ? 3 : 2)}${m.u}</div>${estHtml(estado(m, v))}`)); });
+    box.appendChild(kp);
+
+    box.appendChild(el("h4", {}, "Lectura de las métricas"));
+    const ul = el("ul", { class: "lectura" });
+    lectura(r, s, c.cambios || {}).forEach(([e, t]) => ul.appendChild(el("li", {}, `<span class="ic ${e}">${EST_TXT[e][0]}</span>${t}`)));
+    box.appendChild(ul);
+    if (c.nota) {
+      const n = el("div", { class: "nota" }, `<h4>Análisis</h4>${c.nota.html}`);
+      if (c.nota.desactualizada.length) n.insertBefore(el("p", { class: "falta" },
+        `⚠ Nota escrita con resultados anteriores: cambiaron ${c.nota.desactualizada.join(", ")}.`), n.children[1]);
+      box.appendChild(n);
+    }
+
+    let graf = [];
+    const campos = Object.keys(c.videos || {});
+    if (campos.length) {
+      const tabs = el("div", { class: "tabs", role: "tablist" });
+      const v = el("video", { controls: "", preload: "metadata", playsinline: "", loop: "" });
+      v.muted = true;
+      const ayuda = el("p", { class: "vid-ayuda" });
+      const tc = s.t_cuadros || [];
+      const poner = (campo) => {
+        const info = c.videos[campo], t0 = v.currentTime, seguia = !v.paused;
+        v.innerHTML = "";
+        ["webm", "mp4"].forEach(f => { if (info[f]) v.appendChild(el("source", { src: info[f], type: "video/" + f })); });
+        v.poster = info.poster;
+        v.load();
+        v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(t0, v.duration || 0); if (seguia) v.play(); }, { once: true });
+        ayuda.textContent = AYUDA_CAMPO[campo] + " El cursor de las gráficas sigue al video.";
+        [...tabs.children].forEach(bt => bt.setAttribute("aria-selected", bt.dataset.campo === campo));
+      };
+      campos.forEach(campo => {
+        const bt = el("button", { type: "button", role: "tab", "data-campo": campo }, NOMBRE_CAMPO[campo]);
+        bt.onclick = () => poner(campo);
+        tabs.appendChild(bt);
+      });
+      box.appendChild(tabs); box.appendChild(v); box.appendChild(ayuda);
+      const sync = () => {
+        if (!tc.length) return;
+        const k = Math.min(tc.length - 1, Math.floor(v.currentTime * FPS + 1e-6));
+        graf.forEach(g => { g.cursorFijo = idxCercano(g, tc[k]); marcar(g, g.cursorFijo, false); });
+      };
+      v.addEventListener("timeupdate", sync); v.addEventListener("seeked", sync);
+      poner(campos[0]);
+    } else box.appendChild(el("p", { class: "falta" }, "Videos no generados (comparar.py --sin-video)."));
+    const chs = el("div", { class: "charts" });
+    box.appendChild(chs);
+    graf = graficasCaso(chs, s);
     sec.appendChild(box);
   });
   raiz.appendChild(sec);
