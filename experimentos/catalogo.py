@@ -144,8 +144,9 @@ GRUPOS = {
     },
 
     # ── Z. Cuadrado contaminado, sólo pozo (decisión 1, dinámica en el pozo) ─
-    # Dominio cuadrado de 1 km, pozo en el centro, condición libre de salida
-    # (pfs) en todo el borde, transporte con flujo dispersivo nulo en el borde,
+    # Dominio cuadrado de 600 m, pozo en el centro, condición libre ∂_n(u·n) = 0
+    # en todo el borde (modo "libre": el nodo de borde sigue la ecuación de
+    # borde S_s ∂_t H = ∂_τ(K_τ ∂_τ H)), transporte con flujo dispersivo nulo en el borde,
     # C = 1 y u = 0 al inicio, sin fuente. Con C uniforme la forma no
     # conservativa sin W- debe conservar C = 1: el soluto sale con el agua.
     "Z_cuadrado": {
@@ -154,9 +155,9 @@ GRUPOS = {
         "comparar": False,
         "casos": {
             f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
-                "desc": f"{'Con' if con else 'Sin'} W-, cuadrado C=1, pfs en todo el borde",
+                "desc": f"{'Con' if con else 'Sin'} W-, cuadrado, condición libre en todo el borde",
                 "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                        "extract_C": con, "bc_outlet_mode": "dirichlet", "phi_const": 0.1,
+                        "extract_C": con, "bc_outlet_mode": "libre", "phi_const": 0.1,
                         "C_init_const": 1.0, "h_init_const": 300.0,
                         "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
                         "S_s_const": 1e-5, "Q_std": 0.01,

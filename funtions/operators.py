@@ -302,7 +302,9 @@ def make_H_bc(nodes, groups, K, Div_K, normals):
             name="outlet",
             coeffs_func=lambda i: ([[0, 0]], [np.ones(len(i))])
         )
-    elif bc_outlet_mode == "pfs_nn":
+    elif bc_outlet_mode in ("pfs_nn", "libre"):
+        # "libre": la fila del nodo de borde se sustituye además por la ecuación
+        # de borde (ver ecuacion_borde_libre).
         # Variante invariante de la condición libre: ∂_n(u·n) = 0, es decir
         # Σ_ij n_i n_j ∂_j(K_i ∂_i H) = 0 (exp/sumidero-W, decisión 2).
         outlet_bc = dict(
@@ -386,7 +388,7 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
         nodes, groups, K, Div_K, normals
     )
 
-    return build_matrix(
+    A = build_matrix(
         nodes, groups, p,
         op_def,
         bc_definitions,
@@ -394,6 +396,49 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
         N,
         sig
     )
+    if getattr(p, "bc_outlet_mode", "pfs") == "libre" and operator != "Identity":
+        A = ecuacion_borde_libre(A, nodes, groups, normals, theta, S_s, K, sig, p.dt)
+    return A
+
+
+def ecuacion_borde_libre(A, nodes, groups, normals, theta, S_s, K, sig, dt):
+    """
+    Condición libre ∂_n(u·n) = 0 en la salida (exp/sumidero-W).
+
+    En un tramo recto de la frontera, la ecuación de flujo evaluada en el borde
+    junto con ∂_n(u·n) = 0 da la ecuación de borde
+        S_s ∂_t H = ∂_τ(K_τ ∂_τ H),   K_τ = τ·K·τ,
+    que sólo involucra derivadas a lo largo de la frontera. La fila del nodo de
+    borde se sustituye por su discretización de 3 puntos sobre los vecinos del
+    mismo lado (sin vecino a un lado: extremo o esquina ⇒ ∂_t H = 0); el
+    fantasma conserva ∂_n(u·n) = 0. Así el borde no recibe información espuria
+    del interior a través de los stencils RBF-FD.
+    """
+    idx = np.asarray(groups.get("boundary:outlet", []), dtype=int)
+    if len(idx) == 0:
+        return A
+    A = A.tolil()
+    x = nodes[idx]
+    for a, i in enumerate(idx):
+        n_i = normals[i]
+        tau = np.array([-n_i[1], n_i[0]])
+        d = x - x[a]
+        s = d @ tau
+        mismo_lado = np.abs(d @ n_i) < 0.1 * np.abs(s) + 1e-6      # alineados con el tramo
+        der, izq = np.where(mismo_lado & (s > 0))[0], np.where(mismo_lado & (s < 0))[0]
+        A.rows[i] = []; A.data[i] = []
+        A[i, i] = S_s[i] / dt
+        if len(der) == 0 or len(izq) == 0:
+            continue
+        b, c = der[np.argmin(s[der])], izq[np.argmax(s[izq])]
+        sb, sc = s[b], -s[c]
+        Kt = lambda j: K[j, 0] * tau[0] ** 2 + K[j, 1] * tau[1] ** 2
+        kb, kc = 0.5 * (Kt(i) + Kt(idx[b])), 0.5 * (Kt(i) + Kt(idx[c]))
+        w = 2.0 / (sb + sc)
+        A[i, idx[b]] = theta * sig * w * kb / sb
+        A[i, idx[c]] = theta * sig * w * kc / sc
+        A[i, i] = S_s[i] / dt - theta * sig * w * (kb / sb + kc / sc)
+    return A.tocsc()
 
 
 # =========================================================

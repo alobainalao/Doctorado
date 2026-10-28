@@ -800,7 +800,9 @@ def _laplacian_smooth(nodes, groups, domain_poly, n_iter=5, omega=0.35):
     # Nodos fijos: frontera + ghost
     fixed = set()
     for key, idx in groups.items():
-        if 'ghost' in key or key in ('inlet', 'outlet', 'wall'):
+        # Las claves de frontera son 'boundary:<grupo>' (antes se comparaba con
+        # '<grupo>' y los nodos de frontera se movían hacia dentro).
+        if 'ghost' in key or key.startswith('boundary:'):
             fixed.update(idx.tolist())
 
     for _ in range(n_iter):
