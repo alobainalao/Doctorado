@@ -42,6 +42,8 @@ class Parameters:
                 "S0", "S_max", "t0_hour",
                 "pump_cycling", "pump_ton", "pump_toff",
                 "bfr_mesh",
+                # Sumidero W- del pozo (0 = anulado, 1 = modelo anterior)
+                "factor_sumidero_C",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
