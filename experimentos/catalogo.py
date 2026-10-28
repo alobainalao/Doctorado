@@ -136,7 +136,7 @@ GRUPOS = {
         "casos": {
             f"W{int(con)}_{'con' if con else 'sin'}_sumidero": {
                 "desc": f"{'Con' if con else 'Sin'} W-, fuente 30 d, T={T_W // 86400} d",
-                "cfg": {"extract_C": con, "t_fuente_off": 2592000, "T": T_W,
+                "cfg": {"extract_C": con, "factor_sumidero_C": 1.0 if con else 0.0, "t_fuente_off": 2592000, "T": T_W,
                         "dt": 36000, "balance_masa": True},
                 "backends": ("fenicsx",),
             }
@@ -158,7 +158,7 @@ GRUPOS = {
             f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
                 "desc": f"{'Con' if con else 'Sin'} W-, cuadrado, condición libre en todo el borde",
                 "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                        "extract_C": con, "bc_outlet_mode": "libre", "phi_const": 0.1,
+                        "extract_C": con, "factor_sumidero_C": 1.0 if con else 0.0, "bc_outlet_mode": "libre", "phi_const": 0.1,
                         "C_init_const": C_Z, "h_init_const": 300.0,
                         "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
                         "S_s_const": 1e-5, "Q_std": 0.01,
