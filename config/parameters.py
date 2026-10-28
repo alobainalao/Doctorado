@@ -52,6 +52,8 @@ class Parameters:
                 # y carpeta de salida propia por caso.
                 "bc_outlet_mode", "mesh_pkl", "exp_dir", "r_pozo",
                 "norm_delta_pozo", "theta_C",
+                # Sumidero W- del pozo (0 = anulado, 1 = modelo anterior)
+                "factor_sumidero_C",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
