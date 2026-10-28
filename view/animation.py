@@ -848,7 +848,7 @@ class Simulation:
             #     self.C[k] -= d.gauss_p*self.C[k]
 
             if p.activate_ext:
-                self.C[k] -= d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
+                self.C[k] -= p.factor_sumidero_C*d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
 
         if visuals is not None:
             update_supertitles(figs, self.t)
@@ -937,7 +937,7 @@ class SimulationAdjoint:
                 im_C[i][j].set_data(SC)
 
             if p.activate_ext:
-                self.psi_C[k] -= d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
+                self.psi_C[k] -= p.factor_sumidero_C*d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
 
         # if visuals is not None:
         #     update_supertitles(figs, self.t)
