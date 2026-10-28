@@ -326,11 +326,12 @@ def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
 def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
                            delta, delta_C, phi, C, C_n, D, D_n, u, u_n,
-                           alpha_sum=0.0, C_im_sum=None):
+                           alpha_sum=0.0, C_im_sum=None, f_W=1.0):
     """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
     alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
     z_t = TestFunction(Q)
     theta_C = fem.Constant(Q.mesh, PETSc.ScalarType(theta_C))   # ver _flow_forms
+    f_W = fem.Constant(Q.mesh, PETSc.ScalarType(f_W))           # ídem (0 → Zero)
 
     a_h, L_h = _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, delta)
@@ -345,8 +346,10 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
         + (1 - theta_C) * landa * R * inner(phi * C_n, z_t) * dx
         - theta_C * inner(Src, z_t) * dx
         - (1 - theta_C) * inner(Src_n, z_t) * dx
-        + theta_C * inner(delta_C * C, z_t) * dx
-        + (1 - theta_C) * inner(delta_C * C_n, z_t) * dx
+        # Sumidero W- escalado por f_W = factor_sumidero_C (delta_C sigue
+        # midiendo la C captada aunque el término esté anulado)
+        + f_W * theta_C * inner(delta_C * C, z_t) * dx
+        + f_W * (1 - theta_C) * inner(delta_C * C_n, z_t) * dx
     )
 
     # Acoplamiento MRMT Block: mismo escalado que BFR (alpha_r ya absorbe dt).
@@ -475,6 +478,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         K_z, phys["alpha"], h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
         delta, delta_C, phi, C, C_n, D + D_m, D + Dm_n, u, u_n,
         alpha_sum=mrmt_alpha_sum, C_im_sum=C_im_sum,
+        f_W=float(getattr(p, "factor_sumidero_C", 0.0)),
     )
 
     # A1 (flujo) no depende de QOut (el término QOut*delta es del lado

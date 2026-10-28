@@ -215,9 +215,12 @@ def grad_Q(
 
         dchi_n = dchi_eps(Q[n])
 
+        # El término en ψ_C viene del sumidero W- (escalado por factor_sumidero_C)
         integrand = (
             psi_h[n].squeeze()
             +
+            p.factor_sumidero_C
+            *
             psi_C[n].squeeze()
             *
             C[n].squeeze()
@@ -303,6 +306,8 @@ def grad_zp(
             *
             psi_h[n].squeeze()
             +
+            p.factor_sumidero_C      # sumidero W-
+            *
             chi_n
             *
             psi_C[n].squeeze()

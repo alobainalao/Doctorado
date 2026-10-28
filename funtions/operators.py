@@ -470,8 +470,9 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
 
     # Sumidero de contaminante en el pozo: el agua bombeada arrastra C disuelto.
     # Análogo al término `delta_C * C` de FEniCS. Default True en default.json.
+    # Escalado por factor_sumidero_C (0 por defecto: término anulado).
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= w * sig * gauss_p
+        coef_identity -= w * sig * p.factor_sumidero_C * gauss_p
 
     if p.model == "adr":
         coef_identity -= w * base * sig * p.landa
