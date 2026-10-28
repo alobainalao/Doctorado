@@ -848,8 +848,8 @@ class Simulation:
             # if p.activate_ext and self.Qout[k][step] and p.run_type == "optimization":
             #     self.C[k] -= d.gauss_p*self.C[k]
 
-            if p.activate_ext:
-                self.C[k] -= d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
+            if p.activate_ext:   # sumidero W- escalado por factor_sumidero_C
+                self.C[k] -= p.factor_sumidero_C*d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
 
         if visuals is not None:
             update_supertitles(figs, self.t)
@@ -937,8 +937,8 @@ class SimulationAdjoint:
                 SC = SC.reshape(d.xy_grid.shape[1:]).T
                 im_C[i][j].set_data(SC)
 
-            if p.activate_ext:
-                self.psi_C[k] -= d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
+            if p.activate_ext:   # adjunto del sumidero W- (factor_sumidero_C)
+                self.psi_C[k] -= p.factor_sumidero_C*d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
 
         # if visuals is not None:
         #     update_supertitles(figs, self.t)

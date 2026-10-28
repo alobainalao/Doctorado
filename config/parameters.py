@@ -123,6 +123,11 @@ class Parameters:
 
         self.activate_fuente = getattr(self, "activate_fuente", True)
         self.activate_ext = getattr(self, "activate_ext", True)
+        # Factor del sumidero de soluto en el pozo W- = χ(Q) g_ε C (transporte,
+        # adjunto y gradientes, BFR y FEniCS). 0 lo anula: en la forma no
+        # conservativa el soluto ya sale con el agua (exp/sumidero-W, grupo Z);
+        # 1 recupera el modelo anterior.
+        self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
 
         # =========================
         # TIEMPO
