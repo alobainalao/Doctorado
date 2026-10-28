@@ -142,6 +142,28 @@ GRUPOS = {
         },
     },
 
+    # ── Z. Cuadrado contaminado, sólo pozo (decisión 1, dinámica en el pozo) ─
+    # Dominio cuadrado de 1 km, pozo en el centro, condición libre de salida
+    # (pfs) en todo el borde, transporte con flujo dispersivo nulo en el borde,
+    # C = 1 y u = 0 al inicio, sin fuente. Con C uniforme la forma no
+    # conservativa sin W- debe conservar C = 1: el soluto sale con el agua.
+    "Z_cuadrado": {
+        "desc": "Cuadrado con C=1 inicial y pozo central; con y sin W-",
+        "pregunta": "¿Sin W- el soluto sale por el pozo o se acumula?",
+        "comparar": False,
+        "casos": {
+            f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
+                "desc": f"{'Con' if con else 'Sin'} W-, cuadrado C=1, pfs en todo el borde",
+                "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
+                        "extract_C": con, "bc_outlet_mode": "pfs", "phi_const": 0.1,
+                        "C_init_const": 1.0, "h_init_const": 300.0,
+                        "spacing": 30, "min_sp": 4},
+                "backends": ("bfr",),
+            }
+            for con in (True, False)
+        },
+    },
+
     # ── P. Presentación: 6 variantes con adjunto (videos de grilla 3×2) ─────
     # Sustituye a scripts/generar_comparacion.py y run_all_6_variants.py.
     # Los casos se llaman como el modelo para que EXP_ROOT funcione con

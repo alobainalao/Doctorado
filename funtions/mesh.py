@@ -53,6 +53,12 @@ def _boundary_config():
             'inlet': [1],
             'outlet': [3],
             'wall': [0, 2]
+        },
+        # Todo el borde con la condición de salida (pfs): frontera libre.
+        "cuadrado": {
+            'inlet': [],
+            'outlet': [0, 1, 2, 3],
+            'wall': []
         }
     }
 

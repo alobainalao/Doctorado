@@ -67,6 +67,24 @@ def build_geometry(domain="real", spacing=30, sigma_fuente=1.0):
         inlet_z_t, zo_min = -15, -30
         inlet_a = -1e-4
 
+    elif domain == "cuadrado":
+
+        # Cuadrado de 1 km con el pozo en el centro y la condición libre de
+        # salida (pfs) en todo el borde: sólo dinámica del pozo (exp/sumidero-W).
+        vert = np.array([
+            [0, -1000],
+            [1000, -1000],
+            [1000, 0],
+            [0, 0]
+        ])
+
+        pozo = np.array([500, -500])
+        fnte = np.array([500, -500])   # sin fuente; coincide con el pozo para no refinar otra zona
+
+        zi_max, zo_max, z_min = 0, 0, -1000
+        inlet_z_t, zo_min = -500, -1000
+        inlet_a = 0.0
+
     else:
         raise ValueError(f"Dominio inválido: {domain}")
 

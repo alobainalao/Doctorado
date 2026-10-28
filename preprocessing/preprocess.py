@@ -42,7 +42,7 @@ def run_preprocess():
     eps_M = np.repeat(eps_arr_[:, None], p.n_stencil, axis=1)
     eps_arr = np.repeat(eps_arr_[:, None], 1, axis=1)
 
-    if p.domain == "benchmark":
+    if p.domain in ("benchmark", "cuadrado"):
         pho = np.full(len(nodes), p.phi_const)
 
     elif p.domain == "real":

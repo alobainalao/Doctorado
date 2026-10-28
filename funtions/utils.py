@@ -36,7 +36,7 @@ class In_h():
                     lambda z_: self.v_min* np.cos((z_ - self.z_t2) * np.pi / (2 * (self.z_t2 - self.z_min))) ** 2, 
                 ]
             )
-        elif p.domain == "benchmark":
+        elif p.domain in ("benchmark", "cuadrado"):
             Lz = self.z_0 - self.z_min
             z_norm = (z - self.z_min) / Lz
 
@@ -521,6 +521,12 @@ def apply_boundary(U, nodes, dirich_nd, inlet_obj: In_h):
 
 def get_init_values(new_nodes):
     p = RUNTIME.get()
+
+    if p.domain == "cuadrado":
+        # CI uniforme: carga constante (u = 0) y dominio contaminado.
+        n = len(new_nodes)
+        return (np.full(n, float(getattr(p, "h_init_const", 300.0))),
+                np.full(n, float(getattr(p, "C_init_const", 1.0))))
 
     if p.domain == "real":
         filename="./data/input/funcion.h5"
