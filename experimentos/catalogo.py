@@ -23,6 +23,7 @@ SIN_FUENTE = {"activate_fuente": False}
 SIN_POZO = {"activate_ext": False}
 T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
 T_Z = 90 * 86400       # horizonte del grupo Z (limpieza completa del cuadrado)
+C_Z = 5.94e-11         # C inicial del grupo Z: máximo de la CI del dominio real
 
 GRUPOS = {
     # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
@@ -158,7 +159,7 @@ GRUPOS = {
                 "desc": f"{'Con' if con else 'Sin'} W-, cuadrado, condición libre en todo el borde",
                 "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
                         "extract_C": con, "bc_outlet_mode": "libre", "phi_const": 0.1,
-                        "C_init_const": 1.0, "h_init_const": 300.0,
+                        "C_init_const": C_Z, "h_init_const": 300.0,
                         "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
                         "S_s_const": 1e-5, "Q_std": 0.01,
                         "spacing": 30, "min_sp": 4},

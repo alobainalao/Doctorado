@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sumidero W₋ en el cuadrado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f6f8f8; --panel: #ffffff; --fg: #172326; --muted: #5b6d71; --rule: #d5dfe0;
+  --c0: #1d6fb8; --c1: #c2620a; --c2: #b8323a; --ref: #172326; --accent: #21808d;
+  --f-display: "Spectral", Georgia, serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1719; --panel: #162125; --fg: #e3ecee; --muted: #93a6aa; --rule: #2a3a3e;
+    --c0: #5aa8ec; --c1: #f0913a; --c2: #f06a72; --ref: #e3ecee; --accent: #4fb8c4; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1719; --panel: #162125; --fg: #e3ecee; --muted: #93a6aa; --rule: #2a3a3e;
+  --c0: #5aa8ec; --c1: #f0913a; --c2: #f06a72; --ref: #e3ecee; --accent: #4fb8c4; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--f-body);
+  padding: 28px max(16px, env(safe-area-inset-left, 0px)) 56px; }
+main { max-width: 1160px; margin: 0 auto; display: grid; gap: 36px; }
+header { display: grid; gap: 10px; max-width: 76ch; }
+.eyebrow { font: 500 12px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font: 600 clamp(26px, 4vw, 36px)/1.15 var(--f-display); margin: 0; }
+h2 { font: 600 22px/1.2 var(--f-display); margin: 0; }
+h3 { font: 600 13px/1.35 var(--f-body); margin: 0; }
+p { margin: 0; max-width: 76ch; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.eq { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 14px; overflow-x: auto; max-width: 76ch; }
+.katex { font-size: 1.05em; }
+.ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 5;
+  background: var(--bg); padding-block: 8px; border-bottom: 1px solid var(--rule); }
+button, select { font: 500 13px var(--f-body); color: var(--fg); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button { min-width: 92px; }
+button:hover { border-color: var(--accent); }
+input[type=range] { flex: 1 1 220px; accent-color: var(--accent); }
+.reloj { font: 500 15px var(--f-mono); min-width: 13ch; }
+.campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.tarjeta { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; display: grid; gap: 8px; align-content: start; }
+.tarjeta img { width: 100%; aspect-ratio: 1; display: block; background: var(--bg); border: 1px solid var(--rule); image-rendering: auto; }
+.marca { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.barra { height: 10px; border-radius: 3px; background: linear-gradient(90deg,#440154,#3b528b,#21918c,#5ec962,#fde725); }
+.escala { display: flex; justify-content: space-between; font: 12px var(--f-mono); color: var(--muted); }
+.graficas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+canvas { width: 100%; height: 260px; display: block; }
+.nota { font-size: 13px; color: var(--muted); }
+.veredicto { border-left: 3px solid var(--accent); padding: 10px 14px; background: var(--panel); max-width: 76ch; }
+@media (max-width: 820px) { .campos, .graficas { grid-template-columns: 1fr; } }
+</style>
+
+</head>
+<body>
+<main>
+<header>
+  <span class="eyebrow">Cuadrado 600 m · pozo central · 90 días</span>
+  <h1>Transporte con y sin el sumidero W₋</h1>
+  <p class="muted">Flujo con la condición libre en todo el borde, estacionario en unas horas. C₀ = 5.94·10⁻¹¹ en todo el cuadrado salvo una franja limpia de 60 m junto al borde. Dispersividades a<sub>L</sub> = 10 m y a<sub>T</sub> = 1 m, sin flujo dispersivo en el borde, θ<sub>C</sub> = 1 y Δt = 5 h. Las dos simulaciones usan exactamente el mismo campo de carga.</p>
+</header>
+
+<div class="ctrl" role="group" aria-label="Controles de la animación">
+  <button id="play" type="button">▶ Reproducir</button>
+  <input id="paso" type="range" min="0" value="0" aria-label="Instante">
+  <span class="reloj" id="reloj">t = 0</span>
+  <select id="vel" aria-label="Velocidad"><option value="300">lenta</option><option value="140" selected>normal</option><option value="60">rápida</option></select>
+</div>
+
+<section style="display:grid;gap:14px">
+  <div class="campos">
+    <div class="tarjeta">
+      <h3>Carga h y dirección de −∇h</h3>
+      <img id="im_h" alt="Carga hidráulica">
+      <div class="barra"></div><div class="escala"><span>268 m</span><span>300 m</span></div>
+      <p class="nota">Común a las dos simulaciones. Carga en el pozo: <span class="mono" id="hpozo"></span>.</p>
+    </div>
+    <div class="tarjeta">
+      <h3><span class="marca" style="background:var(--c1)"></span>C / C₀ con el término W₋ (implementado)</h3>
+      <img id="im_c1" alt="Concentración con W-">
+      <div class="barra"></div><div class="escala"><span>0</span><span>1</span></div>
+      <p class="nota">Masa restante: <span class="mono" id="m1"></span> · C captada / C₀: <span class="mono" id="k1"></span></p>
+    </div>
+    <div class="tarjeta">
+      <h3><span class="marca" style="background:var(--c0)"></span>C / C₀ sin el término (forma no conservativa)</h3>
+      <img id="im_c0" alt="Concentración sin W-">
+      <div class="barra"></div><div class="escala"><span>0</span><span>1</span></div>
+      <p class="nota">Masa restante: <span class="mono" id="m0"></span> · C captada / C₀: <span class="mono" id="k0"></span></p>
+    </div>
+  </div>
+</section>
+
+<section style="display:grid;gap:14px">
+  <p class="nota"><span style="border-top:2px dashed var(--c1);display:inline-block;width:18px;vertical-align:middle;margin-right:6px"></span>con W₋ &nbsp; <span class="marca" style="background:var(--c0)"></span>sin W₋</p>
+  <div class="graficas">
+    <div class="tarjeta"><h3>Masa en el dominio ∫φC / masa inicial</h3><canvas id="g_masa"></canvas>
+      <p class="nota">Las dos curvas se superponen: W₋ no saca más soluto del dominio, sustituye la salida con el agua. A los 90 días queda el 25.4 % con W₋ y el 25.6 % sin W₋.</p></div>
+    <div class="tarjeta"><h3>Concentración captada ∫g<sub>ε</sub>C / C₀ (todos los pasos)</h3><canvas id="g_cap"></canvas>
+      <p class="nota">Con W₋ el pozo queda en un agujero (C ≈ 0). Sin W₋ el nodo del pozo alterna de un paso a otro entre 0 y unos 0.65 C₀, lo que dibuja la banda: es un defecto numérico, pendiente de corregir.</p></div>
+  </div>
+</section>
+
+<p class="veredicto">La advección saca el soluto por el pozo sin necesidad de W₋: la masa baja igual en las dos versiones. W₋ solo cambia la concentración en el pozo. En 90 días el cuadrado no llega a limpiarse: por la anisotropía (|u| es 4.8 veces mayor en x que en z), el agua limpia entra sobre todo por los lados izquierdo y derecho, y la zona de arriba y abajo se vacía despacio.</p>
+</main>
+
+<script id="datos" type="application/json">__DATOS__</script>
+<script>
+const D = JSON.parse(document.getElementById("datos").textContent);
+const N = D.t.length, NT = D.masa_c1.length, dtd = D.dt_dias;
+const $ = id => document.getElementById(id);
+const slider = $("paso"); slider.max = N - 1;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let k = 0, timer = null;
+const paso = () => Math.min(NT - 1, Math.max(0, Math.round(D.t[k] / dtd) - 1));
+
+function lienzo(id) {
+  const cv = $(id), dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  g.font = "11px 'IBM Plex Mono', monospace";
+  return { g, w, h, L: 48, R: 18, T: 10, B: 30 };
+}
+function ejes(c, xr, yr, xt, yt, xl, yl) {
+  const { g, w, h, L, R, T, B } = c;
+  const X = v => L + (v - xr[0]) / (xr[1] - xr[0]) * (w - L - R);
+  const Y = v => h - B - (v - yr[0]) / (yr[1] - yr[0]) * (h - T - B);
+  g.strokeStyle = css("--rule"); g.fillStyle = css("--muted"); g.lineWidth = 1;
+  xt.forEach(v => { g.beginPath(); g.moveTo(X(v), T); g.lineTo(X(v), h - B); g.stroke(); g.textAlign = "center"; g.fillText(v, X(v), h - B + 14); });
+  yt.forEach(v => { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - R, Y(v)); g.stroke(); g.textAlign = "right"; g.fillText(v, L - 5, Y(v) + 4); });
+  g.textAlign = "center"; g.fillText(xl, (L + w - R) / 2, h - 3);
+  g.save(); g.translate(11, (T + h - B) / 2); g.rotate(-Math.PI / 2); g.fillText(yl, 0, 0); g.restore();
+  return { X, Y };
+}
+function serie(id, a, b, yr, yt, yl, ancho) {
+  const c = lienzo(id), hasta = paso();
+  const { X, Y } = ejes(c, [0, 90], yr, [0, 15, 30, 45, 60, 75, 90], yt, "t (días)", yl);
+  // sin W- debajo; con W- encima y discontinua, para que se vea cuando coinciden
+  [[b, css("--c0"), ancho, []], [a, css("--c1"), 2, [7, 5]]].forEach(([ys, col, lw, dash]) => {
+    c.g.strokeStyle = col; c.g.lineWidth = lw; c.g.setLineDash(dash); c.g.beginPath();
+    for (let i = 0; i <= hasta; i++) { const px = X((i + 1) * dtd), py = Y(ys[i]); i ? c.g.lineTo(px, py) : c.g.moveTo(px, py); }
+    c.g.stroke(); c.g.setLineDash([]);
+  });
+  c.g.strokeStyle = css("--accent"); c.g.setLineDash([4, 3]); c.g.beginPath();
+  c.g.moveTo(X(D.t[k]), c.T); c.g.lineTo(X(D.t[k]), c.h - c.B); c.g.stroke(); c.g.setLineDash([]);
+}
+function dibujar() {
+  $("im_h").src = "data:image/png;base64," + D.img_h[k];
+  $("im_c1").src = "data:image/png;base64," + D.img_c1[k];
+  $("im_c0").src = "data:image/png;base64," + D.img_c0[k];
+  const i = paso();
+  $("reloj").textContent = k === 0 ? "t = 5 h" : `t = ${D.t[k].toFixed(0)} d`;
+  $("hpozo").textContent = D.h_pozo[i].toFixed(1) + " m";
+  $("m1").textContent = (100 * D.masa_c1[i]).toFixed(1) + " %";
+  $("m0").textContent = (100 * D.masa_c0[i]).toFixed(1) + " %";
+  $("k1").textContent = D.cap_c1[i].toFixed(3);
+  $("k0").textContent = D.cap_c0[i].toFixed(3);
+  slider.value = k;
+  serie("g_masa", D.masa_c1, D.masa_c0, [0, 1.05], [0, 0.25, 0.5, 0.75, 1], "masa / inicial", 2);
+  serie("g_cap", D.cap_c1, D.cap_c0, [0, 2], [0, 0.5, 1, 1.5, 2], "C captada / C₀", 1);
+}
+function play() {
+  if (timer) { clearInterval(timer); timer = null; $("play").textContent = "▶ Reproducir"; return; }
+  if (k >= N - 1) k = 0;
+  $("play").textContent = "❚❚ Pausa";
+  timer = setInterval(() => { if (k >= N - 1) { play(); return; } k++; dibujar(); }, +$("vel").value);
+}
+$("play").onclick = play;
+slider.oninput = () => { k = +slider.value; dibujar(); };
+$("vel").onchange = () => { if (timer) { play(); play(); } };
+window.addEventListener("resize", dibujar);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", dibujar);
+k = N - 1;   // se abre en el estado final; Reproducir arranca desde t = 0
+dibujar();
+</script>
+</body>
+</html>

@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 
 CODIGO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, CODIGO_DIR)
 RAIZ = os.path.join(CODIGO_DIR, "data", "output", "experimentos", "W_sumidero")
 CASOS = {"con $W_-$ (implementado)": "W1_con_sumidero",
          "sin $W_-$ (forma NC correcta)": "W0_sin_sumidero"}
@@ -110,40 +111,84 @@ def main():
 
 
 def cuadrado():
-    """Grupo Z_cuadrado (BFR): C = 1 inicial, pozo central, pfs en todo el borde."""
+    """Grupo Z_cuadrado (BFR): cuadrado contaminado, pozo central, flujo con la
+    condición libre en todo el borde (estacionario en horas). Balance de soluto:
+        d/dt ∫φC = −Q·∫δC (sale con el agua) − ∫χ g C (W-, sólo Z1),
+    pues en el borde sólo entra agua y su C es nula."""
+    import json
+    from funtions.runtime import RUNTIME
+    from config.parameters import Parameters
+    from funtions.utils import discrete_delta, normalizar_delta_area, gaussian_2d
+    from funtions.operators import rbf_integration_weights
+
     raiz = os.path.join(CODIGO_DIR, "data", "output", "experimentos", "Z_cuadrado")
     casos = {"con $W_-$ (implementado)": "Z1_con_sumidero",
              "sin $W_-$ (forma NC correcta)": "Z0_sin_sumidero"}
-    fig = plt.figure(figsize=(16, 9))
-    gs = fig.add_gridspec(2, 3)
-    a_t, a_x = fig.add_subplot(gs[0, 2]), fig.add_subplot(gs[1, 2])
-    for i, (et, caso) in enumerate(casos.items()):
-        d = np.load(os.path.join(raiz, caso, "bfr", "simulation_results.npz"))
-        n, C, H = d["nodes"], d["C"][:, 0], d["H"][:, 0]
-        dt = float(d["dt"])
-        dentro = (n[:, 0] >= 0) & (n[:, 0] <= 1000) & (n[:, 1] >= -1000) & (n[:, 1] <= 0)
-        r = np.linalg.norm(n - [500, -500], axis=1)
-        g = np.exp(-r ** 2 / (2 * (20 / 3) ** 2)) * dentro
-        g /= g.sum()
-        t = np.arange(1, len(C) + 1) * dt / DIA
-        # Último paso antes de que la carga en los fantasmas del borde diverja
-        k = int(np.argmax(H.min(axis=1) < 2 * np.median(H.min(axis=1)))) - 1
-        k = len(C) - 1 if k < 0 else k
-        a_t.plot(t, C @ g, label=et)
+    fig = plt.figure(figsize=(17, 10))
+    gs = fig.add_gridspec(3, 5, height_ratios=[1, 1, 1.1])
+    a_m, a_s, a_c = fig.add_subplot(gs[2, 0:2]), fig.add_subplot(gs[2, 2:4]), fig.add_subplot(gs[2, 4])
+    lineas = []
+    for fila, (et, caso) in enumerate(casos.items()):
+        d_caso = os.path.join(raiz, caso, "bfr")
+        cfg = json.load(open(os.path.join(d_caso, "config.json")))
+        RUNTIME.params = Parameters(config=cfg)
+        p = RUNTIME.params
+        d = np.load(os.path.join(d_caso, "simulation_results.npz"))
+        n, C, dt = d["nodes"], d["C"][:, 0], float(d["dt"])
+        L = float(p.lado_cuadrado)
+        dentro = (n[:, 0] >= -1e-9) & (n[:, 0] <= L + 1e-9) & (n[:, 1] >= -L - 1e-9) & (n[:, 1] <= 1e-9)
         tri = Triangulation(n[dentro, 0], n[dentro, 1])
-        for j, (paso, nom) in enumerate(((0, "1 paso"), (k, f"t = {t[k]:.0f} d"))):
-            ax = fig.add_subplot(gs[i, j])
-            cs = ax.tripcolor(tri, C[paso][dentro], vmin=0, vmax=1, cmap="viridis", shading="gouraud")
-            ax.set_xlim(300, 700); ax.set_ylim(-700, -300); ax.set_aspect("equal")
-            ax.set_title(f"{et}, {nom}", fontsize=9)
-        fila = dentro & (np.abs(n[:, 1] + 500) < 6)
-        o = np.argsort(n[fila, 0])
-        a_x.plot(n[fila, 0][o], C[k][fila][o], ".-", ms=3, label=et)
-    campos = [a for a in fig.axes if a not in (a_t, a_x)]
-    fig.colorbar(cs, ax=campos, shrink=0.6, location="right", label="C")
-    a_t.set_title("Concentración captada $\\int g_\\varepsilon C$"); a_t.set_xlabel("t (días)"); a_t.set_ylim(-0.05, 1.05); a_t.legend(fontsize=8)
-    a_x.set_title("C en la horizontal del pozo (z = −500)"); a_x.set_xlabel("x (m)"); a_x.set_xlim(300, 700); a_x.legend(fontsize=8)
+        w = np.zeros(len(n))                       # áreas nodales del dominio (sin fantasmas)
+        idx = np.nonzero(dentro)[0]
+        for t3 in tri.triangles:
+            q = n[idx[t3]]
+            w[idx[t3]] += 0.5 * abs((q[1, 0] - q[0, 0]) * (q[2, 1] - q[0, 1]) - (q[2, 0] - q[0, 0]) * (q[1, 1] - q[0, 1])) / 3
+        pozo = np.asarray(p.pozo, float)
+        delta = discrete_delta(n, pozo, p.radio_delta_pozo)
+        if p.norm_delta_pozo == "area":
+            delta = normalizar_delta_area(delta, rbf_integration_weights(n))
+        g = gaussian_2d(n, pozo, 1, p.epsilon_pozo)
+        C0 = float(p.C_init_const)
+        t = np.arange(1, len(C) + 1) * dt / DIA
+        masa = (C * p.phi_const * p.R) @ w
+        m0 = float(C[0] * p.phi_const * p.R @ w)
+        agua = np.cumsum(p.Q_std * (C @ (delta * w))) * dt
+        sumW = np.cumsum(C @ (g * w)) * dt if p.extract_C else np.zeros_like(t)
+        c_pozo = C @ (g * w)
+        borde = dentro & (np.minimum.reduce([n[:, 0], L - n[:, 0], n[:, 1] + L, -n[:, 1]]) < 1e-6)
+        l, = a_m.plot(t, masa / m0, label=et)
+        col = l.get_color()
+        a_s.plot(t, agua / m0, color=col, label=f"{et}: con el agua")
+        if p.extract_C:
+            a_s.plot(t, sumW / m0, color=col, ls="--", label=f"{et}: sumidero $W_-$")
+        a_c.plot(t, c_pozo / C0, color=col, label=et)
+        for j, dia in enumerate((0, 10, 20, 35, 60)):
+            k = min(int(np.argmin(np.abs(t - max(dia, t[0])))), len(t) - 1)
+            ax = fig.add_subplot(gs[fila, j])
+            cs = ax.tripcolor(tri, C[k][dentro] / C0, vmin=0, vmax=1, cmap="viridis", shading="gouraud")
+            ax.set_aspect("equal"); ax.set_xticks([]); ax.set_yticks([])
+            ax.set_title(f"{et}, t = {t[k]:.0f} d", fontsize=8)
+        k_l = np.argmax(masa / m0 < 0.01) if (masa / m0 < 0.01).any() else None
+        lineas.append(
+            f"{et}\n"
+            f"  masa inicial ∫φRC        {m0:.4e}\n"
+            f"  masa final               {masa[-1] / m0:.3%} de m0\n"
+            f"  salida con el agua       {agua[-1] / m0:.3%} de m0\n"
+            f"  sumidero W-              {sumW[-1] / m0:.3%} de m0\n"
+            f"  cierre del balance       {abs(m0 - masa[-1] - agua[-1] - sumW[-1]) / m0:.3%} de m0\n"
+            f"  masa < 1 % de m0 en      {'%.1f d' % t[k_l] if k_l is not None else 'no se alcanza'}\n"
+            f"  C máx en el borde / C0   {np.abs(C[:, borde]).max() / C0:.2e}\n"
+            f"  C mín / C0 (oscilación)  {C[:, dentro].min() / C0:.2e}\n")
+    fig.colorbar(cs, ax=fig.axes[3:], shrink=0.5, location="right", label="$C/C_0$")
+    a_m.set_title("Masa en el dominio $\\int\\phi R C$ / masa inicial"); a_m.set_yscale("log"); a_m.set_ylim(1e-4, 1.5)
+    a_s.set_title("Masa que sale (acumulada) / masa inicial")
+    a_c.set_title("Concentración captada $\\int g_\\varepsilon C$ / $C_0$")
+    for a in (a_m, a_s, a_c):
+        a.set_xlabel("t (días)"); a.legend(fontsize=7)
     plt.savefig(os.path.join(raiz, "cuadrado.png"), dpi=110, bbox_inches="tight")
+    with open(os.path.join(raiz, "resumen.txt"), "w") as f:
+        f.write("\n".join(lineas))
+    print("\n".join(lineas))
     print("figura:", os.path.join(raiz, "cuadrado.png"))
 
 

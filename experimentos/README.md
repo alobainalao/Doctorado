@@ -119,3 +119,42 @@ python -m experimentos.correr --grupo P_presentacion --animar --publicar  # + co
 Los videos usan `scripts/animate_{forward,adjunto,grid}.py` con
 `EXP_ROOT=data/output/experimentos/P_presentacion` (sin `EXP_ROOT` esos
 scripts leen las rutas antiguas, como antes).
+
+## Sumidero W₋ en un cuadrado (grupo Z, rama exp/sumidero-W)
+
+Pregunta: ¿hace falta el sumidero W₋ = χ(Q) g_ε C para que el soluto salga por
+el pozo, o basta la advección? Cuadrado de 600 m con el pozo en el centro
+(Q = 0.01, S_s = 10⁻⁵), condición libre ∂ₙ(u·n) = 0 en todo el borde y
+h(0) = 300; C₀ = 5.94·10⁻¹¹ (máximo de la CI real) salvo una franja limpia de
+60 m junto al borde; 90 días.
+
+```bash
+python -m experimentos.correr --grupo Z_cuadrado          # Z1 con W₋, Z0 sin W₋ (BFR)
+python -m experimentos.sumidero_cuadrado flujo            # flujo con 3 BC + flujo.html
+python -m experimentos.sumidero_cuadrado transporte       # transporte.html (lee Z0/Z1)
+python -m experimentos.analisis_sumidero --cuadrado       # cuadrado.png + resumen.txt
+```
+
+Salida en `data/output/experimentos/Z_cuadrado/`. Las páginas se arman con las
+plantillas de `experimentos/plantillas/` (datos incrustados, se abren sin
+servidor).
+
+**Flujo** (`bc_outlet_mode`): en un tramo recto, la EDP junto con la condición
+libre da la ecuación de borde S_s ∂ₜH = ∂τ(K_τ ∂τH), que no recibe nada del
+interior; con h(0) = 300 el borde queda en 300 para todo t.
+- `libre`: fantasma con ∂ₙ(u·n) = 0 y nodo de borde con la ecuación de borde.
+  Estable; estacionario en ~6 h; cono de Thiem; borde idéntico con Q = 0 y
+  Q = 0.01 (5·10⁻⁸ m). **Es el flujo base del grupo Z.**
+- `pfs_nn`: sólo el fantasma. Las plantillas del borde acoplan el pozo con los
+  modos neutros {1, x, z, xz}: la carga deriva sin cota (borde ≈ −490 m a 90 d).
+- `pfs`: condición programada de la maestría (término cruzado): deriva a −10⁷ m.
+
+**Transporte**: la masa ∫φC baja igual con y sin W₋ (25.4 % y 25.6 % de la
+inicial a 90 d). W₋ no saca más soluto: sustituye la salida con el agua y sólo
+cambia la C del pozo (agujero C ≈ 0). Pendientes: (1) sin W₋ el nodo del pozo
+alterna entre 0 y ~0.65 C₀ de un paso a otro; (2) por la anisotropía (|u| en x
+≈ 4.8 × en z) el cuadrado no se limpia en 90 d; (3) la C del borde llega a
+0.1 C₀ (sin flujo dispersivo en el borde no se impone C = 0 a la entrada).
+
+Corrección asociada: `funtions/mesh_test._laplacian_smooth` dejaba mover los
+nodos de frontera (comparaba con `'outlet'` en vez de `'boundary:outlet'`).
