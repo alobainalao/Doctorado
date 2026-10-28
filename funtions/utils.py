@@ -205,6 +205,8 @@ def grad_Q(
         integrand = (
             psi_h[n].squeeze()
             +
+            p.factor_sumidero_C      # sumidero W-
+            *
             psi_C[n].squeeze()
             *
             C[n].squeeze()
@@ -290,6 +292,8 @@ def grad_zp(
             *
             psi_h[n].squeeze()
             +
+            p.factor_sumidero_C      # sumidero W-
+            *
             chi_n
             *
             psi_C[n].squeeze()

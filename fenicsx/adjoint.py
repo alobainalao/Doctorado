@@ -204,7 +204,8 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     D_new = ctx.D_stat + _Dm(u_new, a_l, a_t, eps)
     D_old = ctx.D_stat + _Dm(u_old, a_l, a_t, eps)
 
-    gauss_C = _gauss(x, ctx.xp, zp_c, ctx.es)
+    gauss_C = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(ctx.p, "factor_sumidero_C", 0.0)))) \
+        * _gauss(x, ctx.xp, zp_c, ctx.es)  # W- (factor_sumidero_C)
     src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
 
     F_C = (
@@ -438,7 +439,8 @@ def _solve_adjoint_grad(ctx, states):
     ddelta_p = delta_p * (x[1] - zp_c) / ctx.ep ** 2
     gauss_flow = _gauss(x, ctx.xp, zp_c, ctx.ef)
     dgauss_flow = gauss_flow * (x[1] - zp_c) / ctx.ef ** 2
-    gauss_C = _gauss(x, ctx.xp, zp_c, ctx.es)
+    gauss_C = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(ctx.p, "factor_sumidero_C", 0.0)))) \
+        * _gauss(x, ctx.xp, zp_c, ctx.es)  # W- (factor_sumidero_C)
     dgauss_C = gauss_C * (x[1] - zp_c) / ctx.es ** 2
     src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
     dsrc_shape = src_shape * (x[1] - zp_c) / ctx.ey ** 2
