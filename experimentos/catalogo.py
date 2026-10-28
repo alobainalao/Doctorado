@@ -21,6 +21,7 @@ ENVS = {"bfr": "bfr_env", "fenicsx": "fenics_env"}
 
 SIN_FUENTE = {"activate_fuente": False}
 SIN_POZO = {"activate_ext": False}
+T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
 
 GRUPOS = {
     # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
@@ -119,6 +120,25 @@ GRUPOS = {
                 "backends": ["bfr"],
                 "ref_fem": "A_terminos/A3_fuente_pozo",
             },
+        },
+    },
+
+    # ── W. Sumidero de transporte W- = χ(Q) g_ε C (decisión 1 de la tesis) ──
+    # Fuente activa sólo los primeros 30 días; después no entra contaminante y
+    # se sigue hasta T. Si la advección basta para sacar el soluto por el pozo,
+    # el dominio se limpia también sin W-; balance_masa guarda cada término.
+    "W_sumidero": {
+        "desc": "Con y sin sumidero W- en el transporte; fuente apagada tras 30 días",
+        "pregunta": "¿Hace falta W- para que el contaminante salga por el pozo?",
+        "comparar": False,
+        "casos": {
+            f"W{int(con)}_{'con' if con else 'sin'}_sumidero": {
+                "desc": f"{'Con' if con else 'Sin'} W-, fuente 30 d, T={T_W // 86400} d",
+                "cfg": {"extract_C": con, "t_fuente_off": 2592000, "T": T_W,
+                        "dt": 36000, "balance_masa": True},
+                "backends": ("fenicsx",),
+            }
+            for con in (True, False)
         },
     },
 
