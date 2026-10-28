@@ -156,9 +156,10 @@ GRUPOS = {
             f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
                 "desc": f"{'Con' if con else 'Sin'} W-, cuadrado C=1, pfs en todo el borde",
                 "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                        "extract_C": con, "bc_outlet_mode": "pfs_nn", "phi_const": 0.1,
+                        "extract_C": con, "bc_outlet_mode": "dirichlet", "phi_const": 0.1,
                         "C_init_const": 1.0, "h_init_const": 300.0,
                         "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
+                        "S_s_const": 1e-5, "Q_std": 0.01,
                         "spacing": 30, "min_sp": 4},
                 "backends": ("bfr",),
             }

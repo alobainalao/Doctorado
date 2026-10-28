@@ -295,6 +295,13 @@ def make_H_bc(nodes, groups, K, Div_K, normals):
                 ]
             )
         )
+    elif bc_outlet_mode == "dirichlet":
+        # Carga fija H = h_borde en los nodos de frontera de la salida
+        # (exp/sumidero-W: cuadrado alimentado por un acuífero extenso).
+        outlet_bc = dict(
+            name="outlet",
+            coeffs_func=lambda i: ([[0, 0]], [np.ones(len(i))])
+        )
     elif bc_outlet_mode == "pfs_nn":
         # Variante invariante de la condición libre: ∂_n(u·n) = 0, es decir
         # Σ_ij n_i n_j ∂_j(K_i ∂_i H) = 0 (exp/sumidero-W, decisión 2).
@@ -814,6 +821,9 @@ def H_vector(H, M_right, delta_p, groups, nodes, N, operador=None, Qout_n=0, Qou
     # El operador de la BC es -(K∇H·n) = b, así que b = -h_outlet(z).
     # Como outlet_a < 0, -outlet_a > 0 y el perfil resultante es ≥ 0,
     # coherente con ∂H/∂x > 0 (gradiente hidráulico de derecha a izquierda).
+    if getattr(p, "bc_outlet_mode", "pfs") == "dirichlet":
+        g_out = groups.get('ghosts:outlet', [])
+        b[g_out] = float(getattr(p, "h_borde", getattr(p, "h_init_const", 300.0)))
     if getattr(p, "bc_outlet_mode", "pfs") == "fem":
         apply_boundary(
             b, nodes, groups.get('ghosts:outlet', []),

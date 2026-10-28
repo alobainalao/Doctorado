@@ -58,8 +58,12 @@ def run_preprocess():
 
     div_K = Div_KD(K, grad)
 
-    A_left = build_H_matrix(nodes, groups, normals, p.theta, pho, K, div_K, eps_M, -1)
-    A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, pho, K, div_K, eps_M, 1)
+    # Almacenamiento específico: S_s = φ por defecto; S_s_const lo fija a un
+    # valor uniforme [1/m] (exp/sumidero-W, cuadrado con S_s realista).
+    S_s = np.full(len(nodes), float(p.S_s_const)) if getattr(p, "S_s_const", None) else pho
+
+    A_left = build_H_matrix(nodes, groups, normals, p.theta, S_s, K, div_K, eps_M, -1)
+    A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, S_s, K, div_K, eps_M, 1)
     
 
     delta_p = discrete_delta(nodes, np.array(p.pozo), p.radio_delta_pozo)
@@ -97,7 +101,7 @@ def run_preprocess():
             groups=groups,
             normals=normals,
             theta=p.theta,
-            S_s=pho,
+            S_s=S_s,
             K=K,
             Div_K=div_K,
             eps_M=eps_M,
@@ -109,7 +113,7 @@ def run_preprocess():
             groups=groups,
             normals=normals,
             theta=1-p.theta,
-            S_s=pho,
+            S_s=S_s,
             K=K,
             Div_K=div_K,
             eps_M=eps_M,
