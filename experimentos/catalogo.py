@@ -142,6 +142,13 @@ GRUPOS = {
                                "cfg": {"factor_sumidero_C": 1.0}},
             "S0_sin_termino": {"desc": "factor_sumidero_C = 0 (W- anulado)",
                                "cfg": {"factor_sumidero_C": 0.0}},
+            # Limpieza: la misma fuente 30 d (T_fuente = 30 d) y después apagada,
+            # 120 d en total; FEniCS guarda el balance de soluto por paso.
+            **{f"S{2 + int(con)}_limpieza_{'con' if con else 'sin'}": {
+                "desc": f"Fuente 30 d y 90 d de limpieza, factor_sumidero_C = {int(con)}",
+                "cfg": {"factor_sumidero_C": float(con), "t_fuente_off": 30 * 86400,
+                        "T_fuente": 30 * 86400, "T": 120 * 86400, "balance_masa": True},
+            } for con in (True, False)},
         },
     },
 

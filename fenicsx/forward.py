@@ -38,6 +38,8 @@ refinamiento local, no lo necesita el término). El sumidero de TRANSPORTE
 Requiere dolfinx + gmsh + mpi4py + petsc4py + h5py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
 """
+import os
+
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -46,7 +48,7 @@ from dolfinx import fem
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
 from ufl import (
     TrialFunction, TestFunction, grad, nabla_grad, inner, as_vector,
-    sqrt, lhs, rhs, dx, Measure,
+    sqrt, lhs, rhs, dx, Measure, FacetNormal, div, dot, conditional, gt,
 )
 
 from funtions.utils import chi_eps, get_init_values
@@ -500,6 +502,40 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     # activate_fuente gatea la fuente de contaminante.
     ext_on = bool(getattr(p, "activate_ext", True))
     fuente_on = bool(getattr(p, "activate_fuente", True))
+    # t_fuente_off apaga la fuente desde ese instante; T_fuente es la escala de
+    # tiempo de su forma (por defecto T), para que con un T mayor los primeros
+    # días sigan siendo los del caso de referencia.
+    t_fuente_off = getattr(p, "t_fuente_off", None)
+    T_fuente = float(getattr(p, "T_fuente", None) or T_total)
+    f_W = float(getattr(p, "factor_sumidero_C", 0.0))
+
+    # Balance de soluto por paso (opt-in): masa ∫φRC, salida con el agua del
+    # pozo Q∫δC, sumidero W- (con su factor), flujo advectivo por la frontera
+    # ∮(u·n)C (saliente/entrante), ∫C∇·u, ∫u·∇C, fuente, decaimiento y la
+    # concentración captada ∫g_ε C (g sin compuerta χ).
+    balance = bool(getattr(p, "balance_masa", False))
+    if balance:
+        n_f = FacetNormal(domain)
+        ds_all = Measure("ds", domain=domain)
+        g_pozo = fem.Function(Q)
+        g_pozo.interpolate(lambda x: 1.0 / (2 * np.pi * phys["epsilon_sink"] ** 2) * np.exp(
+            -((x[0] - pozo_ext[0]) ** 2 + (x[1] - pozo_ext[1]) ** 2) / (2 * phys["epsilon_sink"] ** 2)))
+        un = dot(u, n_f)
+        f_bal = {
+            "masa": fem.form(phys["R"] * phi * C_n * dx),
+            "pozo_agua": fem.form(delta * C_n * dx),
+            "sumidero_W": fem.form(fem.Constant(domain, PETSc.ScalarType(f_W)) * delta_C * C_n * dx),
+            "frontera_sale": fem.form(conditional(gt(un, 0), un, 0) * C_n * ds_all),
+            "frontera_entra": fem.form(conditional(gt(un, 0), 0, un) * C_n * ds_all),
+            "C_div_u": fem.form(C_n * div(u) * dx),
+            "u_grad_C": fem.form(dot(u, grad(C_n)) * dx),
+            "fuente": fem.form(Src * dx),
+            "decaimiento": fem.form(phys["landa"] * phys["R"] * phi * C_n * dx),
+            "C_pozo": fem.form(g_pozo * C_n * dx),
+        }
+        bal = {k: np.zeros(Nt) for k in f_bal}
+        bal["Q"] = np.zeros(Nt)
+        bal["masa0"] = fem.assemble_scalar(f_bal["masa"])
 
     # Historia temporal para guardado/animación (etapa "save_dat"/"animate" de
     # la app), sólo si se pide. H ya vive en G; C (Q/Lagrange-2) y las
@@ -527,7 +563,9 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
         u.interpolate(fem.Expression(expr_u, V.element.interpolation_points))
 
-        src_amp = _fuente_C(t, T_total) if fuente_on else 0.0
+        src_amp = _fuente_C(t, T_fuente) if fuente_on else 0.0
+        if t_fuente_off is not None and t > float(t_fuente_off):
+            src_amp = 0.0
         ex, ey = phys["epsilon_x"], phys["epsilon_y"]
         Src.interpolate(lambda x: _gaussian_2d(x, fnte_ext, src_amp, ex, ey))
 
@@ -569,6 +607,10 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
         C_total[step] = fem.assemble_scalar(fem.form(inner(1, C_n) * dx))
         C_out[step] = fem.assemble_scalar(fem.form(inner(delta_C, C_n) * dx))
+        if balance:
+            for k, f in f_bal.items():
+                bal[k][step] = fem.assemble_scalar(f)
+            bal["Q"][step] = QOut_const.value
 
         if collect:
             cG.interpolate(expr_cG)
@@ -599,5 +641,10 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_hist = [cG.x.array.copy()]
             nodes_G = G.tabulate_dof_coordinates()[:, :2]
         fx_post.create_btc(p.save_video, nodes_G, C_hist, dt)
+
+    if balance and domain.comm.rank == 0:
+        out = p.save_data if os.path.isdir(p.save_data) else os.path.dirname(p.save_data)
+        np.savez(os.path.join(out, "balance_masa.npz"), dt=dt, **bal)
+        print(f"[fenicsx] balance de masa guardado ✔  {os.path.join(out, 'balance_masa.npz')}")
 
     return h_n, C_n, C_out, C_total
