@@ -1,24 +1,29 @@
 """
 Modelo mínimo del cuadrado con un pozo central (volúmenes finitos, malla
-cartesiana) para decidir si el sumidero de transporte W- hace falta.
+cartesiana) para decidir si el sumidero de transporte W_- hace falta.
+Nomenclatura del Cap. I de la tesis (docR.tex, ChaptersR/CapI_ADR.tex).
 
-Flujo estacionario  ∇·q = -Q δ,  q = -K ∇h,  h = h_b en ∂Ω  (Thiem discreto).
-Transporte, tres formulaciones con el MISMO flujo y la misma malla:
+Flujo estacionario (ec. flujo con S_s ∂_t h = 0, ec. pozo_fuente)
+    -∇·(K∇h) = -Q w_R,   u = -K∇h,   h = h_b en ∂Ω   (Thiem discreto),
+así que ∇·u = -Q w_R (ec. div_u).
+Transporte con R = 1, λ_d = 0, W_+ = 0, 𝐃 = D 𝐈; tres formulaciones con el
+MISMO flujo y la misma malla:
 
-  "cons"   forma conservativa (referencia física)
-           φ ∂_t C + ∇·(q C) - ∇·(D∇C) = -Q δ C
-  "nc_fv"  forma no conservativa en volúmenes finitos (resta C·continuidad)
-           φ ∂_t C + q·∇C - ∇·(D∇C) = -f_W κ g C
-  "nc_fd"  forma no conservativa en diferencias finitas por nodos (como el
-           simulador: q en el nodo y gradiente de C sin usar flujos de cara)
-           φ ∂_t C + q·∇C - ∇·(D∇C) = -f_W κ g C
+  "cons"   forma conservativa (ec. transporte_conservativo, referencia física)
+           φ ∂_t C_m + ∇·(u C_m - D∇C_m) = -Q w_R C_m
+  "nc_fv"  forma no conservativa en volúmenes finitos (resta C_m·continuidad)
+           φ ∂_t C_m + u·∇C_m - ∇·(D∇C_m) = -f_W κ g_ε C_m
+  "nc_fd"  forma no conservativa en diferencias por nodo (como el simulador:
+           u en el nodo y gradiente de C_m sin caudales de cara)
+           φ ∂_t C_m + u·∇C_m - ∇·(D∇C_m) = -f_W κ g_ε C_m
 
-f_W = 0 es la forma no conservativa correcta; f_W = 1 añade W-, con
-κ = Q (sumidero "físico" duplicado) o κ = 1 (lo implementado en el simulador:
-W- = χ(Q) g_ε C, sin el caudal).
+Con el flujo estacionario el término S_s (∂_t h) C_m de la forma no
+conservativa (ec. transporte_noconservativo) es nulo. f_W = 0 es esa forma;
+f_W = 1 añade W_-, con κ = Q (sumidero «físico», contado dos veces) o κ = 1
+(ec. W_menos tal como está en la tesis y en el simulador: χ(Q) g_ε C_m, sin Q).
 
-δ = kernel Wendland C2 de radio r_pozo (Σ w_i = 1, el del flujo) y
-g = gaussiana de ancho ε = r_pozo/3 con ∫g = 1 (la de W- y de la C captada),
+w_R = núcleo de Wendland C2 de radio R_w (Σ_i w_i = 1, sumidero de flujo) y
+g_ε = gaussiana con ε = R_w/3 y ∫g_ε = 1 (W_- y concentración en el pozo),
 como en el simulador. Euler implícito, upwind de primer orden.
 """
 import numpy as np
@@ -30,19 +35,19 @@ DIA = 86400.0
 
 class Cuadrado:
     def __init__(self, L=600.0, n=61, K=1e-3, phi=0.1, D=1e-5, Q=0.01,
-                 h_b=300.0, r_pozo=20.0):
+                 h_b=300.0, R_w=20.0):
         self.L, self.n, self.K, self.phi, self.D, self.Q = L, n, K, phi, D, Q
         self.dx = L / n
         self.A = self.dx ** 2
         c = (np.arange(n) + 0.5) * self.dx - L / 2      # centros, pozo en (0, 0)
         self.X, self.Z = np.meshgrid(c, c, indexing="ij")
         r = np.hypot(self.X, self.Z).ravel()
-        # δ del flujo: Wendland C2, Σ w = 1 (discrete_delta del simulador)
-        s = np.clip(r / r_pozo, 0, 1)
+        # w_R del flujo: Wendland C2, Σ w = 1 (discrete_delta del simulador)
+        s = np.clip(r / R_w, 0, 1)
         w = (1 - s) ** 4 * (4 * s + 1)
         self.w = w / w.sum()
-        # g de W- y de la C captada: gaussiana normalizada a ∫g = 1
-        eps = r_pozo / 3.0
+        # g_ε de W_- y de la concentración en el pozo: gaussiana con ∫g_ε = 1
+        eps = R_w / 3.0
         g = np.exp(-r ** 2 / (2 * eps ** 2))
         self.g = g / (g.sum() * self.A)
         self.N = n * n
@@ -83,9 +88,9 @@ class Cuadrado:
         self.Fz[:, -1] = -2 * K * (h_b - H[:, -1])
         div = (self.Fx[1:, :] - self.Fx[:-1, :] + self.Fz[:, 1:] - self.Fz[:, :-1]).ravel()
         self.err_continuidad = np.abs(div + self.Q * self.w).max() / self.Q
-        # q en el nodo (para nc_fd): media de las caras, dividido por dx
-        self.qx = (0.5 * (self.Fx[1:, :] + self.Fx[:-1, :]) / self.dx).ravel()
-        self.qz = (0.5 * (self.Fz[:, 1:] + self.Fz[:, :-1]) / self.dx).ravel()
+        # u en el nodo (para nc_fd): media de las caras, dividido por dx
+        self.ux = (0.5 * (self.Fx[1:, :] + self.Fx[:-1, :]) / self.dx).ravel()
+        self.uz = (0.5 * (self.Fz[:, 1:] + self.Fz[:, :-1]) / self.dx).ravel()
 
     def _rhs_flujo(self, h_b):
         n, K = self.n, self.K
@@ -130,11 +135,11 @@ class Cuadrado:
                                 else:      b[k] -= F
                                 T[k, k] -= F
                 if forma == "nc_fd":
-                    # A q·∇C con upwind por nodo, q del nodo (no los caudales de cara)
-                    for q, (dp, dm) in ((self.qx[k], ((i + 1, j), (i - 1, j))),
-                                        (self.qz[k], ((i, j + 1), (i, j - 1)))):
-                        up = dm if q > 0 else dp
-                        coef = abs(q) * dx        # A·|q|/dx
+                    # A u·∇C_m con upwind por nodo, u del nodo (no los caudales de cara)
+                    for uk, (dp, dm) in ((self.ux[k], ((i + 1, j), (i - 1, j))),
+                                         (self.uz[k], ((i, j + 1), (i, j - 1)))):
+                        up = dm if uk > 0 else dp
+                        coef = abs(uk) * dx       # A·|u|/dx
                         T[k, k] += coef
                         ii, jj = up
                         if 0 <= ii < n and 0 <= jj < n:
@@ -143,9 +148,9 @@ class Cuadrado:
                             b[k] += coef
         T = T.tocsr()
         if forma == "cons":
-            T = T + sp.diags(self.Q * self.w)                       # -Q δ C
+            T = T + sp.diags(self.Q * self.w)                       # -Q w_R C_m
         else:
-            T = T + sp.diags(f_W * kappa * self.g * self.A)         # -f_W κ g C
+            T = T + sp.diags(f_W * kappa * self.g * self.A)         # -f_W κ g_ε C_m
         return T, b
 
     def correr(self, forma, C0, C_b=0.0, T_fin=90 * DIA, dt=0.25 * DIA, f_W=0.0, kappa=None):
@@ -154,13 +159,13 @@ class Cuadrado:
         lu = spla.splu((Mt + T).tocsc())
         C = np.asarray(C0, float).ravel().copy()
         nt = int(round(T_fin / dt))
-        out = dict(t=np.arange(nt + 1) * dt / DIA, masa=[self.masa(C)], c_pozo=[self.w @ C],
-                   captada=[self.A * self.g @ C], C=[C.copy()])
+        out = dict(t=np.arange(nt + 1) * dt / DIA, masa=[self.masa(C)], c_w=[self.w @ C],
+                   c_g=[self.A * self.g @ C], C=[C.copy()])
         for _ in range(nt):
             C = lu.solve(Mt @ C + b * C_b)
-            out["masa"].append(self.masa(C)); out["c_pozo"].append(self.w @ C)
-            out["captada"].append(self.A * self.g @ C); out["C"].append(C.copy())
-        for k in ("masa", "c_pozo", "captada"):
+            out["masa"].append(self.masa(C)); out["c_w"].append(self.w @ C)
+            out["c_g"].append(self.A * self.g @ C); out["C"].append(C.copy())
+        for k in ("masa", "c_w", "c_g"):
             out[k] = np.array(out[k])
         out["C"] = np.array(out["C"])
         # salida por el borde (caudal saliente × C de la celda) y entrada C_b

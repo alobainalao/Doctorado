@@ -7,7 +7,8 @@ Lectura de las corridas del simulador que usa el notebook del cuadrado:
 
 Sólo lee resultados: no corre nada. Las cantidades se calculan igual que en
 experimentos/analisis_sumidero.py (áreas nodales de la triangulación del
-dominio sin fantasmas; C captada = ∫ g_ε C con la gaussiana del pozo).
+dominio sin fantasmas; concentración en el pozo c_g = ∫ g_ε C_m dΩ, con el núcleo
+gaussiano de la ec. kernel_gp de la tesis).
 """
 import json
 
@@ -57,9 +58,9 @@ def cargar_Z(caso):
     k_pozo = int(np.argmin(np.linalg.norm(n - pozo, axis=1)))
     return dict(
         t=np.arange(1, len(C) + 1) * dt / DIA, dt=dt, C0=C0, Q=float(p.Q_std),
-        masa=masa / masa[0], captada=C @ (g * w) / C0, c_nodo_pozo=C[:, k_pozo] / C0,
+        masa=masa / masa[0], c_g=C @ (g * w) / C0, c_nodo_pozo=C[:, k_pozo] / C0,
         nodos=n[dentro] - [L / 2, -L / 2], tri=tri, C=C[:, dentro] / C0,
-        r_pozo=float(p.r_pozo), factor=float(cfg.get("factor_sumidero_C", 1.0 if cfg.get("extract_C") else 0.0)),
+        R_w=float(p.r_pozo), factor=float(cfg.get("factor_sumidero_C", 1.0 if cfg.get("extract_C") else 0.0)),
     )
 
 
@@ -72,14 +73,14 @@ def cargar_balance_fem(caso):
     acum = lambda v: np.cumsum(v) * dt / m0
     return dict(
         t=np.arange(1, len(b["masa"]) + 1) * dt / DIA,
-        masa=b["masa"] / m0, captada=b["C_pozo"],
+        masa=b["masa"] / m0, c_g=b["C_pozo"],
         agua=acum(b["pozo_agua"] * b["Q"]), W=acum(b["sumidero_W"]),
         frontera=acum(b["frontera_sale"]), fuente=acum(b["fuente"]),
     )
 
 
 def cargar_S30(caso, backend):
-    """S0_sin_termino / S1_con_termino a 30 d: masa y C captada del simulador."""
+    """S0_sin_termino / S1_con_termino a 30 d: masa y c_g del simulador."""
     d = rutas.grupo("S_sumidero") / caso / backend
     r = np.load(d / "simulation_results.npz")
     return r
