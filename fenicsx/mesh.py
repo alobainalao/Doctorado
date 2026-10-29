@@ -288,6 +288,11 @@ def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
 
     nodes = all_nodes[keep_idxs]   # (N_clean, 2)
 
+    if "triangles" in data:
+        # Malla compartida saneada (preprocessing/malla_compartida.py): sus
+        # triángulos se usan tal cual, sin retriangular.
+        return _mesh_from_triangles(nodes, old_to_new[np.asarray(data["triangles"])])
+
     # Extraer frontera como polígono cerrado ordenado por ángulo respecto al
     # centroide — necesario para CDT constrained que respete el borde.
     import triangle as _tr
@@ -364,6 +369,47 @@ def build_mesh_from_bfr_pkl(pkl_path="data/input/bfr/real/adr/preproceso.pkl"):
 
     n_steiner = len(nodes) - len(keep_idxs)
     print(f"[mesh] BFR pkl → DOLFINx CDT: N={len(nodes)} nodos (+{n_steiner} Steiner), {len(triangles)} triángulos")
+    return domain, facet_tags, porosidad
+
+
+def _mesh_from_triangles(nodes, triangles):
+    """
+    Malla DOLFINx con los nodos y triángulos dados.  Las facetas de frontera se
+    etiquetan por geometría: cada una pertenece al lado de `p.vert` sobre el
+    que caen sus dos vértices (inlet=1, wall=2, outlet=3, como generar_malla),
+    sin depender del orden interno de vértices de DOLFINx.
+    """
+    p = RUNTIME.get()
+    coord_elem = basix.ufl.element("Lagrange", "triangle", 1, shape=(2,))
+    domain = dmesh.create_mesh(MPI.COMM_WORLD, triangles.astype(np.int64),
+                               coord_elem, nodes.astype(np.float64))
+
+    vert = np.asarray(p.vert, dtype=float)
+    lado_marker = {i: m for m, name in ((1, "inlet"), (2, "wall"), (3, "outlet"))
+                   for i in _BOUNDARY_GROUPS[p.domain][name]}
+    tdim = domain.topology.dim
+    domain.topology.create_connectivity(tdim - 1, tdim)
+    facets = dmesh.exterior_facet_indices(domain.topology)
+    xf = domain.geometry.x[dmesh.entities_to_geometry(domain, tdim - 1, facets)][:, :, :2]
+    dist = np.empty((len(facets), len(vert)))
+    for i in range(len(vert)):
+        a, b = vert[i], vert[(i + 1) % len(vert)]
+        ab = b - a
+        t = np.clip(((xf - a) @ ab) / (ab @ ab), 0.0, 1.0)
+        dist[:, i] = np.linalg.norm(xf - (a + t[..., None] * ab), axis=2).max(axis=1)
+    lado = dist.argmin(axis=1)
+    if dist.min(axis=1).max() > 1e-6:
+        raise ValueError("faceta exterior fuera de los lados del polígono p.vert")
+    markers = np.array([lado_marker[i] for i in lado], dtype=np.int32)
+    orden = np.argsort(facets)
+    from dolfinx.mesh import meshtags
+    facet_tags = meshtags(domain, tdim - 1, facets[orden].astype(np.int32), markers[orden])
+
+    puntos_dados, porosidad_n, _, _ = well_layer_data()
+    porosidad = interpolar_bidimensional(domain.geometry.x[:, :2], puntos_dados, porosidad_n)
+    print(f"[mesh] malla compartida → DOLFINx: N={len(nodes)} nodos, {len(triangles)} triángulos "
+          f"(sin retriangular), facetas inlet/wall/outlet = "
+          f"{[(markers == m).sum() for m in (1, 2, 3)]}")
     return domain, facet_tags, porosidad
 
 
