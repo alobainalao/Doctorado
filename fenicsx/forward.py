@@ -38,6 +38,8 @@ refinamiento local, no lo necesita el término). El sumidero de TRANSPORTE
 Requiere dolfinx + gmsh + mpi4py + petsc4py + h5py (no están en
 requirements.txt / bfr_env). Ver fenicsx/README.md.
 """
+import os
+
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
@@ -501,14 +503,19 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     ext_on = bool(getattr(p, "activate_ext", True))
     fuente_on = bool(getattr(p, "activate_fuente", True))
     # extract_C gatea sólo el sumidero de transporte W- = χ(Q) g_ε C (como en
-    # bfr, funtions/operators.py); t_fuente_off apaga la fuente desde ese t.
+    # bfr, funtions/operators.py).
     sink_on = ext_on and bool(getattr(p, "extract_C", True))
+    # t_fuente_off apaga la fuente desde ese instante; T_fuente es la escala de
+    # tiempo de su forma (por defecto T), para que con un T mayor los primeros
+    # días sigan siendo los del caso de referencia.
     t_fuente_off = getattr(p, "t_fuente_off", None)
+    T_fuente = float(getattr(p, "T_fuente", None) or T_total)
+    f_W = float(getattr(p, "factor_sumidero_C", 0.0))
 
-    # Balance de masa por paso (opt-in, experimento exp/sumidero-W): masa
-    # ∫φRC, salida con el agua del pozo Q∫δC, sumidero W-, flujo advectivo
-    # por la frontera ∮(u·n)C (saliente/entrante), ∫C∇·u, ∫u·∇C, fuente y
-    # decaimiento, y la concentración captada ∫g_ε C (g sin compuerta χ).
+    # Balance de soluto por paso (opt-in): masa ∫φRC, salida con el agua del
+    # pozo Q∫δC, sumidero W- (con su factor), flujo advectivo por la frontera
+    # ∮(u·n)C (saliente/entrante), ∫C∇·u, ∫u·∇C, fuente, decaimiento y la
+    # concentración captada ∫g_ε C (g sin compuerta χ).
     balance = bool(getattr(p, "balance_masa", False))
     if balance:
         n_f = FacetNormal(domain)
@@ -520,7 +527,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         f_bal = {
             "masa": fem.form(phys["R"] * phi * C_n * dx),
             "pozo_agua": fem.form(delta * C_n * dx),
-            "sumidero_W": fem.form(delta_C * C_n * dx),
+            "sumidero_W": fem.form(fem.Constant(domain, PETSc.ScalarType(f_W)) * delta_C * C_n * dx),
             "frontera_sale": fem.form(conditional(gt(un, 0), un, 0) * C_n * ds_all),
             "frontera_entra": fem.form(conditional(gt(un, 0), 0, un) * C_n * ds_all),
             "C_div_u": fem.form(C_n * div(u) * dx),
@@ -559,7 +566,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
         u.interpolate(fem.Expression(expr_u, V.element.interpolation_points))
 
-        src_amp = _fuente_C(t, T_total) if fuente_on else 0.0
+        src_amp = _fuente_C(t, T_fuente) if fuente_on else 0.0
         if t_fuente_off is not None and t > float(t_fuente_off):
             src_amp = 0.0
         ex, ey = phys["epsilon_x"], phys["epsilon_y"]
@@ -639,7 +646,6 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         fx_post.create_btc(p.save_video, nodes_G, C_hist, dt)
 
     if balance and domain.comm.rank == 0:
-        import os
         out = p.save_data if os.path.isdir(p.save_data) else os.path.dirname(p.save_data)
         np.savez(os.path.join(out, "balance_masa.npz"), dt=dt, **bal)
         print(f"[fenicsx] balance de masa guardado ✔  {os.path.join(out, 'balance_masa.npz')}")

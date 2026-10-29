@@ -909,8 +909,13 @@ def C_vector(C, M_right, gauss_f, groups, t, T, N, C_im, pho):
     if p.model not in ("adr", "mrmt_semi", "mrmt_block"):
         raise ValueError(f"Modelo no válido: {p.model}")
     if getattr(p, "activate_fuente", True):
-        fuente = (peso_theta_C(p, -1) * fuente_C(t, T)
-                  + peso_theta_C(p, +1) * fuente_C(t - p.dt, T)) * gauss_f
+        # t_fuente_off apaga la fuente desde ese instante; T_fuente es la escala
+        # de tiempo de su forma (por defecto T), como en fenicsx/forward.py.
+        Tf = float(getattr(p, "T_fuente", None) or T)
+        t_off = getattr(p, "t_fuente_off", None)
+        amp = lambda tt: 0.0 if (t_off is not None and tt > float(t_off)) else fuente_C(tt, Tf)
+        fuente = (peso_theta_C(p, -1) * amp(t)
+                  + peso_theta_C(p, +1) * amp(t - p.dt)) * gauss_f
         b[idx] += fuente[idx]
 
     # 🔹 Acoplamiento MRMT block: C_im^n → C (complemento de Schur).

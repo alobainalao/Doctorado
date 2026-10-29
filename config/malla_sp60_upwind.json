@@ -1,0 +1,14 @@
+{
+  "pre": false,
+  "spacing": 60,
+  "min_sp": 4,
+  "min_sp_boundary": 30,
+  "s_cone": 16,
+  "r_circle": 100,
+  "r_cone": 500,
+  "upwind_transport": true,
+  "dt": 18000,
+  "T": 2592000,
+  "n_stencil": 25,
+  "anim_stride": 1
+}

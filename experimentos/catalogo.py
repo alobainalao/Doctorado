@@ -1,6 +1,7 @@
 """
 Catálogo de experimentos BFR (RBF-FD) vs FEniCS (FEM).
 
+Cada grupo tiene `desc` y `pregunta` (la que responde, para el informe).
 Cada caso es un conjunto de *cambios* respecto a `experimentos/base.json`
 (malla compartida congelada, CI de funcion.h5, ADR, dt=18000 s, T=30 días).
 
@@ -29,6 +30,7 @@ GRUPOS = {
     # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
     "A_terminos": {
         "desc": "Términos fuente: CI sola, sólo fuente, sólo pozo, ambos",
+        "pregunta": "¿Cuánto de la diferencia BFR↔FEM aporta cada término (CI, fuente, pozo)?",
         "casos": {
             "A0_sin_fuente_sin_pozo": {
                 "desc": "Sólo la CI transportada (sin fuente, sin pozo)",
@@ -53,6 +55,7 @@ GRUPOS = {
     # Sólo cambia BFR → la referencia FEM es el caso homólogo del grupo A.
     "B_bc_salida_fem": {
         "desc": "BFR con BC de salida tipo FEM (Neumann 1.er orden)",
+        "pregunta": "¿La condición de salida de 2.º orden de BFR (pfs) explica la diferencia de flujo?",
         "casos": {
             f"B{i}_{nombre}": {
                 "desc": f"Como A{i}, BFR con bc_outlet_mode=fem",
@@ -73,6 +76,7 @@ GRUPOS = {
     # ── C. Soporte de la fuente gaussiana (σ = 1 está en A1 / A3) ────────────
     "C_soporte_fuente": {
         "desc": "Ancho de la gaussiana de la fuente (sigma_fuente), con y sin pozo",
+        "pregunta": "¿La diferencia en C viene de lo localizada que está la fuente?",
         "casos": {
             f"C_sigma{str(s).replace('.', 'p')}_{tag}": {
                 "desc": f"sigma_fuente={s}, {'sin' if tag == 'sin_pozo' else 'con'} pozo",
@@ -86,6 +90,7 @@ GRUPOS = {
     # ── D. Caudal del pozo, sin fuente (Q_std = 0.3 está en A2) ──────────────
     "D_caudal_pozo": {
         "desc": "Caudal de extracción Q_std (cono de depresión), sin fuente",
+        "pregunta": "¿Cómo crece la diferencia con el caudal (cono de depresión más fuerte)?",
         "casos": {
             f"D_Q{q:.0e}".replace("-0", "-"): {
                 "desc": f"Q_std={q:g}, sin fuente",
@@ -98,6 +103,7 @@ GRUPOS = {
     # ── E. Paso de tiempo (dt = 18000 s está en A3) ──────────────────────────
     "E_paso_tiempo": {
         "desc": "Paso de tiempo dt, con fuente y pozo",
+        "pregunta": "¿La diferencia es temporal (dt) o espacial/de formulación?",
         "casos": {
             f"E_dt{dt}": {"desc": f"dt={dt} s ({dt / 3600:g} h)", "cfg": {"dt": dt}}
             for dt in (36000, 7200)
@@ -107,6 +113,7 @@ GRUPOS = {
     # ── F. Estabilización del transporte en BFR (upwind) ────────────────────
     "F_upwind_bfr": {
         "desc": "Upwind direccional en el transporte BFR",
+        "pregunta": "¿El upwind direccional acerca el transporte BFR al de FEM?",
         "casos": {
             "F1_upwind_solo_fuente": {
                 "desc": "Como A1, BFR con upwind_transport",
@@ -166,6 +173,29 @@ GRUPOS = {
                 "backends": ("bfr",),
             }
             for con in (True, False)
+        },
+    },
+
+    # ── S. Sumidero W- del pozo (decisión 1) ─────────────────────────────────
+    # W- = χ(Q) g_ε C escalado por factor_sumidero_C (0 por defecto desde la
+    # comparativa del cuadrado, rama exp/sumidero-W). Configuración de
+    # referencia ADR con el término (1) y sin él (0), en ambos backends.
+    # Grilla 2×2 (backend × término): python -m experimentos.grilla_sumidero
+    "S_sumidero": {
+        "desc": "ADR de referencia con y sin el sumidero W- del pozo, BFR y FEniCS",
+        "pregunta": "¿Cuánto cambia la solución (C, masa, C captada) al anular W-?",
+        "casos": {
+            "S1_con_termino": {"desc": "factor_sumidero_C = 1 (modelo anterior)",
+                               "cfg": {"factor_sumidero_C": 1.0}},
+            "S0_sin_termino": {"desc": "factor_sumidero_C = 0 (W- anulado)",
+                               "cfg": {"factor_sumidero_C": 0.0}},
+            # Limpieza: la misma fuente 30 d (T_fuente = 30 d) y después apagada,
+            # 120 d en total; FEniCS guarda el balance de soluto por paso.
+            **{f"S{2 + int(con)}_limpieza_{'con' if con else 'sin'}": {
+                "desc": f"Fuente 30 d y 90 d de limpieza, factor_sumidero_C = {int(con)}",
+                "cfg": {"factor_sumidero_C": float(con), "t_fuente_off": 30 * 86400,
+                        "T_fuente": 30 * 86400, "T": 120 * 86400, "balance_masa": True},
+            } for con in (True, False)},
         },
     },
 
