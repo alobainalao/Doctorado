@@ -1,7 +1,7 @@
 # %% [markdown]
 # # Peldaño 4: pozos con tasas de extracción $u_i(t)$ en el canal de Graetz (transitorio)
 #
-# **Objetivo.** Extender la Parte B de `caso_base_manzoni_graetz` (4 pozos, control bilineal con cotas,
+# **Objetivo.** Extender la Parte B de `2a_graetz_manzoni_6_5_1` (4 pozos, control bilineal con cotas,
 # estacionario) al caso **transitorio con tasas que dependen del tiempo**, que es la forma del problema de la
 # tesis ($Q_{out}(t)$ constante a trozos, sumidero $Q\,\delta_p\,C$ en `step_time`). Lo nuevo respecto a los
 # peldaños 2 y 3 es la combinación: control **bilineal** + **tiempo** + **cotas**, con un control finito-dimensional
@@ -9,7 +9,35 @@
 #
 # El código está en `pozos_nucleo.py` (problema transitorio sobre las discretizaciones de `graetz_nucleo`) y
 # `pozos_benchmark.py` (referencia y benchmark).
+
+# %% [markdown]
+# ## Ficha de lectura
 #
+# **El problema, en palabras.** No está resuelto en el libro: es la **extensión** de la Parte B de Graetz (§7 de
+# `2a`) hacia la forma del problema de la tesis. Por el canal de Graetz entra un **pulso** de contaminante. Cuatro pozos
+# pueden extraer con tasas $u_i(t)$ constantes a trozos (20 intervalos) y se quiere proteger la zona final del canal
+# durante todo el horizonte, con tasas acotadas o sin cotas. Es un control bilineal transitorio con cotas, como
+# $Q_{out}(t)$ en la tesis.
+#
+# **Cómo lo implementamos (§2).** Las mismas discretizaciones de `graetz_nucleo` (RBF-FD con fantasmas y FEM), esquema
+# $\theta$ escrito por filas (las condiciones de frontera, implícitas), una LU por intervalo de control reutilizada en el
+# estado y en el adjunto, gradiente exacto (Taylor de orden 2), y CG-PR+ proyectado frente a L-BFGS-B.
+#
+# **Cómo comparamos (§4–6).** Como no hay libro, la referencia es nuestro FEM con $n=20/40/80$ y Richardson (orden
+# observado 2.05). Se valida el óptimo de RBF-FD con la evaluación cruzada $J_{FEM}(\hat u_{RBF})$.
+#
+# | resultado | valor |
+# |---|---|
+# | $J^*$ referencia, libre / con cotas | 2.82523e-4 / 3.10337e-4 (±1e-7) |
+# | RBF-FD $n=20$ | +1.06 % / +1.32 %; evaluación cruzada +0.002 % (sin óptimo espurio) |
+# | tasas $u(t)$ frente al mejor caudal constante | −42 % / −36 % de $J^*$; el control se apaga al final (efecto de horizonte) |
+# | optimizador | L-BFGS-B 42/38 evaluaciones; CG-PR+ 74/276 |
+#
+# **Mapa:** §1 problema · §2 discretización y Taylor · §3 dinámica sin control · §4 óptimo (CG vs L-BFGS-B, FEM vs
+# RBF-FD, variable vs constante) · §5 número de intervalos y $\theta$ · §6 referencia y benchmark
+# (`pozos_benchmark.py`) · §7 conclusiones.
+
+# %% [markdown]
 # ## 1. El problema
 #
 # Canal $\Omega=(0,4)\times(0,1)$, campo de Graetz $\mathbf b=(1.5\,x_2(1-x_2),0)$, $\mu=0.1$, $T=20$. Un **pulso**
@@ -27,6 +55,13 @@
 #
 # Dos escenarios: **libre** ($u_{\max}=5$, no se activa) y **con cotas** ($u_{\max}=0.3$, por debajo del pico del
 # óptimo libre ⇒ conjunto activo que cambia en el tiempo).
+#
+# > **Nota (revisión del 28-oct-2026, ver `../3_cuadrado_pozo`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
+# > transporte, y eso es correcto **porque la velocidad de Graetz no siente el pozo** ($\nabla\cdot\mathbf b=0$). En el
+# > acuífero de la tesis el pozo sí cambia el flujo ($\nabla\cdot\mathbf q=-Q\delta_p$), y entonces la extracción ya
+# > está dentro de $\mathbf q\cdot\nabla C$ en la forma no conservativa. Añadir además el sumidero ($W_-$ del
+# > simulador) cuenta la extracción dos veces. Este modelo de pozo como reacción **no** se traslada tal cual al
+# > simulador.
 
 # %%
 import time

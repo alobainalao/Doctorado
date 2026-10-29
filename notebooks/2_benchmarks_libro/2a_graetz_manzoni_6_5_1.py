@@ -32,6 +32,42 @@
 # **§8.3** (calor transitorio, Tablas 8.2–8.3 → siguiente peldaño, ver §9), §1.4 y §6.2.4 (sólo formulación).
 
 # %% [markdown]
+# ## Ficha de lectura
+#
+# **El problema, en palabras (libro §6.5.1, *Test case 2*, ec. 6.65).** Un fluido corre por un canal largo
+# ($4\times1$) con el perfil parabólico de Poiseuille (campo de Graetz) y transporta una sustancia (o calor) $y$ que
+# entra con valor 1. En las paredes del tramo final ($x_1>1$) se puede inyectar o extraer flujo de esa sustancia: ese
+# flujo de pared $u$ es el control. Se quiere que en una zona aguas abajo $\Omega_0$ el perfil se parezca a un blanco
+# $z_d$ (constante 2 o parabólico) gastando poco control ($\beta=10^{-3}$). Es advección–difusión estacionaria con
+# control en una frontera de Neumann: la misma estructura de optimalidad que la tesis (adjunto con la advección
+# invertida, observación parcial y regularización de Tikhonov).
+#
+# **Cómo lo resuelve el libro.** FEM $\mathbb P_1$ (11 028 vértices) y BFGS; da la Tabla 6.2 ($J$ inicial y óptimo de los
+# casos a–d) y las Figs. 6.3–6.5.
+#
+# **Cómo lo implementamos (§2–5).** (i) RBF-FD (PHS $r^3$, grado 3, 30 vecinos) con **nodos fantasma** en las
+# fronteras de Neumann, como el simulador; (ii) un FEM $\mathbb P_1$ independiente escrito desde cero, que sirve de
+# referencia; (iii) adjunto **discreto** (discretizar y luego optimizar) verificado con el test de Taylor; (iv) gradiente
+# conjugado precondicionado con la matriz de masa del control.
+#
+# **Cómo comparamos (§6, §11).** Con el libro, sólo cualitativamente: su Tabla 6.2 es incoherente ($J(a)>J(b)$
+# con $\Omega_0^1\subset\Omega_0^2$) y su estado inicial no se reproduce con ninguna lectura de la condición de
+# frontera (§1.1). La comparación cuantitativa es contra **nuestro FEM**, y la referencia continua sale de un FEM
+# graduado con Richardson.
+#
+# | resultado | valor |
+# |---|---|
+# | RBF-FD vs FEM (misma retícula $h=1/40$) | $J(u_0)$ <0.3 %, $J^*$ <2 % |
+# | error de $J^*$ RBF-FD frente al continuo, $h=1/40$ | 7.3 / 6.0 / 2.2 / 0.8 % (a–d); orden ≈1 por la esquina |
+# | sin nodos fantasma | óptimo **espurio** ($J^*$ hasta 2.2× menor, pero $J_{FEM}(\hat u)\approx J(u_0)$) |
+# | Parte B (4 pozos, control bilineal) | RBF-FD = FEM a <1 % |
+# | iteraciones | CG 6–7, L-BFGS 14–30, descenso máximo 77–183, BFGS del libro 48–87 |
+#
+# **Mapa:** §1 problema del libro y lectura de la frontera · §2 discretizaciones · §3 verificaciones · §4 adjunto y
+# Taylor · §5 CG · §6 resultados y comparación · §7 Parte B (pozos) · §8–10 valoración y qué trasladar a la tesis ·
+# §11 benchmark (`graetz_benchmark.py`).
+
+# %% [markdown]
 # ## 1. El problema del libro (§6.5.1, ec. 6.65)
 #
 # $$
@@ -709,6 +745,13 @@ for n in (20, 40, 80):
 # * el control entra **multiplicando al estado** (bilineal) ⇒ $J$ **no es cuadrático** ⇒ CG **no lineal**;
 # * el control es **finito-dimensional** ($u\in\mathbb R^K$, como $Q_{out}$) y **con cotas** ⇒ proyección;
 # * es el equivalente estacionario del sumidero del pozo en `step_time` (sin flujo de Darcy acoplado).
+#
+# > **Nota (revisión del 28-oct-2026, ver `../3_cuadrado_pozo`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
+# > transporte, y eso es correcto **porque la velocidad de Graetz no siente el pozo** ($\nabla\cdot\mathbf b=0$). En el
+# > acuífero de la tesis el pozo sí cambia el flujo ($\nabla\cdot\mathbf q=-Q\delta_p$), y entonces la extracción ya
+# > está dentro de $\mathbf q\cdot\nabla C$ en la forma no conservativa. Añadir además el sumidero ($W_-$ del
+# > simulador) cuenta la extracción dos veces. Este modelo de pozo como reacción **no** se traslada tal cual al
+# > simulador.
 #
 # Adjunto discreto: $A(u)=A_0+\sum_i u_i S_i$, con $S_i=\operatorname{diag}(m\,\psi_i)$ ($m=1$ en filas de EDP para
 # colocación, $m=$ masa concentrada para FEM). Entonces

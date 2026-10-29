@@ -1,6 +1,6 @@
 """Núcleo vectorizado del caso base Manzoni–Quarteroni–Salsa §6.5.1 (Graetz) y de la Parte B (pozos).
 
-Mismas discretizaciones que `caso_base_manzoni_graetz.py` (RBF-FD con nodos fantasma y FEM P1 de
+Mismas discretizaciones que `2a_graetz_manzoni_6_5_1.py` (RBF-FD con nodos fantasma y FEM P1 de
 referencia), con el ensamblado vectorizado para que el benchmark corra en segundos y el FEM llegue a
 mallas finas (valores de referencia por extrapolación de Richardson). Ver `graetz_benchmark.py`.
 """

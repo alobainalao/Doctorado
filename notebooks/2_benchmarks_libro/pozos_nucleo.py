@@ -1,6 +1,6 @@
 """Peldaño 4 del caso base: canal de Graetz + 4 pozos con tasas de extracción u_i(t) (transitorio).
 
-Es la Parte B de `caso_base_manzoni_graetz` con término temporal: un pulso de contaminante entra por x1 = 0 y
+Es la Parte B de `2a_graetz_manzoni_6_5_1` con término temporal: un pulso de contaminante entra por x1 = 0 y
 se quiere proteger la zona aguas abajo Ω_obs = {x1 > 3.4} durante todo el intervalo [0, T],
 
     ∂t y − μΔy + b·∇y + Σ_i u_i(t) ψ_i(x) y = 0,   y = g(t) en x1 = 0,  μ∂n y = 0 en el resto,  y(0) = 0,

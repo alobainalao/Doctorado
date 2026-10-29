@@ -3,12 +3,46 @@
 #
 # **Objetivo.** Reproducir con nuestras herramientas (RBF-FD, adjunto discreto, gradiente conjugado) el ejemplo
 # transitorio del libro y **comparar con sus Tablas 8.2–8.3 y Figs. 8.1–8.3** (pp. 270–273 del libro; en el PDF,
-# páginas 281–284). Es el peldaño 3 de la escalera del notebook `caso_base_manzoni_graetz`: lo nuevo es el
+# páginas 281–284). Es el peldaño 3 de la escalera del notebook `2a_graetz_manzoni_6_5_1`: lo nuevo es el
 # **tiempo** (Crank–Nicolson, adjunto hacia atrás, producto escalar en $L^2(Q_T)$) y la **observación final**.
 #
 # El código está en `calor_nucleo.py` (discretizaciones y optimizador) y `calor_benchmark.py` (referencia y
 # benchmark), como en Graetz.
+
+# %% [markdown]
+# ## Ficha de lectura
 #
+# **El problema, en palabras (libro §8.3, pp. 270–273).** Una placa cuadrada a temperatura 0 con los bordes fijos a 0.
+# Se puede calentar o enfriar en cada punto y en cada instante (control distribuido $u(x,t)$) durante $T=1$. Se busca
+# que la temperatura siga un blanco en forma de **cruz** que se enfría con el tiempo (caso 1: a lo largo de todo el
+# intervalo) o que al final tenga un perfil dado (caso 2: sólo en $t=T$), con tres pesos del control $\beta$. Es el
+# primer problema **transitorio**: el adjunto se resuelve hacia atrás en el tiempo, y el producto escalar del control
+# lleva la integral en $t$.
+#
+# **Cómo lo resuelve el libro.** FEM $\mathbb P_1$ en dos mallas no estructuradas (712 y 1 921 vértices),
+# Crank–Nicolson, optimizar-y-luego-discretizar y BFGS; da las Tablas 8.2–8.3 y las Figs. 8.1–8.3.
+#
+# **Cómo lo implementamos (§2).** RBF-FD y FEM $\mathbb P_1$ propios en retículas alineadas con la cruz, esquema
+# $\theta$ (CN), $\Delta t$ variable (graduado hacia $T$ en el caso 2), adjunto discreto exacto, Taylor de orden 2 y
+# CG precondicionado con la masa en espacio-tiempo.
+#
+# **Cómo comparamos (§3–4, §6).** Primero **las soluciones** (los rangos y las formas del estado y del control
+# coinciden con las Figs. 8.1–8.2); después los valores de $J$ de dos maneras: con el blanco interpolado en los nodos,
+# como hace el libro, y con el blanco integrado exacto (nuestra referencia).
+#
+# | resultado | valor |
+# |---|---|
+# | estado / control óptimos, $\beta=10^{-3}$ | $[-34.7,0]$ / $[-810,31]$ (libro $[-34,0]$ / $[-820,8.3]$) |
+# | $J$ con blanco nodal, malla (ii) | 0.9 % (caso 1, $\beta=10^{-2}$); 1–4 % (caso 2) |
+# | $J^*$ del continuo (blanco exacto) | caso 1: 184.08 / 126.98 / 87.40; caso 2: 0.02565 / 0.01147 / 0.0039 |
+# | ¿están convergidos los $J$ del libro? | no: con blanco nodal $J_h$ va de 68 a 171 según la malla |
+# | caso 2 | capa límite del control en $t=T$: hay que graduar $\Delta t$ |
+# | RBF-FD vs FEM | <2 % ($n=20$, caso 1); CG 5–33 iteraciones (BFGS del libro 36–318) |
+#
+# **Mapa:** §1 problema y tablas del libro · §2 discretización y Taylor · §3 comparación de soluciones · §4 por qué
+# difieren los $J$ (y la capa límite) · §5 referencia y benchmark (`calor_benchmark.py`) · §6 conclusiones.
+
+# %% [markdown]
 # ## 1. El problema del libro
 #
 # $\Omega=(0,1)^2$, $T=1$, $Q_T=\Omega\times(0,T)$:

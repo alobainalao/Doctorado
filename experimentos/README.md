@@ -1,5 +1,10 @@
 # Experimentos BFR (RBF-FD) vs FEniCS (FEM)
 
+> **Lectura ordenada de los resultados:** `notebooks/README.md`. Allí están (1) los resultados de todos los grupos
+> por pregunta, (2) los benchmarks del libro y (3) el análisis del sumidero $W_-$ en el cuadrado con pozo
+> (`notebooks/3_cuadrado_pozo/`). Ese análisis concluye que en la forma no conservativa el término sobra, y que el
+> implementado además no lleva $Q$.
+
 Estructura única para definir, correr y comparar casos de estudio. Sustituye a
 los lanzadores sueltos que ahora están en `scripts/legacy/`
 (`generar_comparacion.py`, `run_all_6_variants.py`, `run_comparison.py`, …).
