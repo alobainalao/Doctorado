@@ -916,6 +916,7 @@ class SimulationAdjoint:
                 forced_well_node=getattr(d, 'forced_well_node', -1),
                 forced_well_nbrs=getattr(d, 'forced_well_nbrs', None),
                 forced_well_idw=getattr(d, 'forced_well_idw', None),
+                C_nm1=C[step - 2][k] if step >= 2 else None,
             )
 
             if "mrmt" in p.model and psiC_im_n is not None:

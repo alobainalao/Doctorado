@@ -216,6 +216,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     # su dominio.
     f_W = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_sumidero_C", 0.0))))
     gauss_C = f_W * _gauss(x, ctx.xp, zp_c, ctx.es)
+    f_A = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_almacenamiento_C", 0.0))))
     src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
 
     F_C = (
@@ -230,6 +231,8 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
         - (1 - theta) * inner(src_amp_prev_c * src_shape, z) * dx
         + theta * inner(chi_c * gauss_C * C_cur, z) * dx
         + (1 - theta) * inner(chi_c * gauss_C * C_prev, z) * dx
+        # Almacenamiento -S_s ∂ₜh·C: UFL lo deriva respecto a h_cur/h_prev (fuente del adjunto del flujo)
+        - f_A * inner(ctx.phi * (h_cur - h_prev) / p.dt * (theta * C_cur + (1 - theta) * C_prev), z) * dx
     )
     if C_im_sum is not None and alpha_sum:
         F_C += (

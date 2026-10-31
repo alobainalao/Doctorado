@@ -138,7 +138,7 @@ def build_directional_gradient(nodes, V, eps_M, n, phi, order,
 
 def build_upwind_transport_matrix(V, nodes, groups, normals,
                                    pho, D, Div_D, Qout, eps_M,
-                                   gauss_p, sig, p):
+                                   gauss_p, sig, p, h_t=None):
     """
     Matriz de transporte con gradiente advectivo upwind.
 
@@ -171,6 +171,9 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
     # Sumidero W- escalado por factor_sumidero_C (0 por defecto: anulado).
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
         coef_identity -= w * sig * p.factor_sumidero_C * gauss_p
+
+    from funtions.operators import almacenamiento_coef
+    coef_identity += w * sig * almacenamiento_coef(p, pho, h_t)
 
     if p.model == "adr":
         coef_identity -= w * base * sig * p.landa

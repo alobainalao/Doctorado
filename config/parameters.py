@@ -53,7 +53,9 @@ class Parameters:
                 "bc_outlet_mode", "mesh_pkl", "exp_dir", "r_pozo",
                 "norm_delta_pozo", "theta_C",
                 # Sumidero W- del pozo (0 = anulado, 1 = modelo anterior)
-                "factor_sumidero_C",
+                "factor_sumidero_C", "factor_almacenamiento_C",
+                # Recorte de positividad C >= 0 en BFR (diagnóstico de la oscilación del pozo)
+                "clip_C",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -130,6 +132,13 @@ class Parameters:
         # conservativa el soluto ya sale con el agua (exp/sumidero-W, grupo Z);
         # 1 recupera el modelo anterior.
         self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
+        # Término de almacenamiento -S_s ∂ₜh·C del transporte (docs/adjunto_sin_sumidero.tex):
+        # sobrevive al eliminar W- al despejar ∇·u del flujo. 1 lo activa (estado, adjunto
+        # ψ_C y fuente -S_s ∂ₜ(Cψ_C) del adjunto del flujo); 0 = modelo reducido anterior.
+        self.factor_almacenamiento_C = float(getattr(self, "factor_almacenamiento_C", 0.0))
+        # Recorte C >= 0 en cada paso de BFR (docs/clip_positividad_C.md). True por
+        # defecto; False sólo para diagnosticar la oscilación del nodo del pozo.
+        self.clip_C = bool(getattr(self, "clip_C", True))
 
         # =========================
         # TIEMPO

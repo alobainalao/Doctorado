@@ -22,6 +22,7 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     Div_D_n = Div_KD(D_n, grad)
 
     # --- FLOW ---
+    H_old = H
     rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N, gauss_p=gauss_p)
     H = A_solver.solve(rhs)
 
@@ -30,14 +31,15 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     # --- TRANSPORT ---
     D_N = D_total(D_f, U)
     Div_D_N = Div_KD(D_N, grad)
+    h_t = (H - H_old) / p.dt   # ∂ₜh del paso (término de almacenamiento)
 
     if _upwind:
         from funtions.upwind_operators import build_upwind_transport_matrix
-        C_solver = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, p)
-        C_right  = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p,  1, p)
+        C_solver = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, p, h_t=h_t)
+        C_right  = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p,  1, p, h_t=h_t)
     else:
-        C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1)
-        C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p, 1)
+        C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, h_t=h_t)
+        C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p, 1, h_t=h_t)
     rhs = C_vector(C, C_right, gauss_f, groups, t, T, N, C_im, pho)
 
     C_new = splu(C_solver).solve(rhs)
@@ -66,7 +68,8 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
         )
 
     # Positividad física: C ≥ 0 en cada paso (mismo criterio que fenicsx/forward.py)
-    C_new = np.maximum(C_new, 0.0)
+    if getattr(p, "clip_C", True):
+        C_new = np.maximum(C_new, 0.0)
 
     return H, U, C_new, C_im_new
 
@@ -115,6 +118,7 @@ def step_adjoint(
     forced_well_node=-1,   # índice del nodo forzado en p.pozo (-1 si no hay)
     forced_well_nbrs=None,  # vecinos Poisson-disc para IDW
     forced_well_idw=None,   # pesos IDW normalizados
+    C_nm1=None,             # C^{n-1}: fuente de almacenamiento del adjunto del flujo (None en n=0)
 ):
 
     p = RUNTIME.get()
@@ -127,15 +131,16 @@ def step_adjoint(
     D_N = D_total(D, V_N)
     Div_D_N = Div_KD(D_N, grad)
     Div_D_n = Div_KD(D_n, grad)
+    h_t = (H_N - H_n) / p.dt   # ∂ₜh del paso: término de almacenamiento -S_s ∂ₜh·C
 
     # reconstruir A_fwd y B_fwd exactamente como en step_time
     A_fwd = build_transport_matrix(
         V_N, nodes, groups, normals, pho, D_N, Div_D_N,
-        Qout_N, eps_M, gauss_p, sig=-1
+        Qout_N, eps_M, gauss_p, sig=-1, h_t=h_t
     )
     B_fwd = build_transport_matrix(
         V_N, nodes, groups, normals, pho, D_n, Div_D_n,
-        Qout_n, eps_M, gauss_p, sig=+1
+        Qout_n, eps_M, gauss_p, sig=+1, h_t=h_t
     )
 
     # transponer
@@ -249,6 +254,23 @@ def step_adjoint(
         nodes=nodes,
         groups=groups
     )
+
+    # Fuente de almacenamiento del adjunto del flujo (doc. adjunto_sin_sumidero, ec. adj_flujo):
+    # derivada de ψ_C^T(A C^N − B C^n) respecto a H^n a través de c_s = −S_s ∂ₜh (S_s = φ),
+    #   σ^n ∝ ψ_C^N(w_N C^N + w_n C^n) − ψ_C^n(w_N C^n + w_n C^{n−1}),   rhs_H += (S_s/2) σ^n.
+    # La normalización (S_s/2, sin 1/dt ni 1/wi) es la de ψ_C del código (fuente 2γ g wi (C_N+C_n)):
+    # contrastada con diferencias finitas (docs/adjunto_sin_sumidero.tex, §código).
+    f_alm = getattr(p, "factor_almacenamiento_C", 0.0)
+    if f_alm != 0.0:
+        from funtions.operators import peso_theta_C
+        w_N = peso_theta_C(p, -1); w_n = peso_theta_C(p, +1)
+        sig_alm = psiC_N * (w_N * C_N + w_n * C_n)
+        if C_nm1 is not None:
+            sig_alm = sig_alm - psiC_n * (w_N * C_n + w_n * C_nm1)
+        else:
+            sig_alm = sig_alm - psiC_n * (w_N + w_n) * C_n
+        ii = groups['interior']
+        rhs_H[ii] += getattr(p, "_alm_src_scale", 0.5) * f_alm * pho[ii] * sig_alm[ii]
 
     # solve ψ_H
     psiH_n = A_solver.solve(rhs_H)

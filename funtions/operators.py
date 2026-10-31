@@ -453,7 +453,15 @@ def peso_theta_C(p, sig):
     return 2.0 * th if sig < 0 else 2.0 * (1.0 - th)
 
 
-def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig, gauss_p):
+def almacenamiento_coef(p, pho, h_t):
+    """S_s ∂ₜh con S_s = φ (porosidad, `pho`) por factor_almacenamiento_C; 0 si no aplica."""
+    f = getattr(p, "factor_almacenamiento_C", 0.0)
+    if f == 0.0 or h_t is None:
+        return 0.0
+    return f * pho * h_t
+
+
+def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig, gauss_p, h_t=None):
     
     U_div_D = (V - Div_D[:, :2]) / 2.0
     w = peso_theta_C(p, sig)
@@ -473,6 +481,9 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
     # Escalado por factor_sumidero_C (0 por defecto: término anulado).
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
         coef_identity -= w * sig * p.factor_sumidero_C * gauss_p
+
+    # Almacenamiento -S_s ∂ₜh·C (reacción c_s = -S_s ∂ₜh, con S_s = pho como en el flujo).
+    coef_identity += w * sig * almacenamiento_coef(p, pho, h_t)
 
     if p.model == "adr":
         coef_identity -= w * base * sig * p.landa
@@ -523,7 +534,7 @@ def make_transport_bc(normals, D):
 
 def build_transport_matrix(V, nodes, groups, normals,
                            pho, D, Div_D,
-                           Qout, eps_M, gauss_p, sig):
+                           Qout, eps_M, gauss_p, sig, h_t=None):
 
     p = RUNTIME.get()
     N = len(nodes)
@@ -531,7 +542,7 @@ def build_transport_matrix(V, nodes, groups, normals,
     op_def = make_transport_operator(
         V, nodes, groups,
         pho, D, Div_D, Qout,
-        p, eps_M, sig, gauss_p
+        p, eps_M, sig, gauss_p, h_t=h_t
     )
 
     bc_definitions = None if sig > 0 else make_transport_bc(normals, D)
