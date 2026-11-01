@@ -1034,6 +1034,41 @@ def div_Kpsi_gradC(
 
     return out
 
+def dispersion_u_gradients(V):
+    """Gradientes de D_x, D_z (ec. dispersion_diag de la tesis) respecto de u = (u_x, u_z).
+    Devuelve (dDx_dux, dDx_duz, dDz_dux, dDz_duz), cada uno de forma (N,)."""
+    p = RUNTIME.get()
+    V = np.asarray(V, float)
+    ux, uz = V[:, 0], V[:, 1]
+    nrm = np.sqrt(ux**2 + uz**2)
+    nrm[nrm == 0] = 1e-12
+    Ax = p.a_l * ux**2 + p.a_t * uz**2        # numerador de D_x
+    Az = p.a_t * ux**2 + p.a_l * uz**2        # numerador de D_z
+    dDx_dux = 2 * p.a_l * ux / nrm - Ax * ux / nrm**3
+    dDx_duz = 2 * p.a_t * uz / nrm - Ax * uz / nrm**3
+    dDz_dux = 2 * p.a_t * ux / nrm - Az * ux / nrm**3
+    dDz_duz = 2 * p.a_l * uz / nrm - Az * uz / nrm**3
+    return dDx_dux, dDx_duz, dDz_dux, dDz_duz
+
+
+def div_K_dterm(psi, C, V, K, Dx, Dy, nodes, groups):
+    """∇·(K d) con d = ∂ₓC ∂ₓψ ∇_u D_x + ∂_zC ∂_zψ ∇_u D_z: derivada de D(u) respecto de la carga
+    en el adjunto del flujo (docs/reanalisis_adr_mrmt.tex, ec. bb). Misma convención que div_Kpsi_gradC."""
+    N = len(nodes)
+    idx_dom = np.hstack((groups['interior'], groups['boundary:inlet'],
+                         groups['boundary:outlet'], groups['boundary:wall']))
+    gCx, gCz = Dx @ C, Dy @ C
+    gPx, gPz = Dx @ psi, Dy @ psi
+    dDx_dux, dDx_duz, dDz_dux, dDz_duz = dispersion_u_gradients(V)
+    qx = gCx * gPx          # ∂ₓC ∂ₓψ  (pesa a ∇_u D_x)
+    qz = gCz * gPz          # ∂_zC ∂_zψ (pesa a ∇_u D_z)
+    d_x = qx * dDx_dux + qz * dDz_dux
+    d_z = qx * dDx_duz + qz * dDz_duz
+    div_flux = Dx @ (K[:, 0] * d_x) + Dy @ (K[:, 1] * d_z)
+    out = np.zeros(N)
+    out[idx_dom] = div_flux[idx_dom]
+    return out
+
 # =========================================================
 # RHS ψ_h
 # =========================================================
@@ -1052,7 +1087,10 @@ def build_adj_H_rhs(
     grad,
 
     nodes,
-    groups
+    groups,
+
+    V_n=None,
+    V_N=None
 ):
 
     p = RUNTIME.get()
@@ -1087,5 +1125,14 @@ def build_adj_H_rhs(
         nodes,
         groups
     )
+
+    # -----------------------------------------------------
+    # dependencia de la dispersión D(u) respecto de la carga:
+    # -∇·(K d), d = ∂ₓC ∂ₓψ ∇_u D_x + ∂_zC ∂_zψ ∇_u D_z  (mismo peso θ)
+    # (adj_disp_u=False la omite, como antes de docs/reanalisis_adr_mrmt.tex)
+    # -----------------------------------------------------
+    if V_n is not None and V_N is not None and getattr(p, "adj_disp_u", True):
+        rhs -= (1-p.theta)*div_K_dterm(psiC_N, C_N, V_N, K, grad[0], grad[1], nodes, groups)
+        rhs -= p.theta*div_K_dterm(psiC_n, C_n, V_n, K, grad[0], grad[1], nodes, groups)
 
     return rhs

@@ -199,6 +199,21 @@ GRUPOS = {
         },
     },
 
+    # ── N. Modelo sin W- con almacenamiento (docs/adjunto_sin_sumidero.tex) ──
+    # Ecuación de transporte de la forma no conservativa: sin el sumidero
+    # explícito (factor_sumidero_C = 0) y con -S_s ∂ₜh·C (factor_almacenamiento_C = 1).
+    # Las 6 variantes: {adr, mrmt_semi, mrmt_block} × {BFR, FEniCS}.
+    "N_modelo_nuevo": {
+        "desc": "ADR / MRMT Semi / MRMT Bloque sin W- y con almacenamiento, BFR y FEniCS",
+        "pregunta": "¿Las 6 variantes del modelo sin W- corren y concuerdan entre backends?",
+        "casos": {
+            f"N_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C",
+                       "cfg": {"model": m, "extract_C": False, "factor_sumidero_C": 0.0,
+                               "factor_almacenamiento_C": 1.0}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+
     # ── P. Presentación: 6 variantes con adjunto (videos de grilla 3×2) ─────
     # Sustituye a scripts/generar_comparacion.py y run_all_6_variants.py.
     # Los casos se llaman como el modelo para que EXP_ROOT funcione con

@@ -379,7 +379,8 @@ def _solve_forward(ctx, Q, zp):
 
         # Positividad física: C ≥ 0 en cada paso, igual que el forward físico.
         # Nota: el recorte no es diferenciable donde C<0; el adjunto lo ignora.
-        C_cur.x.array[:] = np.maximum(C_cur.x.array, 0.0)
+        if getattr(p, "clip_C", True):
+            C_cur.x.array[:] = np.maximum(C_cur.x.array, 0.0)
 
         # --- funcional J1 = γ ∫δₚ C² dΩ  (consistente con BFR: J₁=γ∫gₚC²dΩ) ---
         C2well = ctx.comm.allreduce(
@@ -583,8 +584,14 @@ def _solve_adjoint_grad(ctx, states):
             coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
             psiC_im_N_prev = psiC_im_N    # guardar para termC_next
             psiC_im_n = [np.zeros_like(psiC_im_N[r]) for r in range(int(p.Nr))]
+            # El residuo R^C_n depende de C_im^{n-1} por -2 R α_r φ C_im^{n-1} (C_im_sum): aporta
+            # +2 R α_r (M_φ ψ_C^n) al multiplicador de C_im^{n-1}, con M_φ = ∫ φ · z_i z_j.
+            Mphi_psiC = arr(Qs, inner(ctx.phi * psiC, TestFunction(Qs)) * dx)
+            Mphi_psiC_arr = Mphi_psiC.array.copy()
+            Mphi_psiC.destroy()
             for r in range(int(p.Nr)):
-                psiC_im_n[r] = (1.0 - 2.0 * coef[r]) * psiC_im_N[r]
+                psiC_im_n[r] = ((1.0 - 2.0 * coef[r]) * psiC_im_N[r]
+                                + 2.0 * phys["R"] * float(_bwd_alpha_r[r]) * Mphi_psiC_arr)
             psiC_im_N = psiC_im_n
         else:
             psiC_im_N_prev = None
@@ -669,11 +676,15 @@ def _solve_adjoint_grad(ctx, states):
             coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
             coef = 2.0 * (1.0 - float(phys["theta_C"])) * coef
             for r in range(int(p.Nr)):
-                termC_next.array[:] += coef[r] * psiC_im_N_prev[r]
+                termC_next.array[:] -= coef[r] * psiC_im_N_prev[r]   # termC_next se resta del rhs: aporta +2(1−θ)coef ψ_im^n
 
+        # ∂R^C_n/∂h_{n-1} contiene C_cur (almacenamiento -S_s ∂ₜh·C): se evalúa en C_t^n (el C del
+        # solve de transporte, pre-MRMT en mrmt_semi), igual que Ach para h_n.
+        C_cur.x.array[:] = C_cur_transport
         Ach_prev = assemble_matrix(
             fem.form(ufl.derivative(Rc, h_prev, dh)), bcs=[]
         ); Ach_prev.assemble()
+        C_cur.x.array[:] = _C_cur_saved
         termH_next = psiH.x.petsc_vec.duplicate()
         Ahh_prev.multTranspose(psiH.x.petsc_vec, termH_next)
         tmp = psiH.x.petsc_vec.duplicate()

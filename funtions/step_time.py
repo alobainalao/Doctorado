@@ -147,13 +147,15 @@ def step_adjoint(
     AT = A_fwd.T.tocsr()
     BT = B_fwd.T.tocsr()
 
-    # Dirichlet psi_C = 0 en inlet y outlet
+    # Dirichlet psi_C = 0 en inlet y outlet. Con flujo dispersivo nulo en todo el borde (BC natural
+    # del transporte) la transpuesta exacta no lo impone: adj_C_bc_exacta=True la deja intacta.
     bc_idx = np.hstack([groups['boundary:inlet'], groups['boundary:outlet']])
-    AT = AT.tolil(); BT = BT.tolil()
-    for i in bc_idx:
-        AT[i, :] = 0; AT[i, i] = 1.0
-        BT[i, :] = 0
-    AT = AT.tocsr(); BT = BT.tocsr()
+    if not getattr(p, "adj_C_bc_exacta", False):
+        AT = AT.tolil(); BT = BT.tolil()
+        for i in bc_idx:
+            AT[i, :] = 0; AT[i, i] = 1.0
+            BT[i, :] = 0
+        AT = AT.tocsr(); BT = BT.tocsr()
 
     idx_dom = np.hstack((
         groups['interior'],
@@ -210,7 +212,8 @@ def step_adjoint(
         for r in range(p.Nr):
             rhs_C[idx_dom] += coef[r] * psiC_im_N[r][idx_dom]
 
-    rhs_C[bc_idx] = 0.0   # Dirichlet: psi_C = 0
+    if not getattr(p, "adj_C_bc_exacta", False):
+        rhs_C[bc_idx] = 0.0   # Dirichlet: psi_C = 0
 
     # solve ψ_C
     psiC_n = splu(AT).solve(rhs_C)
@@ -252,7 +255,9 @@ def step_adjoint(
         K=K,
         grad=grad,
         nodes=nodes,
-        groups=groups
+        groups=groups,
+        V_n=V_n,
+        V_N=V_N
     )
 
     # Fuente de almacenamiento del adjunto del flujo (doc. adjunto_sin_sumidero, ec. adj_flujo):

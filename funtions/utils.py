@@ -603,6 +603,15 @@ def get_init_values(new_nodes):
     c_new = interp_c(new_nodes)
     c_new = np.maximum(c_new, 0.0)  # CI no puede ser negativa físicamente
 
+    # Sólo para pruebas de gradiente: C uniforme (J_m ≠ 0 en el pozo). None = CI del archivo.
+    c_override = getattr(p, "C_init_override", None)
+    if c_override is not None:
+        c_new = np.full_like(c_new, float(c_override))
+        mod = getattr(p, "C_init_modulacion", None)   # (A, λx, λz): C0 (1 + A cos(2πx/λx) cos(2πz/λz))
+        if mod is not None:
+            A, lx, lz = mod
+            c_new = c_new * (1.0 + A * np.cos(2 * np.pi * new_nodes[:, 0] / lx) * np.cos(2 * np.pi * new_nodes[:, 1] / lz))
+
     return h_new, c_new
 
 def set_limits(ax, delt=150):
