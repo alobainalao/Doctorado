@@ -3,6 +3,8 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{amsmath,amssymb,amsthm,mathtools,booktabs,geometry,enumitem,xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
 \usepackage[hidelinks]{hyperref}
 \geometry{margin=2.4cm}
 \numberwithin{equation}{section}
@@ -18,73 +20,108 @@
 \newcommand{\bx}{\mathbf{x}}
 \newcommand{\Ceps}{g_\varepsilon}
 \newcommand{\im}{\mathrm{im}}
+\newcommand{\pA}{\psi^{\mathrm A}}          % multiplicador ADR
+\newcommand{\pM}{\psi^{\mathrm M}}          % multiplicador MRMT (móvil)
+\newcommand{\pim}{\psi_{\im}}               % multiplicador región inmóvil
+\newcommand{\phA}{\psi_h^{\mathrm A}}
+\newcommand{\phM}{\psi_h^{\mathrm M}}
 \definecolor{cSum}{RGB}{200,30,30}   % sumidero  fC
 \definecolor{cDiv}{RGB}{25,80,200}   % divergencia  C div u
 \definecolor{cAlm}{RGB}{20,140,60}   % almacenamiento  S_s h_t C
 \newcommand{\sumi}[1]{{\color{cSum}#1}}
 \newcommand{\divi}[1]{{\color{cDiv}#1}}
 \newcommand{\alm}[1]{{\color{cAlm}#1}}
+\algrenewcommand\algorithmicrequire{\textbf{Entrada:}}
+\algrenewcommand\algorithmicensure{\textbf{Salida:}}
+\algrenewcommand\algorithmicfor{\textbf{para}}
+\algrenewcommand\algorithmicdo{\textbf{hacer}}
+\algrenewcommand\algorithmicwhile{\textbf{mientras}}
+\algrenewcommand\algorithmicif{\textbf{si}}
+\algrenewcommand\algorithmicthen{\textbf{entonces}}
+\algrenewcommand\algorithmicreturn{\textbf{devolver}}
+\algrenewcommand\algorithmicend{\textbf{fin}}
+\floatname{algorithm}{Algoritmo}
 
 \title{Modelo ADR/MRMT sin sumidero de contaminante:\\
-deducción desde la forma conservativa y adjunto del modelo nuevo}
-\author{Rama \texttt{exp/sumidero-W} --- tesis doctoral}
-\date{30 de octubre de 2026}
+eliminación de términos, adjuntos por variante y\\ algoritmos de gradiente conjugado}
+\author{Tesis doctoral --- control óptimo de la contaminación en acuíferos}
+\date{}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Se parte del balance de soluto en forma conservativa, con el término
-$\nabla\!\cdot\!\mathbf{u}$ \emph{sin descartarlo}; la divergencia se despeja
-de la ecuación de flujo, con $\phi$ constante y todo el almacenamiento
-expresado en $h$. Se demuestra que el sumidero explícito
-$W_-=\chi(Q)\,g_\varepsilon C$ queda cancelado, y que sobrevive el término de
-almacenamiento $-S_s\partial_th\,C$. Se calcula el adjunto del transporte
-(ADR y MRMT), el adjunto del flujo ---que recibe una fuente nueva por ese
-término--- y el gradiente respecto a $Q$ y $z_p$, en continuo y en discreto.
+Se parte del balance de soluto en forma conservativa, conservando
+$\nabla\!\cdot\mathbf{u}$, y se demuestra que el sumidero explícito
+$\chi(Q)g_\varepsilon C$ queda cancelado y que sobrevive el término de
+almacenamiento $-S_s\partial_th\,C$. De ahí salen las ecuaciones del modelo
+nuevo para ADR y para MRMT. Para cada variante se construye el Lagrangiano,
+se deduce el sistema adjunto (transporte, regiones inmóviles y flujo) y el
+gradiente respecto de $Q(t)$ y $z_p$; se escribe el adjunto discreto de ADR,
+MRMT por bloque y MRMT semi-analítico, y los algoritmos de gradiente conjugado
+que los usan.
 \end{abstract}
-
-\tableofcontents
 
 %===========================================================
 \section{Punto de partida}
 \label{sec:partida}
 %===========================================================
 
-\paragraph{Código de colores.} En todo el documento:
+\paragraph{Código de colores.}
+$\sumi{\text{rojo}}$: sumidero $fC$ (el que se elimina);
+$\divi{\text{azul}}$: divergencia $C\,\nabla\!\cdot\bu$ (de donde sale el sumidero);
+$\alm{\text{verde}}$: almacenamiento $S_s\,\partial_th\,C$ (el que queda).
+
+\paragraph{Hoja de ruta.} (i) §1: ecuaciones de flujo y transporte conservativo. (ii) §2: se desarrolla
+$\nabla\!\cdot(\bu C)$, se sustituye $\nabla\!\cdot\bu$ y se cancela el sumidero; salen N-ADR y N-MRMT.
+(iii) §3: se define $J$ y un Lagrangiano por variante. (iv) §4--5: se deriva el Lagrangiano respecto de
+$C$, de $C_{\im,r}$ y de $h$ (cada derivada, término a término) y se anula; salen los adjuntos y el gradiente.
+(v) §6: lo mismo en forma discreta. (vi) §7: los algoritmos.
+
+\paragraph{Notación.}
 \begin{center}\small
-\begin{tabular}{ll}
-$\sumi{\text{rojo}}$ & sumidero de contaminante $fC$ (el que se elimina)\\
-$\divi{\text{azul}}$ & divergencia $C\,\nabla\!\cdot\bu$ (de donde sale el sumidero)\\
-$\alm{\text{verde}}$ & almacenamiento $S_s\,\partial_th\,C$ (el que queda)\\
-negro & términos que no cambian
+\begin{tabular}{p{3.3cm}p{11.2cm}}
+\toprule
+símbolo & significado \\
+\midrule
+$\Omega,\ \partial\Omega,\ \bn$ & dominio $\subset\mathbb{R}^2$, su frontera y la normal exterior; $Q_T=\Omega\times(0,T)$ \\
+$\Gamma_{\rm in},\Gamma_{\rm out},\Gamma_{\rm wall}$ & entrada (derecha), salida (izquierda) y paredes; $\partial\Omega$ es su unión \\
+$h,\ \bu=-\bK\nabla h$ & carga hidráulica y velocidad de Darcy ($\bK$: conductividad) \\
+$S_s,\ \phi,\ R$ & almacenamiento específico, porosidad y retardo (constantes en el tiempo) \\
+$C$ ($C_m$ en MRMT), $C_{\im,r}$ & concentración móvil y en la región inmóvil $r=1,\dots,N_r$ \\
+$\bD(\bu)$ & dispersión, $\bD=\bD(\bu)$ (depende de la velocidad) \\
+$\lambda_d,\ \lambda_r,\ \phi_{\im,r}$ & decaimiento, tasa de intercambio y porosidad inmóvil de la región $r$ \\
+$c_0$ & coeficiente de reacción: $\lambda_d\phi R$ (ADR), $\sum_r\lambda_r$ (MRMT) \\
+$Q(t),\ z_p$ & caudal de bombeo y profundidad del pozo (variables de decisión) \\
+$g_\varepsilon(\cdot;z_p)$ & kernel gaussiano de masa unidad centrado en el pozo; $\dot g_\varepsilon=\partial_{z_p}g_\varepsilon$ \\
+$f=-Q\,g_\varepsilon$ & sumidero de flujo (negativo: extracción); $f_{\rm in}$: flujo prescrito en $\Gamma_{\rm in}$ \\
+$W_+$ & fuente de contaminante \\
+$(\cdot,\cdot)=\langle\cdot,\cdot\rangle$ & producto escalar de $L^2(\Omega)$; $\oint=\int_{\partial\Omega}$ \\
+$\psi^{\rm A},\psi^{\rm M},\psi_{\im}^{\,r}$ & multiplicadores (adjuntos) del transporte ADR, del transporte móvil MRMT y de la región inmóvil $r$ \\
+$\psi_h^{\rm A},\psi_h^{\rm M}$ & multiplicadores (adjuntos) del flujo en cada variante \\
+$\hat J(Q,z_p)$ & funcional reducido (se evalúa resolviendo el estado) \\
+\bottomrule
 \end{tabular}
 \end{center}
+Convención de colores y de subíndices: $\psi^{\rm A}$ y $\psi^{\rm M}$ son el multiplicador de la ecuación de $C$
+(el superíndice indica la variante); el subíndice $h$ indica el multiplicador de la ecuación de $h$.
 
-\paragraph{Notación.} $\Omega\subset\mathbb{R}^2$, $Q_T=\Omega\times(0,T)$,
-$\Gamma_D=\Gamma_{\rm in}\cup\Gamma_{\rm out}$, $\bn$ normal exterior,
-$\bu=-\bK\nabla h$ velocidad de Darcy, $g_\varepsilon=g_\varepsilon(\cdot;z_p)$
-kernel gaussiano de masa unidad, $f=-Q(t)\,g_\varepsilon$ sumidero de flujo.
-$\phi$ y $R$ son \emph{constantes}: no aparece $\partial_t\phi$; la variación
-temporal del almacenamiento se expresa solo con $S_s\,\partial_th$.
-
-\subsection{Flujo y divergencia de la velocidad}
+\paragraph{Flujo.}
 \begin{equation}
 S_s\,\partial_th-\nabla\!\cdot(\bK\nabla h)=f=-Q\,\Ceps,\qquad \bu=-\bK\nabla h .
 \label{eq:flujo}
 \end{equation}
-Como $\nabla\!\cdot\bu=-\nabla\!\cdot(\bK\nabla h)$, la divergencia \emph{se
-despeja del flujo}:
+Como $\nabla\!\cdot\bu=-\nabla\!\cdot(\bK\nabla h)$, la divergencia se despeja del flujo:
 \begin{equation}
 \boxed{\;\divi{\nabla\!\cdot\bu}\;=\;\sumi{f}\;-\;\alm{S_s\,\partial_th}
 \;=\;\sumi{-Q\,\Ceps}\;-\;\alm{S_s\,\partial_th}\;}
 \label{eq:div_u}
 \end{equation}
 
-\subsection{Balance de soluto en forma conservativa}
-La masa por unidad de volumen es $\phi RC$, el flujo es $\bu C-\bD\nabla C$, y el
-agua que extrae el pozo se lleva el soluto con la concentración local, es decir
-retira masa a razón $fC$:
+\paragraph{Transporte en forma conservativa.}
+La masa por unidad de volumen es $\phi RC$, el flujo de soluto es $\bu C-\bD\nabla C$,
+y el agua que extrae el pozo se lleva el soluto con la concentración local
+(retira masa a razón $fC$):
 \begin{equation}
 \phi R\,\partial_tC+\nabla\!\cdot(\bu\,C-\bD\nabla C)+\lambda_d\phi R\,C
 =W_++\sumi{f\,C}.
@@ -92,10 +129,11 @@ retira masa a razón $fC$:
 \end{equation}
 
 %===========================================================
-\section{Eliminación del sumidero}
+\section{Eliminación de términos y ecuaciones del modelo nuevo}
 \label{sec:eliminacion}
 %===========================================================
 
+\subsection{ADR}
 \paragraph{Paso 1: desarrollar sin descartar $\nabla\!\cdot\bu$.}
 $\nabla\!\cdot(\bu C)=\bu\cdot\nabla C+\divi{C\,\nabla\!\cdot\bu}$, luego
 \begin{equation}
@@ -111,8 +149,8 @@ Por \eqref{eq:div_u}, $\divi{C\nabla\!\cdot\bu}=\sumi{fC}-\alm{S_s\partial_th\,C
 +\sumi{fC}-\alm{S_s\partial_th\,C}=W_++\sumi{fC}.
 \end{equation}
 
-\paragraph{Paso 3: cancelación.} El $\sumi{fC}$ está en ambos lados y se anula.
-No se anula el almacenamiento:
+\paragraph{Paso 3: cancelación.} El $\sumi{fC}$ está en ambos miembros y se anula;
+el almacenamiento no:
 \begin{equation}
 \boxed{\;\phi R\,\partial_tC+\bu\cdot\nabla C-\nabla\!\cdot(\bD\nabla C)
 +\lambda_d\phi R\,C\;\alm{-\,S_s\,\partial_th\;C}=W_+\;}
@@ -120,290 +158,316 @@ No se anula el almacenamiento:
 \label{eq:N_ADR}
 \end{equation}
 
-\begin{proposition}[Equivalencia]\label{prop:equiv}
-Sea $h$ solución de \eqref{eq:flujo}. $C$ resuelve la forma conservativa
-\eqref{eq:conservativa} si y solo si resuelve \eqref{eq:N_ADR}.
-\end{proposition}
-\begin{proof}
-Los pasos 1--3 son identidades reversibles; del flujo solo se usa
-\eqref{eq:div_u}. En sentido débil la cuenta es la misma, probando con
-$v\in H^1_{\Gamma_D}$.
-\end{proof}
-
 \begin{center}\small
 \begin{tabular}{p{2.6cm}p{5.4cm}p{6.6cm}}
 \toprule
 término & origen & destino \\
 \midrule
-$\sumi{fC}$ & lado derecho de \eqref{eq:conservativa} (extracción) & se cancela con la parte $\sumi{fC}$ de $\divi{C\nabla\!\cdot\bu}$ \\
+$\sumi{fC}$ & miembro derecho de \eqref{eq:conservativa} (extracción) & se cancela con la parte $\sumi{fC}$ de $\divi{C\nabla\!\cdot\bu}$ \\
 $\divi{C\nabla\!\cdot\bu}$ & regla del producto en $\nabla\!\cdot(\bu C)$ & $=\sumi{fC}-\alm{S_s\partial_th\,C}$ por \eqref{eq:div_u} \\
 $\alm{S_s\partial_th\,C}$ & parte de $\nabla\!\cdot\bu$ debida al almacenamiento & \textbf{queda} en \eqref{eq:N_ADR} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\subsection{Balance de masa}
-Sea $m=\int_\Omega\phi RC$. Integrando \eqref{eq:N_ADR} y usando
-$\int\bu\cdot\nabla C=\oint C\bu\cdot\bn-\int\divi{C\nabla\!\cdot\bu}$ con
-\eqref{eq:div_u}:
-\begin{equation}
-\frac{dm}{dt}=-\oint_{\partial\Omega}(\bu C-\bD\nabla C)\cdot\bn+\int_\Omega W_+-\lambda_dm
-\;\sumi{-\,Q\!\int_\Omega\Ceps C}\;\alm{-\,S_s\!\int_\Omega\partial_th\,C}\;
-\alm{+\,S_s\!\int_\Omega\partial_th\,C}.
-\end{equation}
-Los dos sumandos verdes (uno de la divergencia, otro del término de
-\eqref{eq:N_ADR}) se anulan: queda $\sumi{-Q\int\Ceps C}$, la extracción del
-pozo, sin $W_-$.
-
-\begin{proposition}[El sumidero explícito duplica la extracción]\label{prop:doble}
-Si a \eqref{eq:N_ADR} se le suma $\sumi{\chi(Q)\Ceps C}$ en el lado izquierdo
-(modelo previo), el balance queda con $\sumi{-(Q+\chi)\int\Ceps C}$.
+\begin{proposition}[Equivalencia]\label{prop:equiv}
+Sea $h$ solución de \eqref{eq:flujo}. $C$ resuelve \eqref{eq:conservativa} si y solo si
+resuelve \eqref{eq:N_ADR}.
 \end{proposition}
+\begin{proof}
+Los pasos 1--3 son identidades reversibles y del flujo solo se usa \eqref{eq:div_u}.
+En sentido débil la cuenta es la misma probando con $v\in H^1(\Omega)$ (no hay término de
+frontera en la forma no integrada por partes de $\bu\cdot\nabla C$).
+\end{proof}
 
-\paragraph{Prueba local.} Donde $C$ es localmente constante y $W_+=\lambda_d=0$,
-\eqref{eq:N_ADR} da $\phi R\,\partial_tC=\alm{S_s\partial_th\,C}$: sin
-almacenamiento ($\partial_th=0$) la concentración no cambia al extraer agua de
-concentración uniforme. Con $W_-$ habría $\phi R\,\partial_tC=-\sumi{\chi\Ceps C}<0$:
-un «agujero» en el pozo.
-
-\begin{remark}[El término verde]
-$\alm{S_s\partial_th\,C}$ sube (baja) $C$ cuando $h$ sube (baja). Con
-$S_s=\phi=0.1$ (valor no físico del código) crea masa apreciable; con
-$S_s\sim10^{-5}\,$m$^{-1}$ es pequeño, pero es parte del modelo y se
-conserva. El código actual (\texttt{factor\_sumidero\_C}$=0$) \textbf{no lo
-implementa}.
-\end{remark}
-
-\begin{remark}[Unidades]
-$\Ceps$ tiene m$^{-2}$ y $f=-Q\Ceps$ las de $S_s\partial_th$ (s$^{-1}$), luego
-$Q$ es caudal por unidad de espesor. $\chi(Q)\Ceps C$ con $\chi$ adimensional
-solo es coherente con un factor implícito de 1\,m$^2$/s.
-\end{remark}
-
-%===========================================================
-\section{El modelo nuevo: ADR y MRMT}
-\label{sec:modelo_nuevo}
-%===========================================================
-
-El intercambio $\sum_r\lambda_r(C-C_{\im,r})$ no contiene $\bu$ ni $f$ y la
-ecuación inmóvil es una EDO local ($\phi_{\im,r}$ constante). Los pasos 1--3 se
-repiten: $\sumi{fC}$ se cancela y $\alm{S_s\partial_th\,C}$ permanece.
+\subsection{MRMT}
+El intercambio con las regiones inmóviles, $\sum_r\lambda_r(C_m-C_{\im,r})$, no contiene
+$\bu$ ni $f$, y la ecuación inmóvil es una EDO local ($\phi_{\im,r}$ constante). Los pasos 1--3
+se repiten sin cambios sobre la ecuación móvil
+$\phi R\,\partial_tC_m+\nabla\!\cdot(\bu C_m-\bD\nabla C_m)+\sum_r\lambda_r(C_m-C_{\im,r})=W_++\sumi{fC_m}$:
 \begin{equation}
 \boxed{\begin{aligned}
-&\phi R\,\partial_tC+\bu\cdot\nabla C-\nabla\!\cdot(\bD\nabla C)
-+c_0\,C\;\alm{-\,S_s\partial_th\,C}-\sum_{r=1}^{N_r}\lambda_r\,C_{\im,r}=W_+,\\
-&\phi_{\im,r}R\,\partial_tC_{\im,r}=\lambda_r\,(C-C_{\im,r}),\quad r=1,\dots,N_r,
+&\phi R\,\partial_tC_m+\bu\cdot\nabla C_m-\nabla\!\cdot(\bD\nabla C_m)
++\sum_{r=1}^{N_r}\lambda_r\,(C_m-C_{\im,r})\;\alm{-\,S_s\partial_th\,C_m}=W_+,\\
+&\phi_{\im,r}R\,\partial_tC_{\im,r}=\lambda_r\,(C_m-C_{\im,r}),\quad r=1,\dots,N_r.
 \end{aligned}}
+\tag{N-MRMT}
 \label{eq:N_MRMT}
 \end{equation}
-con $c_0=\lambda_d\phi R$ (ADR, $N_r=0$) o $c_0=\sum_r\lambda_r$ (MRMT).
-Condiciones: $C=0$ en $\Gamma_D$, $(\bD\nabla C)\cdot\bn=0$ en
-$\Gamma_{\rm wall}$.
+En lo que sigue se escribe $C$ por $C_m$ en MRMT y se define el coeficiente de reacción
+$c_0=\lambda_d\phi R$ en ADR y $c_0=\sum_r\lambda_r$ en MRMT.
 
-\begin{remark}[Energía]
-Probando con $C$: $\int(\bu\cdot\nabla C)C=-\tfrac12\int\divi{(\nabla\!\cdot\bu)}C^2
-=\tfrac12\int(\sumi{Q\Ceps}+\alm{S_s\partial_th})C^2$ (pues $C=0$ en
-$\Gamma_D$ y $\bu\cdot\bn=0$ en $\Gamma_{\rm wall}$), y el término
-de almacenamiento aporta $-\alm{S_s\partial_th}C^2$. El coeficiente neto de
-$C^2$ es $\tfrac12(\sumi{Q\Ceps}-\alm{S_s\partial_th})$: acotado si
-$\partial_th\in L^\infty$, y Gronwall da la estimación de energía.
-\end{remark}
+\subsection{Condiciones de frontera e iniciales}
+Con $\Gamma_{\rm in}$ a la derecha, $\Gamma_{\rm out}$ a la izquierda y $\Gamma_{\rm wall}$ el
+resto (el flujo va de derecha a izquierda):
+\begin{center}\small
+\begin{tabular}{lll}
+\toprule
+ & flujo $h$ & transporte $C$ \\
+\midrule
+$\Gamma_{\rm in}$ & $(\bK\nabla h)\cdot\bn=f_{\rm in}\ge0$, es decir $\bu\cdot\bn=-f_{\rm in}\le0$ & $(\bD\nabla C)\cdot\bn=0$ \\
+$\Gamma_{\rm wall}$ & $(\bK\nabla h)\cdot\bn=0$ & $(\bD\nabla C)\cdot\bn=0$ \\
+$\Gamma_{\rm out}$ & libre ($\nabla(\bK\nabla h)\cdot\bn=0$) & $(\bD\nabla C)\cdot\bn=0$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+El contaminante solo cruza la frontera por advección. Condiciones iniciales:
+$h(0)=h_0$, $C(0)=C_0$, $C_{\im,r}(0)=C_{\im,r,0}$.
 
 %===========================================================
-\section{Lagrangiano del modelo nuevo}
+\section{Funcional y Lagrangianos}
 \label{sec:lagrangiano}
 %===========================================================
 
-Espacios $V_h=H^1(\Omega)$, $V_C=H^1_{\Gamma_D}(\Omega)$, $V_{\im}=L^2(\Omega)$.
-\begin{align}
-a_h(h,v)&=\int_\Omega\bK\nabla h\cdot\nabla v-\int_{\Gamma_{\rm out}}(\bK\nabla h\cdot\bn)v,\quad
-\ell_h(v;u)=-Q\!\int_\Omega\Ceps v-\int_{\Gamma_{\rm in}}f_{\rm in}v,\\
-a_C(C,v;h)&=\int_\Omega\bD(\bu)\nabla C\cdot\nabla v+\int_\Omega(\bu\cdot\nabla C)\,v
+\begin{equation}
+J=\gamma J_m+\alpha J_{\rm inst}+\beta J_{\rm op},\qquad
+J_m=\!\int_0^T\!\!\!\int_\Omega\Ceps\,C^2,\quad
+J_{\rm inst}=\kappa_p(z_p-z_0)^2,\quad J_{\rm op}=d_p\!\int_0^TQ^2\,dt,
+\end{equation}
+con $d_p=z_0-z_p$. Espacios $V_h=V_C=H^1(\Omega)$, $V_{\im}=L^2(\Omega)$. Formas del flujo:
+\begin{equation}
+a_h(h,v)=\int_\Omega\bK\nabla h\cdot\nabla v-\int_{\Gamma_{\rm out}}(\bK\nabla h\cdot\bn)v,\qquad
+\ell_h(v;Q,z_p)=-Q\!\int_\Omega\Ceps v+\int_{\Gamma_{\rm in}}f_{\rm in}v .
+\end{equation}
+Forma del transporte (común a ambas variantes salvo $c_0$ y el acoplamiento):
+\begin{equation}
+a_C(C,v;h)=\int_\Omega\bD(\bu)\nabla C\cdot\nabla v+\int_\Omega(\bu\cdot\nabla C)\,v
 +\int_\Omega c_0\,Cv\;\alm{-\int_\Omega S_s\,\partial_th\;C\,v}.
 \label{eq:aC_nueva}
-\end{align}
-$a_C$ \textbf{no depende del control} directamente, pero depende de $h$ por
-$\bu$ y, ahora, por $\partial_th$. Lagrangiano con la convención del Capítulo~3
-(residuos sumados a $J=\gamma J_m+\alpha J_{\rm inst}+\beta J_{\rm op}$):
-\begin{multline}
-\mathcal{L}=J+\!\int_0^T\!\!\Bigl[\langle S_s\partial_th,\psi_h\rangle+a_h(h,\psi_h)-\ell_h(\psi_h;u)
-+\langle\phi R\partial_tC,\psi_C\rangle+a_C(C,\psi_C;h)\\
--\textstyle\sum_r\lambda_r(C_{\im,r},\psi_C)-(W_+,\psi_C)
-+\sum_r\bigl(\phi_{\im,r}R\partial_tC_{\im,r}+\lambda_r(C_{\im,r}-C),\psi_{\im,r}\bigr)\Bigr]dt .
-\label{eq:L_nueva}
-\end{multline}
-Condiciones terminales: $\psi_h(T)=\psi_C(T)=\psi_{\im,r}(T)=0$.
+\end{equation}
+$a_C$ no depende del control, pero sí de $h$, por $\bu$ y por $\partial_th$.
 
-%===========================================================
-\section{Adjunto del transporte (ADR y MRMT)}
-\label{sec:adjunto_C}
-%===========================================================
-
-\subsection{Derivada respecto a $C$}
-Con $\delta C\in V_C$, $\delta C(0)=0$: (a) $2\gamma(\Ceps C,\delta C)$ de $\gamma J_m$;
-(b) $-\langle\phi R\partial_t\psi_C,\delta C\rangle$; (c) $a_C(\delta C,\psi_C;h)$,
-que ahora incluye $\alm{-S_s\partial_th(\delta C,\psi_C)}$; (d)
-$-\sum_r\lambda_r(\psi_{\im,r},\delta C)$. El adjunto es: $\psi_C(t)\in V_C$,
-$\psi_C(T)=0$,
+\paragraph{Estado en forma débil (lo que se multiplica por los multiplicadores).} Para todo $v\in V_h$ y
+todo $w\in V_C$, en cada instante:
 \begin{equation}
--\langle\phi R\partial_t\psi_C,\eta\rangle+a_C(\eta,\psi_C;h)
--\sum_{r}\lambda_r(\psi_{\im,r},\eta)=-2\gamma(\Ceps C,\eta)\quad\forall\eta\in V_C .
+\underbrace{\langle S_s\partial_th,v\rangle+a_h(h,v)-\ell_h(v;Q,z_p)}_{R^h(h;v)}=0,\qquad
+\underbrace{\langle\phi R\partial_tC,w\rangle+a_C(C,w;h)-(W_+,w)}_{R^C(C,h;w)}=0 .
+\label{eq:estado_debil}
+\end{equation}
+\emph{Idea del método.} Se resuelve el problema $\min\hat J$ sujeto a $R^h=0$ y $R^C=0$ añadiendo a $J$ los
+residuos multiplicados por $\psi_h$ y $\psi_C$ (Lagrangiano). Si $h$ y $C$ cumplen el estado, el
+Lagrangiano vale $J$; si además se eligen $\psi_h,\psi_C$ de modo que $\partial_C\mathcal{L}=0$ y
+$\partial_h\mathcal{L}=0$, la derivada de $\hat J$ respecto del control es la derivada parcial de
+$\mathcal{L}$ respecto del control, sin tener que derivar el estado.
+Convención: los residuos se suman a $J$.
+
+\paragraph{Lagrangiano ADR.}
+\begin{multline}
+\mathcal{L}^{\rm A}=J+\!\int_0^T\!\!\Bigl[\langle S_s\partial_th,\phA\rangle+a_h(h,\phA)-\ell_h(\phA;Q,z_p)\\
++\langle\phi R\partial_tC,\pA\rangle+a_C(C,\pA;h)-(W_+,\pA)\Bigr]dt .
+\label{eq:L_ADR}
+\end{multline}
+
+\paragraph{Lagrangiano MRMT.}
+\begin{multline}
+\mathcal{L}^{\rm M}=J+\!\int_0^T\!\!\Bigl[\langle S_s\partial_th,\phM\rangle+a_h(h,\phM)-\ell_h(\phM;Q,z_p)
++\langle\phi R\partial_tC_m,\pM\rangle+a_C(C_m,\pM;h)\\
+-\textstyle\sum_r\lambda_r(C_{\im,r},\pM)-(W_+,\pM)
++\sum_r\bigl(\phi_{\im,r}R\partial_tC_{\im,r}+\lambda_r(C_{\im,r}-C_m),\pim^{\,r}\bigr)\Bigr]dt .
+\label{eq:L_MRMT}
+\end{multline}
+Las variaciones respecto de los multiplicadores recuperan el estado. Como $J$ no tiene término
+terminal, $\psi(T)=0$ en todos los multiplicadores.
+
+%===========================================================
+\section{Adjunto del modelo ADR}
+\label{sec:adj_ADR}
+%===========================================================
+
+\subsection{Variación respecto de $C$: adjunto del transporte}
+Se perturba $C\to C+\epsilon\,\eta$ con $\eta\in V_C$, $\eta(0)=0$ (el estado inicial es dato), y se
+calcula $\frac{d}{d\epsilon}\mathcal{L}^{\rm A}\big|_{\epsilon=0}$ término a término:
+\begin{enumerate}[label=\textbf{(\alph*)},nosep]
+\item \emph{Funcional.} $J_m=\int\!\!\int\Ceps C^2$ aporta $2\gamma\int_0^T(\Ceps C,\eta)\,dt$ (los términos
+  $J_{\rm inst}$, $J_{\rm op}$ y $R^h$ no dependen de $C$).
+\item \emph{Derivada temporal.} $\int_0^T\langle\phi R\partial_t\eta,\pA\rangle dt
+  =\bigl[\langle\phi R\eta,\pA\rangle\bigr]_0^T-\int_0^T\langle\phi R\,\eta,\partial_t\pA\rangle dt
+  =-\int_0^T\langle\phi R\,\partial_t\pA,\eta\rangle dt$, porque $\eta(0)=0$ y $\pA(T)=0$.
+\item \emph{Forma $a_C$.} Es lineal en $C$, así que aporta $\int_0^Ta_C(\eta,\pA;h)\,dt$.
+\item \emph{Fuente $W_+$.} No depende de $C$ y no aporta.
+\end{enumerate}
+Sumando (a)--(c) e imponiendo que sea cero para toda $\eta$ (y todo instante) se obtiene el problema débil
+\begin{equation}
+-\langle\phi R\partial_t\pA,\eta\rangle+a_C(\eta,\pA;h)=-2\gamma(\Ceps C,\eta)\quad\forall\eta\in V_C,
+\qquad\pA(T)=0 .
 \label{eq:adj_debil}
 \end{equation}
-
-\subsection{Forma fuerte}
-Con $\int(\bu\cdot\nabla\eta)\psi_C=-\int\eta\,\nabla\!\cdot(\bu\psi_C)+\oint(\bu\cdot\bn)\eta\psi_C$
-(frontera nula: $\eta=0$ en $\Gamma_D$, $\bu\cdot\bn=0$ en $\Gamma_{\rm wall}$):
+\paragraph{Paso a forma fuerte.} Se integra por partes en espacio los dos términos de $a_C(\eta,\pA;h)$ que
+tienen derivadas de $\eta$ (los de orden cero, $\int c_0\eta\pA$ y $-\int S_s\partial_th\,\eta\pA$, pasan tal cual):
+\[
+\int_\Omega\bD\nabla\eta\cdot\nabla\pA=-\!\int_\Omega\eta\,\nabla\!\cdot(\bD\nabla\pA)+\oint\eta\,(\bD\nabla\pA)\cdot\bn,
+\qquad
+\int_\Omega(\bu\cdot\nabla\eta)\pA=-\!\int_\Omega\eta\,\nabla\!\cdot(\bu\pA)+\oint(\bu\cdot\bn)\eta\,\pA .
+\]
+Se separa en dos pasos: (1) con $\eta$ de soporte compacto en $\Omega$ los términos de borde se anulan
+y queda la ecuación en el interior; (2) con $\eta$ arbitraria en $\partial\Omega$ (no hay Dirichlet),
+la suma de los dos términos de borde, $\oint\eta\,(\bD\nabla\pA+\bu\,\pA)\cdot\bn$, debe ser cero:
+es la condición natural del adjunto (flujo total nulo de $\pA$). Resultado:
 \begin{equation}
 \boxed{\begin{aligned}
-&-\phi R\,\partial_t\psi_C-\nabla\!\cdot(\bD\nabla\psi_C)-\nabla\!\cdot(\bu\,\psi_C)
-+c_0\,\psi_C\;\alm{-\,S_s\partial_th\,\psi_C}-\sum_{r}\lambda_r\,\psi_{\im,r}=-2\gamma\,\Ceps\,C,\\
-&\psi_C(\cdot,T)=0,\quad \psi_C=0\ \text{en }\Gamma_D,\quad
-(\bD\nabla\psi_C)\cdot\bn=0\ \text{en }\Gamma_{\rm wall}.
+&-\phi R\,\partial_t\pA-\nabla\!\cdot(\bD\nabla\pA)-\nabla\!\cdot(\bu\,\pA)
++c_0\,\pA\;\alm{-\,S_s\partial_th\,\pA}=-2\gamma\,\Ceps\,C,\\
+&\pA(\cdot,T)=0,\qquad(\bD\nabla\pA+\bu\,\pA)\cdot\bn=0\ \text{ en }\partial\Omega .
 \end{aligned}}
 \label{eq:adj_fuerte}
 \end{equation}
+En $\Gamma_{\rm wall}$, como $\bu\cdot\bn=0$, la condición se reduce a $(\bD\nabla\pA)\cdot\bn=0$.
+Es el adjunto del flujo dispersivo nulo del estado.
 
-\subsection{La divergencia, otra vez del flujo}
-$-\nabla\!\cdot(\bu\psi_C)=-\bu\cdot\nabla\psi_C-\divi{\psi_C\nabla\!\cdot\bu}$ y,
-por \eqref{eq:div_u}, $-\divi{\psi_C\nabla\!\cdot\bu}=\sumi{Q\Ceps\psi_C}+\alm{S_s\partial_th\,\psi_C}$.
-Sustituyendo:
+\subsection{Eliminación en el adjunto: forma no conservativa}
+$-\nabla\!\cdot(\bu\pA)=-\bu\cdot\nabla\pA-\divi{\pA\,\nabla\!\cdot\bu}$ y, por \eqref{eq:div_u},
+$-\divi{\pA\nabla\!\cdot\bu}=\sumi{Q\Ceps\pA}+\alm{S_s\partial_th\,\pA}$. Sustituyendo:
 \begin{equation}
--\phi R\,\partial_t\psi_C-\nabla\!\cdot(\bD\nabla\psi_C)-\bu\cdot\nabla\psi_C
-+c_0\psi_C+\sumi{Q\,\Ceps\,\psi_C}
-\;\underbrace{\alm{+\,S_s\partial_th\,\psi_C-S_s\partial_th\,\psi_C}}_{=\,0}
--\sum_r\lambda_r\psi_{\im,r}=-2\gamma\,\Ceps\,C .
+-\phi R\,\partial_t\pA-\nabla\!\cdot(\bD\nabla\pA)-\bu\cdot\nabla\pA
++c_0\pA+\sumi{Q\,\Ceps\,\pA}
+\;\underbrace{\alm{+\,S_s\partial_th\,\pA-S_s\partial_th\,\pA}}_{=\,0}=-2\gamma\,\Ceps\,C .
 \label{eq:adj_noconservativa}
 \end{equation}
-El verde de la divergencia y el verde del almacenamiento se cancelan: el
-adjunto en forma no conservativa queda con el pozo solo como $\sumi{Q\Ceps\psi_C}$
-(consecuencia de la divergencia, no de un $W_-$), y sin $\partial_th$.
+El verde de la divergencia y el del almacenamiento se cancelan: en forma no conservativa
+el pozo aparece solo como $\sumi{Q\Ceps\pA}$ (consecuencia de la divergencia, no de un $W_-$) y
+no hay $\partial_th$.
 
-\subsection{Regiones inmóviles}
-$J$ no depende de $C_{\im,r}$. La derivada aporta $-\lambda_r(\psi_C,\delta C_{\im,r})$
-del intercambio móvil y, de la ecuación inmóvil integrada por partes,
-$-(\phi_{\im,r}R\partial_t\psi_{\im,r},\delta C_{\im,r})+\lambda_r(\psi_{\im,r},\delta C_{\im,r})$:
-\begin{equation}
-\boxed{\ \phi_{\im,r}R\,\partial_t\psi_{\im,r}=\lambda_r\,(\psi_{\im,r}-\psi_C),
-\qquad\psi_{\im,r}(\cdot,T)=0\ }
-\label{eq:adj_inmovil}
-\end{equation}
-Es la misma ecuación del modelo previo: ni el sumidero ni el almacenamiento
-actúan sobre las regiones inmóviles. Con $\alpha_r=\lambda_r/(\phi_{\im,r}R)$,
-\begin{equation}
-\psi_{\im,r}(t)=\alpha_r\int_t^Te^{-\alpha_r(s-t)}\,\psi_C(s)\,ds ,
-\label{eq:psi_im_memoria}
-\end{equation}
-una memoria hacia el futuro; el acoplamiento móvil es
-$\sum_r\lambda_r(\psi_C-\psi_{\im,r})$.
-
-\subsection{Sistema adjunto del transporte}
-\begin{equation}
-\left\{\begin{aligned}
-&-\phi R\partial_t\psi_C-\nabla\!\cdot(\bD\nabla\psi_C)-\bu\cdot\nabla\psi_C
-+c_0\psi_C+\sumi{Q\Ceps\psi_C}-\textstyle\sum_r\lambda_r\psi_{\im,r}=-2\gamma\Ceps C,\\
-&\phi_{\im,r}R\,\partial_t\psi_{\im,r}=\lambda_r(\psi_{\im,r}-\psi_C),\quad r=1..N_r,\\
-&\psi_C(T)=\psi_{\im,r}(T)=0,
-\end{aligned}\right.
-\label{eq:sistema_adjunto_nuevo}
-\end{equation}
-con ADR ($N_r=0$, $c_0=\lambda_d\phi R$) y MRMT ($c_0=\sum_r\lambda_r$).
-
-%===========================================================
-\section{Adjunto del flujo y gradiente}
-\label{sec:adjunto_h}
-%===========================================================
-
-\subsection{Derivada respecto a $h$}
-$h$ entra en $\mathcal{L}$ por $\bu$ (advección y $\bD(\bu)$), por la ecuación
-de flujo y, \emph{ahora}, por $\alm{-S_s\partial_th\,C}$:
+\subsection{Variación respecto de $h$: adjunto del flujo}
+Se perturba $h\to h+\epsilon\,\delta h$, $\delta h(0)=0$. Entonces $\delta\bu=-\bK\nabla\delta h$ y
+$\delta(\partial_th)=\partial_t\delta h$. $h$ entra en $\mathcal{L}^{\rm A}$ por tres vías:
+\begin{enumerate}[label=\textbf{(\alph*)},nosep]
+\item \emph{Ecuación de flujo.} $\langle S_s\partial_t\delta h,\phA\rangle+a_h(\delta h,\phA)$ (lineal en $h$).
+\item \emph{Advección} $\int(\bu\cdot\nabla C)\pA$: $\delta=\int(\delta\bu\cdot\nabla C)\pA=-\int\bK\nabla\delta h\cdot(\pA\nabla C)$.
+\item \emph{Dispersión} $\int\bD(\bu)\nabla C\cdot\nabla\pA$: $\delta=\int(\partial_{\bu}\bD[\delta\bu]\nabla C)\cdot\nabla\pA
+  =-\int\bK\nabla\delta h\cdot\bd$, con
+  $\bd=\partial_xC\,\partial_x\pA\,\nabla_{\bu}D_x+\partial_zC\,\partial_z\pA\,\nabla_{\bu}D_z$
+  (derivada de $\bD$ respecto de $\bu$).
+\item \emph{Almacenamiento} $-\int S_s\partial_th\,C\,\pA$: $\delta=-S_s\int\partial_t\delta h\;C\,\pA$.
+\end{enumerate}
+Las vías (b) y (c) se agrupan con $\bb=\pA\nabla C+\bd$ y (d) es la contribución del almacenamiento:
 \[
-\partial_ha_C[\delta h]=-\int_\Omega\bK\bb\cdot\nabla\delta h\;\alm{-\,S_s\int_\Omega\partial_t\delta h\;C\,\psi_C},
-\qquad\bb=\psi_C\nabla C+\bd,
+\partial_ha_C[\delta h]=-\int_\Omega\bK\bb\cdot\nabla\delta h\;\alm{-\,S_s\int_\Omega\partial_t\delta h\;C\,\pA}.
 \]
-con $\bd=\partial_xC\,\partial_x\psi_C\,\nabla_{\bu}D_x+\partial_zC\,\partial_z\psi_C\,\nabla_{\bu}D_z$.
-Integrando por partes en $t$ ($\delta h(0)=0$, $\psi_C(T)=0$):
+Integrando por partes en $t$ ($\delta h(0)=0$, $\pA(T)=0$):
 \[
-\alm{-S_s\!\int_0^T\!\!\!\int_\Omega\partial_t\delta h\,C\psi_C
-=+S_s\!\int_0^T\!\!\!\int_\Omega\delta h\;\partial_t(C\psi_C)} .
+\alm{-S_s\!\int_0^T\!\!\!\int_\Omega\partial_t\delta h\,C\pA
+=+S_s\!\int_0^T\!\!\!\int_\Omega\delta h\;\partial_t(C\pA)} .
 \]
-Anulando $\partial_h\mathcal{L}$ para toda $\delta h$: $\psi_h(t)\in V_h$,
-$\psi_h(T)=0$,
+Se suman (a), (b)--(c) y (d), se integra por partes en $t$ el término $S_s\langle\partial_t\delta h,\phA\rangle$
+(que da $-S_s\langle\delta h,\partial_t\phA\rangle$ con $\phA(T)=0$) y en espacio los términos con $\nabla\delta h$.
+Anulando $\partial_h\mathcal{L}^{\rm A}$ para toda $\delta h$:
 \begin{equation}
--\langle S_s\partial_t\psi_h,v\rangle+a_h(v,\psi_h)=\int_\Omega\bK\bb\cdot\nabla v
-\;\alm{-\,S_s\int_\Omega\partial_t(C\psi_C)\,v}\quad\forall v\in V_h,
-\label{eq:adj_flujo_debil}
-\end{equation}
-\begin{equation}
-\boxed{-S_s\partial_t\psi_h-\nabla\!\cdot(\bK\nabla\psi_h)
-=-\nabla\!\cdot(\bK\bb)\;\alm{-\,S_s\,\partial_t(C\,\psi_C)}}
+\boxed{-S_s\partial_t\phA-\nabla\!\cdot(\bK\nabla\phA)
+=-\nabla\!\cdot(\bK\bb)\;\alm{-\,S_s\,\partial_t(C\,\pA)}}
 \label{eq:adj_flujo}
 \end{equation}
-Las condiciones de frontera son las del Capítulo~3: $\bK\nabla\psi_h\cdot\bn=\bK\bb\cdot\bn$
-en $\Gamma_{\rm in}\cup\Gamma_{\rm wall}$ y el par $\psi_h=0$,
-$\bK\nabla\psi_h\cdot\bn=\bK\bb\cdot\bn$ en $\Gamma_{\rm out}$ (el término
-nuevo es de volumen). La fuente nueva acopla el adjunto del flujo con
-$C\psi_C$ incluso si $\bb=0$.
+con $\phA(T)=0$ y $\bK\nabla\phA\cdot\bn=\bK\bb\cdot\bn$ en $\Gamma_{\rm in}\cup\Gamma_{\rm wall}$. En
+$\Gamma_{\rm out}$ la condición libre del estado deja a $\phA$ sobredeterminada
+($\phA=0$ y $\bK\nabla\phA\cdot\bn=\bK\bb\cdot\bn$); por eso el adjunto se define a nivel discreto
+(\S\ref{sec:discreto}). La fuente verde es nueva: acopla el adjunto del flujo con $C\pA$ aun
+con $\bb=0$.
 
 \subsection{Gradiente}
-El control está en $\ell_h$, en $\beta J_{\rm op}$ y en el kernel de $J_m$ y
-de $\ell_h$; no en el transporte. Con $d_p=z_0-z_p$:
+Con $h,C$ y los multiplicadores en su valor de estado/adjunto, $\partial_Q\hat J=\partial_Q\mathcal{L}$.
+El control aparece en tres sitios: $-\ell_h(\phA;Q,z_p)=+Q\int g_\varepsilon\phA-\int_{\Gamma_{\rm in}}f_{\rm in}\phA$ (derivada respecto de $Q$:
+$+\int g_\varepsilon\phA$), $\beta J_{\rm op}$
+(derivada $2\beta d_pQ$) y el kernel $g_\varepsilon(z_p)$; no aparece en el transporte (ya no hay sumidero
+$\chi(Q)$):
 \begin{equation}
-\boxed{\ \nabla_Q\hat J(t)=2\beta\,d_p\,Q(t)+\int_\Omega\Ceps\,\psi_h\,d\bx\ }
+\boxed{\ \nabla_Q\hat J(t)=2\beta\,d_p\,Q(t)+\int_\Omega\Ceps\,\phA\,d\bx\ }
 \label{eq:grad_Q}
 \end{equation}
 \begin{equation}
 \boxed{\ \frac{\partial\hat J}{\partial z_p}=\gamma\!\int_0^T\!\!\!\int_\Omega\dot g_\varepsilon C^2
 +2\alpha\kappa_p(z_p-z_0)-\beta\!\int_0^TQ^2\,dt
-+\int_0^T\!\!Q(t)\!\int_\Omega\dot g_\varepsilon\,\psi_h\,d\bx\,dt\ }
++\int_0^T\!\!Q(t)\!\int_\Omega\dot g_\varepsilon\,\phA\,d\bx\,dt\ }
 \label{eq:grad_z}
 \end{equation}
-Respecto al modelo previo se van $\sumi{\chi'(Q)\!\int\!\Ceps C\psi_C}$ en
-\eqref{eq:grad_Q} y $\sumi{\int\!\chi\dot g_\varepsilon C\psi_C}$ en
-\eqref{eq:grad_z}. La fórmula no cambia de forma, pero $\psi_h$ es otro porque
-resuelve \eqref{eq:adj_flujo}. Con $Q$ constante a trozos,
-$\partial\hat J/\partial Q_n=\int_{I_n}\nabla_Q\hat J\,dt$.
-
-\subsection{Comprobación con las sensibilidades}
-Para $\delta u=(\delta Q,0)$: $S_s\partial_t\delta h-\nabla\!\cdot(\bK\nabla\delta h)=-\delta Q\,\Ceps$ y
-\[
-\phi R\partial_t\delta C+\bu\cdot\nabla\delta C+\delta\bu\cdot\nabla C-\nabla\!\cdot(\bD\nabla\delta C)
--\nabla\!\cdot(\bD'[\delta\bu]\nabla C)+c_0\delta C\;\alm{-\,S_s\partial_th\,\delta C-S_s\partial_t\delta h\,C}
--\textstyle\sum_r\lambda_r\delta C_{\im,r}=0,
-\]
-(sin fuente en $\delta Q$ dentro del transporte). Probando \eqref{eq:adj_debil} con
-$\delta C$ y la linealizada con $\psi_C$, el intercambio se cancela por
-\eqref{eq:adj_inmovil} ($\lambda_r(\delta C,\psi_{\im,r})=\lambda_r(\psi_C,\delta C_{\im,r})$),
-y queda
-\[
-2\gamma\!\int_0^T(\Ceps C,\delta C)\,dt=\int_0^T\partial_ha_C[\delta h]\,dt
-=-\int\!\!\int\bK\bb\cdot\nabla\delta h\;\alm{+\,S_s\int\!\!\int\delta h\,\partial_t(C\psi_C)}.
-\]
-Probando \eqref{eq:adj_flujo_debil} con $v=\delta h$ y la ecuación de $\delta h$
-con $\psi_h$, el lado derecho vale $\int\delta Q\bigl(\int\Ceps\psi_h\bigr)dt$,
-que es el término de $J_m$ en \eqref{eq:grad_Q}. El término verde de
-\eqref{eq:adj_flujo} es el que cierra la identidad: sin él el gradiente no
-sería la derivada del modelo con almacenamiento.
+con $\dot g_\varepsilon=\partial_{z_p}\Ceps$. Con $Q$ constante a trozos,
+$\partial\hat J/\partial Q_n=\int_{I_n}\nabla_Q\hat J\,dt$. Respecto del modelo con sumidero
+desaparecen los términos en $\chi'(Q)$ y $\chi$; $\phA$ es otro porque resuelve \eqref{eq:adj_flujo}.
 
 %===========================================================
-\section{Adjunto discreto}
+\section{Adjunto del modelo MRMT}
+\label{sec:adj_MRMT}
+%===========================================================
+
+\subsection{Variación respecto de $C_m$}
+Se perturba $C_m\to C_m+\epsilon\eta$ y se repiten los pasos (a)--(c) de ADR (funcional, tiempo y
+$a_C$ con $c_0=\sum_r\lambda_r$, que ya contiene el término $\lambda_rC_m$ del intercambio) y se añade una
+contribución: la ecuación inmóvil, multiplicada por $\pim^{\,r}$, contiene $-\lambda_rC_m$, cuya derivada
+es $-\sum_r\lambda_r(\pim^{\,r},\eta)$. Por tanto el adjunto móvil es el de ADR más ese acoplamiento:
+\begin{equation}
+-\phi R\,\partial_t\pM-\nabla\!\cdot(\bD\nabla\pM)-\nabla\!\cdot(\bu\,\pM)
++\Bigl(\sum_r\lambda_r\Bigr)\pM\;\alm{-\,S_s\partial_th\,\pM}-\sum_r\lambda_r\,\pim^{\,r}=-2\gamma\,\Ceps\,C_m,
+\label{eq:adj_movil}
+\end{equation}
+con $\pM(T)=0$ y $(\bD\nabla\pM+\bu\pM)\cdot\bn=0$ en $\partial\Omega$. En forma no conservativa
+vale la misma cancelación que en ADR.
+
+\subsection{Variación respecto de $C_{\im,r}$}
+$J$ no depende de $C_{\im,r}$. La derivada aporta $-\lambda_r(\pM,\delta C_{\im,r})$ del intercambio móvil
+y, de la ecuación inmóvil integrada por partes en $t$,
+$-(\phi_{\im,r}R\partial_t\pim^{\,r},\delta C_{\im,r})+\lambda_r(\pim^{\,r},\delta C_{\im,r})$:
+\begin{equation}
+\boxed{\ \phi_{\im,r}R\,\partial_t\pim^{\,r}=\lambda_r\,(\pim^{\,r}-\pM),
+\qquad\pim^{\,r}(\cdot,T)=0\ }
+\label{eq:adj_inmovil}
+\end{equation}
+Ni el sumidero ni el almacenamiento actúan sobre las regiones inmóviles. Con
+$\alpha_r=\lambda_r/(\phi_{\im,r}R)$,
+\begin{equation}
+\pim^{\,r}(t)=\alpha_r\int_t^Te^{-\alpha_r(s-t)}\,\pM(s)\,ds ,
+\label{eq:psi_im_memoria}
+\end{equation}
+una memoria hacia el futuro; el acoplamiento móvil es $\sum_r\lambda_r(\pM-\pim^{\,r})$.
+
+\subsection{Sistema adjunto del transporte MRMT}
+\begin{equation}
+\left\{\begin{aligned}
+&-\phi R\partial_t\pM-\nabla\!\cdot(\bD\nabla\pM)-\bu\cdot\nabla\pM
++\Bigl(\textstyle\sum_r\lambda_r\Bigr)\pM+\sumi{Q\Ceps\pM}-\textstyle\sum_r\lambda_r\pim^{\,r}=-2\gamma\Ceps C_m,\\
+&\phi_{\im,r}R\,\partial_t\pim^{\,r}=\lambda_r(\pim^{\,r}-\pM),\quad r=1,\dots,N_r,\\
+&\pM(T)=\pim^{\,r}(T)=0 .
+\end{aligned}\right.
+\label{eq:sistema_adjunto_MRMT}
+\end{equation}
+
+\subsection{Adjunto del flujo y gradiente}
+$h$ entra por $\bu$, por la ecuación de flujo y por $\alm{-S_s\partial_th\,C_m}$; las regiones inmóviles no
+dependen de $h$. Se repite la derivación de ADR con $C=C_m$, $\pA\to\pM$:
+\begin{equation}
+-S_s\partial_t\phM-\nabla\!\cdot(\bK\nabla\phM)=-\nabla\!\cdot(\bK\bb)\;\alm{-\,S_s\,\partial_t(C_m\,\pM)},
+\qquad\bb=\pM\nabla C_m+\bd,\quad\phM(T)=0,
+\label{eq:adj_flujo_MRMT}
+\end{equation}
+y el gradiente es \eqref{eq:grad_Q}--\eqref{eq:grad_z} con $\phA\to\phM$ y $C\to C_m$.
+
+%===========================================================
+\section{Adjunto discreto por variante}
 \label{sec:discreto}
 %===========================================================
 
 Convención: $\mathcal{L}_h=J_h+\sum(\psi^{n+1})^\top(\text{residuo})$,
 $J_h=\sum_{n=1}^{N_t}j_n(\mathbf{C}^n)$, $j_n=\gamma\Delta t(\mathbf{C}^n)^\top G\mathbf{C}^n$,
 $\nabla j_n=2\gamma\Delta t\,G\mathbf{C}^n$. Los operadores $\mathcal{P},\mathcal{R}$
-(y $\mathcal{P}_A,\mathcal{R}_A$) son los del Capítulo~2 (trapezoidal) \emph{sin
-el término} $\sumi{\chi\Ceps}$ y \emph{con} el término de almacenamiento
-discreto, la matriz diagonal
+(y $\mathcal{P}_A,\mathcal{R}_A$) son los de la discretización trapezoidal del transporte sin el
+sumidero y con la matriz diagonal de almacenamiento
 \[
 \alm{\Sigma^n=\frac{S_s}{\Delta t}\,\mathrm{diag}(\mathbf{h}^{n+1}-\mathbf{h}^n)},
 \]
-que entra como $\alm{-\Sigma^n}$ en la reacción (en $\mathcal{P}^{n+1}$ y en
-$\mathcal{R}^n$). Al ser diagonal, su transpuesta es ella misma. En la frontera
-se transpone la fila fantasma (DtO) y $\psi_C=0$ en $\Gamma_D$.
+que entra como $\alm{-\Sigma^n}$ en la reacción (al ser diagonal, es su propia transpuesta). En FEniCSx la
+condición de frontera del adjunto discreto es la natural (transpuesta exacta del estado); BFR impone hoy
+$\psi_C=0$ en $\Gamma_{\rm in}\cup\Gamma_{\rm out}$, que no es la transpuesta exacta ni la condición continua
+\eqref{eq:adj_fuerte}.
 
 \subsection{ADR ($N_r=0$)}
+El paso $n\to n+1$ del estado es $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^{n}\mathbf{C}^n+\mathbf{F}^n$, con
+residuo $\mathbf{r}^{n+1}=\mathcal{P}^{n+1}\mathbf{C}^{n+1}-\mathcal{R}^{n}\mathbf{C}^n-\mathbf{F}^n$ y
+multiplicador $\boldsymbol\psi_C^{n+1}$. Entonces
+$\mathcal{L}_h=J_h+\sum_{m=0}^{N_t-1}(\boldsymbol\psi_C^{m+1})^\top\mathbf{r}^{m+1}$, y $\mathbf{C}^n$ ($1\le n\le N_t$)
+aparece en dos residuos: en el del paso que llega a $n$ (con $\mathcal{P}^{n}$) y en el del paso que sale de $n$
+(con $-\mathcal{R}^{n}$). Derivando respecto de $\mathbf{C}^n$ e igualando a cero:
+\[
+\nabla j_n(\mathbf{C}^n)+(\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}-(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}=\mathbf{0},
+\]
+que despejado es \eqref{eq:disc_adr}. Se resuelve hacia atrás desde $n=N_t$ con
+$\boldsymbol\psi_C^{N_t+1}=\mathbf{0}$ (no hay paso que salga de $N_t$).
 \begin{equation}
 (\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}
 -\nabla j_n(\mathbf{C}^n),\quad n=N_t,\dots,1,\qquad\boldsymbol\psi_C^{N_t+1}=\mathbf{0}.
@@ -414,7 +478,13 @@ se transpone la fila fantasma (DtO) y $\psi_C=0$ en $\Gamma_D$.
 Estado por paso: $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^{n}\mathbf{C}^n
 +\sum_r\mathcal{Q}_r\mathbf{C}_{\im,r}^n+\mathbf{F}^n$ y
 $\mathbf{C}_{\im,r}^{n+1}=\kappa_r(\mathbf{C}^{n+1}+\mathbf{C}^n)+(1-2\kappa_r)\mathbf{C}_{\im,r}^n$,
-con $\kappa_r=\Delta t\,\omega_r/\eta_r$, $\mathcal{Q}_r=4\phi R\,\omega_r I$. El adjunto:
+con $\kappa_r=\Delta t\,\omega_r/\eta_r$, $\mathcal{Q}_r=4\phi R\,\omega_r I$. Se añaden a los residuos de $\mathbf{C}$ (multiplicador $\boldsymbol\psi_C^{n+1}$)
+los de las regiones inmóviles (multiplicadores $\boldsymbol\psi_r^{n+1}$). Derivando:
+\emph{(i)} respecto de $\mathbf{C}_{\im,r}^n$, que aparece en el residuo de $\mathbf{C}$ del paso que sale de $n$
+(con $-\mathcal{Q}_r$) y en los residuos inmóviles de los pasos que salen y llegan a $n$
+(con $-(1-2\kappa_r)$ y $+1$), se obtiene $\boldsymbol\psi_r^{n}-(1-2\kappa_r)\boldsymbol\psi_r^{n+1}-\mathcal{Q}_r\boldsymbol\psi_C^{n+1}=\mathbf{0}$;
+\emph{(ii)} respecto de $\mathbf{C}^n$, que además entra en las dos ecuaciones inmóviles con coeficiente $-\kappa_r$,
+se agrega $-\sum_r\kappa_r(\boldsymbol\psi_r^{n}+\boldsymbol\psi_r^{n+1})$ a la ecuación de ADR. Resultado:
 \begin{equation}
 \left\{\begin{aligned}
 \boldsymbol\psi_r^{n}&=(1-2\kappa_r)\,\boldsymbol\psi_r^{n+1}+\mathcal{Q}_r\boldsymbol\psi_C^{n+1},
@@ -424,16 +494,16 @@ con $\kappa_r=\Delta t\,\omega_r/\eta_r$, $\mathcal{Q}_r=4\phi R\,\omega_r I$. E
 \end{aligned}\right.
 \label{eq:disc_block}
 \end{equation}
-Cada paso hacia atrás actualiza primero los $\boldsymbol\psi_r^n$ (diagonales) y
-luego resuelve un sistema con $(\mathcal{P}^n)^\top$.
+Cada paso hacia atrás actualiza primero los $\boldsymbol\psi_r^n$ (diagonales) y luego resuelve un sistema
+con $(\mathcal{P}^n)^\top$.
 
 \subsection{MRMT semi-analítico}
 Con $e_r=e^{-\alpha_r\Delta t}$, $a_r=\eta_r(1-e_r)$ y $\tilde{\mathbf{C}}_0=\mathbf{C}^*$:
 $\mathcal{P}_A^{n+1}\mathbf{C}^*=\mathcal{R}_A^{n}\mathbf{C}^n+\mathbf{F}^n$,
 $\tilde{\mathbf{C}}_r=(1-a_r)\tilde{\mathbf{C}}_{r-1}+a_r\mathbf{C}^n_{\im,r}$,
 $\mathbf{C}^{n+1}_{\im,r}=(1-e_r)\tilde{\mathbf{C}}_{r-1}+e_r\mathbf{C}^n_{\im,r}$,
-$\mathbf{C}^{n+1}=\tilde{\mathbf{C}}_{N_r}$. Con multiplicadores $\boldsymbol\mu_r^{n+1}$
-para las ecuaciones de $\tilde{\mathbf{C}}_r$:
+$\mathbf{C}^{n+1}=\tilde{\mathbf{C}}_{N_r}$. Con multiplicadores $\boldsymbol\mu_r^{n+1}$ para las
+ecuaciones de $\tilde{\mathbf{C}}_r$:
 \begin{equation}
 \left\{\begin{aligned}
 \boldsymbol\mu_{N_r}^{n+1}&=(\mathcal{R}_A^{n+1})^\top\boldsymbol\psi_C^{n+2}-\nabla j_{n+1}(\mathbf{C}^{n+1}),\\
@@ -443,21 +513,19 @@ para las ecuaciones de $\tilde{\mathbf{C}}_r$:
 \end{aligned}\right.
 \label{eq:disc_semi}
 \end{equation}
-con $\boldsymbol\psi_C^{N_t+1}=\boldsymbol\psi_r^{N_t}=\mathbf{0}$. Para $N_r=0$ se
-recupera \eqref{eq:disc_adr}.
+con $\boldsymbol\psi_C^{N_t+1}=\boldsymbol\psi_r^{N_t}=\mathbf{0}$. Para $N_r=0$ se recupera \eqref{eq:disc_adr}.
 
-\subsection{Adjunto discreto del flujo y gradiente}
-Paso de flujo $A_h\mathbf{h}^{n+1}=B_h\mathbf{h}^n+\mathbf{f}^{n+1}$,
-$\mathbf{f}=-Q\mathbf{g}$. La fuente del adjunto del flujo tiene dos partes:
+\subsection{Adjunto discreto del flujo (las tres variantes)}
+Paso de flujo $A_h\mathbf{h}^{n+1}=B_h\mathbf{h}^n+\mathbf{f}^{n+1}$, $\mathbf{f}=-Q\mathbf{g}$. La
+fuente del adjunto del flujo tiene dos partes:
 \begin{multline}
 \boldsymbol\sigma^{m}=\underbrace{-\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{*,m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m}
--\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m+1}}_{\text{velocidad (como antes)}}\\
+-\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m+1}}_{\text{velocidad}}\\
 \alm{+\,\frac{S_s}{\Delta t}\Bigl[\boldsymbol\psi_C^{m+1}\!\circ(\mathbf{C}^{m+1}+\mathbf{C}^m)-\boldsymbol\psi_C^{m}\!\circ(\mathbf{C}^{m}+\mathbf{C}^{m-1})\Bigr]}
 \end{multline}
-(con $\mathbf{C}^{*,m}=\mathbf{C}^m$ en ADR y bloque; en el semi-analítico el par
-$(\mathbf{C}^*,\mathbf{C}^n)$ del paso A). La parte verde es la derivada
-temporal discreta de $C\psi_C$, es decir la discretización de la fuente
-$-S_s\partial_t(C\psi_C)$ de \eqref{eq:adj_flujo}. Entonces
+($\mathbf{C}^{*,m}=\mathbf{C}^m$ en ADR y bloque; en el semi-analítico, el par $(\mathbf{C}^*,\mathbf{C}^n)$
+del paso A). La parte verde es la derivada temporal discreta de $C\psi_C$, es decir la
+discretización de la fuente $-S_s\partial_t(C\psi_C)$ de \eqref{eq:adj_flujo}. Entonces
 \begin{equation}
 A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^{m},
 \quad\boldsymbol\psi_h^{N_t+1}=\mathbf{0},
@@ -466,64 +534,152 @@ A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^
 \ (\text{con pesos }\theta).
 \label{eq:disc_flujo}
 \end{equation}
+$\partial\hat J/\partial z_p$ es \eqref{eq:grad_z} con las integrales en $t$ sustituidas por sumas con el mismo
+$\Delta t$.
+
+\begin{remark}[Convención de signo del código]
+El código resuelve $\mathcal{L}=J-\psi\cdot R$ con $R$ en forma de tasa, de modo que
+$\psi_{\rm c\acute{o}digo}=-\Delta t\,\psi$ del documento: el $\psi_C$ del código es positivo donde
+$C>0$ y el de este documento negativo. Las ecuaciones son las mismas.
+\end{remark}
 
 %===========================================================
-\section{Qué cambia y cómo se ve en el código}
-\label{sec:codigo}
+\section{Algoritmos de gradiente conjugado}
+\label{sec:algoritmos}
 %===========================================================
 
-\begin{table}[h]
-\centering\small
-\begin{tabular}{p{3.2cm}p{4.0cm}p{3.4cm}p{3.6cm}}
-\toprule
-\textbf{Elemento} & \textbf{Modelo previo} & \textbf{Modelo nuevo} & \textbf{Estado en el código} \\
-\midrule
-Estado, $\sumi{\text{sumidero}}$ & $\dots=W_+\sumi{-\chi\Ceps C}$ & eliminado & hecho (\texttt{factor\_sumidero\_C}$=0$) \\
-Estado, $\alm{\text{almacenamiento}}$ & no estaba & $\alm{-S_s\partial_th\,C}$ & BFR hecho; FEniCS sin contrastar \\
-Adjunto $\psi_C$ & $\sumi{+\chi\Ceps\psi_C}$ & eliminado; reacción neta $\sumi{Q\Ceps\psi_C}$ & hecho (transpuesta exacta) \\
-Adjunto $\psi_{\im,r}$ & \eqref{eq:adj_inmovil} & igual & --- \\
-Adjunto $\psi_h$ & \eqref{eq:adj_flujo} sin fuente verde & fuente $\alm{-S_s\partial_t(C\psi_C)}$ & BFR hecho (verificado $\sim4\%$) \\
-$\nabla_Q\hat J$, $\partial_{z_p}\hat J$ & con $\sumi{\chi'}$ y $\sumi{\chi}$ & sin ellos & hecho \\
-\bottomrule
-\end{tabular}
-\end{table}
+Variables de decisión $\mathbf{x}=(Q_1,\dots,Q_{N_t},z_p)$. Cada variante (ADR, MRMT bloque,
+MRMT semi) solo cambia el cálculo de $(\hat J,\nabla\hat J)$; el algoritmo exterior es el mismo.
 
-\paragraph{Implementación (BFR).} Parámetro \texttt{factor\_almacenamiento\_C}
-($0$ por defecto; $1$ activa el término). Con $S_s=\phi$ (porosidad):
-\begin{itemize}
-\item \textbf{Estado:} $\Sigma^n=\phi\,(\mathbf{h}^{n+1}-\mathbf{h}^n)/\Delta t$ entra en la diagonal de $\mathcal{P}$ y
-  $\mathcal{R}$ (\texttt{almacenamiento\_coef}, \texttt{funtions/operators.py}; también en \texttt{upwind\_operators.py}).
-\item \textbf{Adjunto $\psi_C$:} transpuesta exacta de las mismas matrices (sin cambios de código).
-\item \textbf{Adjunto $\psi_h$:} fuente $+\tfrac12\phi\,[\psi_C^{N}(w_NC^N+w_nC^n)-\psi_C^{n}(w_NC^n+w_nC^{n-1})]$
-  en \texttt{step\_adjoint}. La normalización $\tfrac12$ (sin $1/\Delta t$ ni $1/w_i$) es la que corresponde al
-  $\psi_C$ del código, cuya fuente es $2\gamma g\,w_i(C^N+C^n)$; se fijó contrastando con diferencias finitas
-  y es la misma razón de escala para las cuatro componentes de $Q$.
-\item \textbf{FEniCS:} el término se añadió a los residuos de estado (\texttt{forward.py}) y del adjunto
-  (\texttt{adjoint.py}); allí el adjunto sale por \texttt{ufl.derivative}, sin fórmula manual. Corre sin errores (humo en el dominio real, donde $C=0$ en el pozo y $J_m=0$); sin contrastar con diferencias finitas.
+\begin{algorithm}[h]
+\caption{Gradiente conjugado no lineal (Polak--Ribière$^+$, Armijo)}
+\label{alg:cg}
+\begin{algorithmic}[1]
+\Require $\mathbf{x}_0$, tolerancia $\varepsilon$, $k_{\max}$, $c=10^{-4}$, $\tau=\tfrac12$, $m_{\max}=20$
+\State $(\hat J_0,\mathbf{g}_0)\gets\textsc{EvalJG}(\mathbf{x}_0)$;\quad $\mathbf{d}_0\gets-\mathbf{g}_0$
+\For{$k=0,1,\dots,k_{\max}-1$}
+  \If{$\|\mathbf{g}_k\|<\varepsilon$} \State \textbf{salir} \EndIf
+  \State $\alpha\gets1$
+  \For{$i=1,\dots,m_{\max}$} \Comment{búsqueda lineal de Armijo}
+    \If{$\hat J(\mathbf{x}_k+\alpha\mathbf{d}_k)\le\hat J_k+c\,\alpha\,\mathbf{g}_k^\top\mathbf{d}_k$} \State \textbf{salir} \EndIf
+    \State $\alpha\gets\tau\alpha$
+  \EndFor
+  \State $\mathbf{x}_{k+1}\gets\Pi\bigl(\mathbf{x}_k+\alpha\mathbf{d}_k\bigr)$ \Comment{$\Pi$ proyección sobre cotas ($^*$)}
+  \State $(\hat J_{k+1},\mathbf{g}_{k+1})\gets\textsc{EvalJG}(\mathbf{x}_{k+1})$
+  \State $\mathbf{y}_k\gets\mathbf{g}_{k+1}-\mathbf{g}_k$;\quad
+         $\beta_k\gets\max\bigl\{0,\ \mathbf{g}_{k+1}^\top\mathbf{y}_k/(\mathbf{g}_k^\top\mathbf{g}_k)\bigr\}$
+  \State $\mathbf{d}_{k+1}\gets-\mathbf{g}_{k+1}+\beta_k\mathbf{d}_k$
+  \If{$\mathbf{g}_{k+1}^\top\mathbf{d}_{k+1}\ge0$} \State $\mathbf{d}_{k+1}\gets-\mathbf{g}_{k+1}$ \Comment{reinicio ($^*$)} \EndIf
+\EndFor
+\State \Return $\mathbf{x}_k$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{remark}
+Los pasos marcados con $^*$ (proyección sobre $0\le Q_n\le Q^{\rm sup}_n$, $z_p\in[z_{\min},z_{\max}]$ y reinicio si
+$\mathbf{d}$ no es de descenso) \emph{no están} en \texttt{nonlinear\_cg} (\texttt{view/animation.py}), que implementa
+Polak--Ribière$^+$ con Armijo sin cotas. La optimización con cotas y con la restricción de suministro se hace en el
+código con \texttt{trust-constr} (\texttt{optimize\_bfr}, \texttt{optimize\_fenicsx}), a la que se le entrega el mismo
+gradiente adjunto.
+\end{remark}
+
+\begin{algorithm}[h]
+\caption{\textsc{EvalJG} para ADR}
+\label{alg:adr}
+\begin{algorithmic}[1]
+\Require $\mathbf{x}=(Q_1,\dots,Q_{N_t},z_p)$
+\State \textbf{Directo.} $\mathbf{h}^0,\mathbf{C}^0$ dados
+\For{$n=0,\dots,N_t-1$}
+  \State resolver $A_h\mathbf{h}^{n+1}=B_h\mathbf{h}^n-Q_{n+1}\mathbf{g}$
+  \State ensamblar $\mathcal{P}^{n+1},\mathcal{R}^n$ con $\bu(\mathbf{h}^{n+1}),\bu(\mathbf{h}^n)$ y $\Sigma^n$
+  \State resolver $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^n\mathbf{C}^n+\mathbf{F}^n$;\ guardar $\mathbf{h}^{n+1},\mathbf{C}^{n+1}$
+\EndFor
+\State $\hat J\gets\sum_n j_n(\mathbf{C}^n)+\alpha\kappa_p(z_p-z_0)^2+\beta d_p\Delta t\sum_nQ_n^2$
+\State \textbf{Adjunto.} $\boldsymbol\psi_C^{N_t+1}\gets\mathbf{0}$,\ $\boldsymbol\psi_h^{N_t+1}\gets\mathbf{0}$
+\For{$n=N_t,\dots,1$}
+  \State resolver $(\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}-\nabla j_n(\mathbf{C}^n)$ \hfill \eqref{eq:disc_adr}
+  \State calcular $\boldsymbol\sigma^{n}$ (velocidad $+$ almacenamiento) y resolver
+         $A_h^\top\boldsymbol\psi_h^{n}=B_h^\top\boldsymbol\psi_h^{n+1}-\boldsymbol\sigma^{n}$ \hfill \eqref{eq:disc_flujo}
+  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}$
+\EndFor
+\State $g_{z_p}\gets$ \eqref{eq:grad_z} discretizada
+\State \Return $\hat J,\ \mathbf{g}=(g_{Q_1},\dots,g_{Q_{N_t}},g_{z_p})$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[h]
+\caption{\textsc{EvalJG} para MRMT por bloque}
+\label{alg:block}
+\begin{algorithmic}[1]
+\Require $\mathbf{x}$;\ $\mathbf{C}_{\im,r}^0$ dados
+\State \textbf{Directo.} como en el Algoritmo~\ref{alg:adr}, pero en cada paso
+  $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^n\mathbf{C}^n+\sum_r\mathcal{Q}_r\mathbf{C}_{\im,r}^n+\mathbf{F}^n$
+  y luego $\mathbf{C}_{\im,r}^{n+1}=\kappa_r(\mathbf{C}^{n+1}+\mathbf{C}^n)+(1-2\kappa_r)\mathbf{C}_{\im,r}^n$;\ guardar también $\mathbf{C}_{\im,r}^n$
+\State \textbf{Adjunto.} $\boldsymbol\psi_C^{N_t+1},\boldsymbol\psi_h^{N_t+1},\boldsymbol\psi_r^{N_t}\gets\mathbf{0}$
+\For{$n=N_t,\dots,1$}
+  \For{$r=1,\dots,N_r$}
+    \State $\boldsymbol\psi_r^{n}\gets(1-2\kappa_r)\boldsymbol\psi_r^{n+1}+\mathcal{Q}_r\boldsymbol\psi_C^{n+1}$ \hfill \eqref{eq:disc_block}
+  \EndFor
+  \State resolver $(\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}+\sum_r\kappa_r(\boldsymbol\psi_r^{n}+\boldsymbol\psi_r^{n+1})-\nabla j_n$
+  \State $\boldsymbol\sigma^n$ y $\boldsymbol\psi_h^{n}$ como en el Algoritmo~\ref{alg:adr}
+  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}$
+\EndFor
+\State $g_{z_p}\gets$ \eqref{eq:grad_z} discretizada;\ \Return $\hat J,\mathbf{g}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[h]
+\caption{\textsc{EvalJG} para MRMT semi-analítico}
+\label{alg:semi}
+\begin{algorithmic}[1]
+\Require $\mathbf{x}$;\ $\mathbf{C}_{\im,r}^0$ dados;\ $e_r=e^{-\alpha_r\Delta t}$, $a_r=\eta_r(1-e_r)$
+\State \textbf{Directo.} en cada paso: resolver $\mathcal{P}_A^{n+1}\mathbf{C}^*=\mathcal{R}_A^n\mathbf{C}^n+\mathbf{F}^n$;
+  $\tilde{\mathbf{C}}_0\gets\mathbf{C}^*$;
+  \For{$r=1,\dots,N_r$}
+    \State $\tilde{\mathbf{C}}_r\gets(1-a_r)\tilde{\mathbf{C}}_{r-1}+a_r\mathbf{C}_{\im,r}^n$;\quad
+           $\mathbf{C}_{\im,r}^{n+1}\gets(1-e_r)\tilde{\mathbf{C}}_{r-1}+e_r\mathbf{C}_{\im,r}^n$
+  \EndFor
+  \State $\mathbf{C}^{n+1}\gets\tilde{\mathbf{C}}_{N_r}$;\ guardar $\mathbf{C}^*$, $\mathbf{C}^{n+1}$, $\mathbf{C}_{\im,r}^{n+1}$
+\State \textbf{Adjunto.} $\boldsymbol\psi_C^{N_t+1},\boldsymbol\psi_h^{N_t+1},\boldsymbol\psi_r^{N_t}\gets\mathbf{0}$
+\For{$n=N_t-1,\dots,0$}
+  \State $\boldsymbol\mu_{N_r}\gets(\mathcal{R}_A^{n+1})^\top\boldsymbol\psi_C^{n+2}-\nabla j_{n+1}(\mathbf{C}^{n+1})$
+  \For{$r=N_r,\dots,1$} \Comment{se recorre el splitting al revés}
+    \State $\boldsymbol\mu_{r-1}\gets(1-a_r)\boldsymbol\mu_r+(1-e_r)\boldsymbol\psi_r^{n+1}$;\quad
+           $\boldsymbol\psi_r^{n}\gets e_r\boldsymbol\psi_r^{n+1}+a_r\boldsymbol\mu_r$ \hfill \eqref{eq:disc_semi}
+  \EndFor
+  \State resolver $(\mathcal{P}_A^{n+1})^\top\boldsymbol\psi_C^{n+1}=\boldsymbol\mu_0$
+  \State $\boldsymbol\sigma^{n+1}$ con el par $(\mathbf{C}^*,\mathbf{C}^n)$ y resolver $\boldsymbol\psi_h^{n+1}$ como en el Algoritmo~\ref{alg:adr}
+  \State $g_{Q_{n+1}}\gets2\beta d_p\Delta t\,Q_{n+1}+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}$
+\EndFor
+\State $g_{z_p}\gets$ \eqref{eq:grad_z} discretizada;\ \Return $\hat J,\mathbf{g}$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Costo.} Cada $\textsc{EvalJG}$ cuesta un barrido directo y uno adjunto, es decir dos
+resoluciones de flujo y dos de transporte por paso, independientemente del número de controles ($N_t+1$);
+MRMT por bloque añade operaciones diagonales por región y el semi-analítico un barrido de $N_r$ pasos
+diagonales. Cada iteración de CG usa una evaluación de $\hat J$ por intento de la búsqueda de Armijo y un
+$\textsc{EvalJG}$ completo en el punto aceptado.
+
+%===========================================================
+\section{Verificaciones ejecutadas}
+\label{sec:verif}
+%===========================================================
+
+Todo lo siguiente se ejecutó; lo que no figura aquí no se verificó.
+\begin{itemize}[nosep]
+\item \textbf{Adjunto discreto de FEniCSx frente a diferencias finitas centradas} (solo $\gamma J_m$, la parte
+  económica es analítica y se resta; 3 pasos; $C$ uniforme y modulada; con y sin almacenamiento): ADR, MRMT
+  semi-analítico y MRMT por bloque coinciden con error relativo $10^{-6}$--$10^{-10}$.
+\item \textbf{Ecuaciones continuas frente al código (ADR, FEniCSx, $\theta_C=1$):} la forma débil de
+  \eqref{eq:adj_fuerte} escrita aquí, evaluada sobre el $\psi_C$ del código con $\pA=-\psi_{\rm c\acute{o}digo}/\Delta t$,
+  da un residuo relativo $\sim10^{-15}$; sin el término de almacenamiento sube a $\sim10^{-3}$ y sin la
+  advección a $\sim10^{-2}$. Para \eqref{eq:adj_flujo}, la descomposición de $(\partial_hR^C)^\top\psi_C$ en los
+  términos $\int\bK\pA\nabla C\cdot\nabla v$, $\int\bK\bd\cdot\nabla v$ y $\int\phi C\pA v/\Delta t$ da
+  coeficientes $-1.000000$ y residuo $5\times10^{-16}$.
+\item \textbf{No verificado:} el adjunto de BFR (con $C$ no uniforme no coincide con las diferencias finitas: factor
+  2--7), las ecuaciones continuas de MRMT, el balance de masa numérico, la convergencia en malla y tiempo, y una
+  optimización completa convergida.
 \end{itemize}
-
-\paragraph{Verificación (BFR, ADR, cuadrado con $C\equiv1$).}
-El test de Taylor existente \emph{no} sirve para esto: en el dominio real $J_m=0$ en el horizonte corto
-(el penacho no llega al pozo), $r_0$ y $r_1$ coinciden y solo se ejercita la parte económica. Se usó el
-cuadrado (donde $C\neq0$ en el pozo) y diferencias finitas centradas con $Q_n=10^{-4}$:
-\begin{center}\small
-\begin{tabular}{lrr}
-\toprule
-dirección & error relativo (adjunto vs.\ FD) & sin la fuente nueva \\
-\midrule
-$-\nabla J$ & $2.7\times10^{-2}$ & $\sim1$ (signo y orden erróneos) \\
-$Q$ uniforme & $4.2\times10^{-2}$ & $\sim1$ \\
-$Q$ aleatoria 1 & $3.3\times10^{-2}$ & $\sim1$ \\
-$Q$ aleatoria 2 & $4.8\times10^{-2}$ & $\sim1$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-Mismo test con MRMT (misma configuración): por bloque, error $1.4$--$1.7\times10^{-1}$; semi-analítico,
-$2\times10^{-3}$--$9\times10^{-2}$. El mayor error del bloque viene de usar $(\mathbf{C}^N,\mathbf{C}^n)$ en la fuente
-del flujo en lugar del par exacto del complemento de Schur.
-Con \texttt{factor\_almacenamiento\_C}$=0$ el mismo test da $\sim10^{-5}$ (modelo reducido).
-El error de unos pocos por ciento es el del acoplamiento del flujo (adjunto OtD con fuente nodal y nodo
-forzado en el pozo), no del término nuevo; con $Q\sim10^{-2}$ el nodo del pozo oscila ($\Delta h=+47,\,-4,\,+0.4$ m
-en pasos consecutivos) y las diferencias finitas dejan de ser lineales.
 
 \end{document}
