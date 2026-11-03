@@ -451,10 +451,11 @@ sumidero y con la matriz diagonal de almacenamiento
 \[
 \alm{\Sigma^n=\frac{S_s}{\Delta t}\,\mathrm{diag}(\mathbf{h}^{n+1}-\mathbf{h}^n)},
 \]
-que entra como $\alm{-\Sigma^n}$ en la reacción (al ser diagonal, es su propia transpuesta). En FEniCSx la
-condición de frontera del adjunto discreto es la natural (transpuesta exacta del estado); BFR impone hoy
-$\psi_C=0$ en $\Gamma_{\rm in}\cup\Gamma_{\rm out}$, que no es la transpuesta exacta ni la condición continua
-\eqref{eq:adj_fuerte}.
+que entra como $\alm{-\Sigma^n}$ en la reacción (al ser diagonal, es su propia transpuesta). Tanto FEniCSx
+como BFR (\texttt{funtions/adjunto\_exacto.py}) usan el adjunto discreto \emph{exacto} del esquema programado: en
+BFR incluye las filas fantasma de frontera, el recorte $C\ge0$ (máscara en $\boldsymbol\psi_C$, y el residuo del
+transporte se evalúa con la solución \emph{sin} recortar, que es la que lo anula) y la dependencia de
+$\mathbf{D}(\bu)$, de $\nabla\!\cdot\mathbf{D}$ y de $\partial_th$ respecto de $\mathbf{h}$.
 
 \subsection{ADR ($N_r=0$)}
 El paso $n\to n+1$ del estado es $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^{n}\mathbf{C}^n+\mathbf{F}^n$, con
@@ -538,10 +539,20 @@ A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^
 $\partial\hat J/\partial z_p$ es \eqref{eq:grad_z} con las integrales en $t$ sustituidas por sumas con el mismo
 $\Delta t$.
 
-\begin{remark}[Convención de signo del código]
-El código resuelve $\mathcal{L}=J-\psi\cdot R$ con $R$ en forma de tasa, de modo que
-$\psi_{\rm c\acute{o}digo}=-\Delta t\,\psi$ del documento: el $\psi_C$ del código es positivo donde
-$C>0$ y el de este documento negativo. Las ecuaciones son las mismas.
+\paragraph{Fuente $\boldsymbol\sigma^m$ en BFR.} Cada fila del transporte es $\sum_kc_{k,i}\,(O_k\mathbf{C})_i$ con
+estenciles RBF-FD fijos $O_k\in\{I,\partial_{xx},\partial_{zz},\partial_x,\partial_z\}$ y coeficientes puntuales
+$c_{k,i}$ que dependen de $\mathbf{h}$ solo por $\bu=-\bK\nabla h$, $\mathbf{D}(\bu)$, $\nabla\!\cdot\mathbf{D}$ y
+$\partial_th$. Por tanto $\boldsymbol\sigma^m$ es una regla de la cadena exacta: se acumulan las cotangentes
+$\boldsymbol\psi_C\circ(O_k\mathbf{C})$ sobre cada coeficiente y se llevan a $\mathbf{h}$ con
+$\partial\mathbf{D}/\partial\bu$, $G_x^\top,G_z^\top$ (de $\nabla\!\cdot\mathbf{D}$) y $-K\,G^\top$ (de $\bu$); las filas
+de frontera de $\mathcal{P}$ aportan $-\mathbf{D}\,\mathbf{n}$ sobre $[\partial_x,\partial_z]$. No hay factores de
+escala ajustados: la tabla de verificaciones lo comprueba contra diferencias finitas de los constructores reales.
+
+\begin{remark}[Convención de signo]
+Este documento usa $\mathcal{L}=J+\boldsymbol\psi\cdot\mathbf{r}$ y BFR calcula con esa convención
+($\boldsymbol\Lambda$ en \texttt{adjunto\_exacto.py}). El adjunto heredado de BFR (\texttt{step\_adjoint}, con
+$\psi_{\rm c\acute{o}digo}=-\Delta t\,\psi$) se conserva solo para las animaciones de $\psi$ y ya no interviene en el
+gradiente.
 \end{remark}
 
 %===========================================================
@@ -693,9 +704,29 @@ Todo lo siguiente se ejecutó; lo que no figura aquí no se verificó.
 \item \textbf{Recursiones del adjunto discreto (§\ref{sec:discreto}) con matrices densas aleatorias:}
   $\partial\hat J/\partial\mathbf{F}^n=-\boldsymbol\psi_C^{n+1}$ para ADR, MRMT por bloque y MRMT semi-analítico,
   error máximo $\sim10^{-9}$ (el de las diferencias finitas). Es una prueba del álgebra, no de la implementación.
-\item \textbf{No verificado:} el adjunto de BFR (con $C$ no uniforme no coincide con las diferencias finitas: factor
-  2--7), el balance de masa en 2D, la convergencia en malla y tiempo del simulador, y una optimización completa
-  convergida. El banco 1D no ejercita el contorno libre de $\Gamma_{\rm out}$ ni las paredes en 2D.
+\item \textbf{Adjunto discreto exacto de BFR frente a diferencias finitas del funcional completo}
+  (\texttt{tests/test\_adjunto\_exacto.py}; cuadrado con $C\equiv1$ y pozo, 4 pasos, $\theta=\theta_C=1$, dispersión y
+  recorte activos). Error relativo con paso $10^{-3}$ (disminuye con el paso): ADR $2\times10^{-7}$ (dirección
+  $-\nabla J$), $1.8\times10^{-7}$ ($Q$ uniforme), $1.5\times10^{-5}$ ($Q$ aleatoria), $4.8\times10^{-6}$ ($(Q,z_p)$);
+  MRMT por bloque $1.9\times10^{-7}$, $1.7\times10^{-7}$, $1.4\times10^{-5}$, $5.2\times10^{-6}$; MRMT
+  semi-analítico $2.2\times10^{-7}$, $1.8\times10^{-7}$, $3.0\times10^{-5}$, $4.9\times10^{-6}$. Con $\theta=0.9$,
+  $\theta_C=0.5$ y 6 pasos (incluye el caudal «viejo» del primer paso): $\le6\times10^{-5}$ en las tres variantes.
+  Los constructores se reproducen a $10^{-15}$ y el VJP del transporte respecto de $\mathbf{h}^\ell,\mathbf{h}^{\ell-1}$
+  coincide con diferencias finitas a $10^{-7}$--$10^{-11}$. Dos matices: (i) el recorte $C\ge0$ no es derivable; el
+  gradiente exacto usa su derivada casi en todo punto; (ii) $D_{\rm disp}\propto|\bu|$ no es derivable en $\bu=0$ y
+  los nodos estancados ($|\bu|\sim10^{-17}$) hacen que las diferencias finitas de $\mathbf{D}$ por separado no coincidan,
+  sin efecto apreciable en el funcional.
+\item \textbf{Dominio real} (ADR, $Q_{\rm std}=0.3$, 3 pasos, $C\equiv1$): $6\times10^{-8}$ ($Q$ uniforme), $3\times10^{-7}$
+  ($Q$ aleatoria), $8\times10^{-7}$ ($-\nabla J$) y $2.4\times10^{-6}$ ($(Q,z_p)$), con paso $10^{-3}$.
+  \emph{Defecto encontrado:} \texttt{p.pozo} es un arreglo entero y \texttt{pozo\_cor[1] = z\_p} truncaba la
+  profundidad a metros enteros en \texttt{functional} y \texttt{gradient}: $\hat J(z_p)$ era escalonada y el
+  gradiente respecto de $z_p$ no podía coincidir con diferencias finitas; corregido con una copia en coma flotante.
+\item \textbf{Hallazgo en el directo de BFR:} la advección y $\nabla\!\cdot\mathbf{D}$ llevaban un factor $1/2$ de más
+  respecto de la difusión (BFR transportaba a la mitad de velocidad); corregido (error L2 de $C$ frente a FEM
+  $0.27\to0.11$, pico de $C$ idéntico).
+\item \textbf{No verificado:} el balance de masa en 2D, la convergencia en malla y tiempo del simulador, el transporte
+  con upwind y una optimización completa convergida. El banco 1D no ejercita el contorno libre de $\Gamma_{\rm out}$
+  ni las paredes en 2D.
 \end{itemize}
 
 \end{document}

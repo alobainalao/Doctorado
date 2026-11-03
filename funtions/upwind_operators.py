@@ -215,8 +215,8 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
 
     # Coeficientes advectivos para los nodos del dominio
     # Ecuación de transporte: ∂C/∂t + U_div_D·∇C - D:∇²C = src
-    # U_div_D = (V - Div_D[:,:2]) / 2  (factor 2 del esquema θ)
-    U_div_D = (V - Div_D[:, :2]) / 2.0
+    # U_div_D = V - Div_D[:,:2]  (mismo peso w que la difusión; antes llevaba un 1/2 erróneo)
+    U_div_D = V - Div_D[:, :2]
 
     # Construir diagonal de coeficientes para idx_dom
     from scipy.sparse import diags as sp_diags

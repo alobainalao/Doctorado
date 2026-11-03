@@ -263,7 +263,7 @@ def functional(
 
     Qout = [Q.copy()]
 
-    pozo_cor = p.pozo.copy()
+    pozo_cor = np.array(p.pozo, dtype=float)   # p.pozo puede ser entero: sin esto z_p se truncaba a metros enteros
 
     pozo_cor[1] = zp
 
@@ -319,7 +319,7 @@ def gradient(
 
     Qout = [Q.copy()]
 
-    pozo_cor = p.pozo.copy()
+    pozo_cor = np.array(p.pozo, dtype=float)   # p.pozo puede ser entero: sin esto z_p se truncaba a metros enteros
 
     pozo_cor[1] = zp
 
@@ -346,6 +346,19 @@ def gradient(
         ["H", "U", "C"],
         f"{p.save_data}/simulation_results.npz"
     )
+
+    # -----------------------------------------------------
+    # ADJUNTO DISCRETO EXACTO (funtions/adjunto_exacto.py): derivada exacta del esquema programado
+    # -----------------------------------------------------
+    _exacto_ok = (not getattr(p, "upwind_transport", False)) and getattr(p, "factor_sumidero_C", 0.0) == 0.0
+    if getattr(p, "adjoint_exact", True) and not _exacto_ok:
+        print("[gradient] AVISO: adjunto exacto no disponible con upwind o con W-; se usa el adjunto heredado "
+              "(sin verificar contra diferencias finitas)", flush=True)
+    if getattr(p, "adjoint_exact", True) and _exacto_ok:
+        from funtions.adjunto_exacto import gradiente_exacto
+        Ci = get_solucion(["Ci"], f"{p.save_data}/simulation_results.npz")[0] if "mrmt" in p.model else None
+        gQ, gzp = gradiente_exacto(d, p, Q, zp, h, U, C, Ci=Ci)
+        return pack_controls(gQ, gzp)
 
     # -----------------------------------------------------
     # ADJOINT

@@ -461,9 +461,48 @@ def almacenamiento_coef(p, pho, h_t):
     return f * pho * h_t
 
 
+def factor_avance():
+    """Peso de la advección y de ∇·D en las filas del transporte: 1.
+
+    El operador del documento es L(C) = D:∂² C + (∇·D − u)·∇C, con los mismos pesos 2θ_C / 2(1−θ_C) que la
+    difusión. Antes se usaba (u − ∇·D)/2: ese 1/2 dejaba la advección a la mitad (con θ_C = 1 y con θ_C = 0.5),
+    de modo que BFR transportaba el soluto a la mitad de velocidad que FEniCS (error L2 de C del 79 % frente
+    a 11 % tras el cambio; pico de C idéntico a FEM). Ver docs/diferencias_bfr_fem.md."""
+    return 1.0
+
+
+def coeficientes_transporte(p, pho, V, D, Div_D, sig, h_t=None):
+    """
+    Coeficientes puntuales [c_I, c_xx, c_zz, c_x, c_z] (arrays de N) de las filas del transporte,
+    sobre los estenciles [I, ∂xx, ∂zz, ∂x, ∂z]. Fuente única de make_transport_operator y del adjunto
+    exacto (funtions/adjunto_exacto.py). No incluye el sumidero W₋ (se suma aparte en make_transport_operator).
+    """
+    w = peso_theta_C(p, sig)
+    a = factor_avance()
+    U_div_D = (V - Div_D[:, :2]) * a
+    base = pho * p.R
+    cI = base * (2. / p.dt) * np.ones(len(base))
+
+    # Almacenamiento -S_s ∂ₜh·C (reacción c_s = -S_s ∂ₜh, con S_s = pho como en el flujo).
+    cI = cI + w * sig * almacenamiento_coef(p, pho, h_t)
+
+    if p.model == "adr":
+        cI = cI - w * base * sig * p.landa
+    elif p.model == "mrmt_block":
+        # Factor 2: complemento de Schur tras eliminar C_im analíticamente.
+        # La diagonal del sistema Schur-reducido lleva ±2·base·Σ_r α_r en LHS/RHS,
+        # ponderada por w (θ_C·C^{n+1} + (1−θ_C)·C^n en el intercambio).
+        # El RHS acoplado lleva 4·base·α_r·C_im_r^n (ver C_vector), sin peso θ.
+        # Derivación: alpha_r = κ_r·β_r/dt; ver config/parameters.py.
+        cI = cI - w * 2 * base * sig * p.alpha_sum
+    elif p.model != "mrmt_semi":
+        raise ValueError(f"Modelo no válido: {p.model}")
+
+    return [cI, w * sig * D[:, 0], w * sig * D[:, 1], -w * sig * U_div_D[:, 0], -w * sig * U_div_D[:, 1]]
+
+
 def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig, gauss_p, h_t=None):
-    
-    U_div_D = (V - Div_D[:, :2]) / 2.0
+
     w = peso_theta_C(p, sig)
 
     idx_dom = np.hstack([
@@ -473,29 +512,13 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
         groups['boundary:wall']
     ])
 
-    base = pho * p.R
-    coef_identity = base * (2. / p.dt)
+    coefs = coeficientes_transporte(p, pho, V, D, Div_D, sig, h_t)
 
     # Sumidero de contaminante en el pozo: el agua bombeada arrastra C disuelto.
     # Análogo al término `delta_C * C` de FEniCS. Default True en default.json.
     # Escalado por factor_sumidero_C (0 por defecto: término anulado).
     if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= w * sig * p.factor_sumidero_C * gauss_p
-
-    # Almacenamiento -S_s ∂ₜh·C (reacción c_s = -S_s ∂ₜh, con S_s = pho como en el flujo).
-    coef_identity += w * sig * almacenamiento_coef(p, pho, h_t)
-
-    if p.model == "adr":
-        coef_identity -= w * base * sig * p.landa
-    elif p.model == "mrmt_block":
-        # Factor 2: complemento de Schur tras eliminar C_im analíticamente.
-        # La diagonal del sistema Schur-reducido lleva ±2·base·Σ_r α_r en LHS/RHS,
-        # ponderada por w (θ_C·C^{n+1} + (1−θ_C)·C^n en el intercambio).
-        # El RHS acoplado lleva 4·base·α_r·C_im_r^n (ver C_vector), sin peso θ.
-        # Derivación: alpha_r = κ_r·β_r/dt; ver config/parameters.py.
-        coef_identity -= w * 2 * base * sig * p.alpha_sum
-    elif p.model != "mrmt_semi":
-        raise ValueError(f"Modelo no válido: {p.model}")
+        coefs[0] = coefs[0] - w * sig * p.factor_sumidero_C * gauss_p
 
     return dict(
         idx=idx_dom,
@@ -507,13 +530,7 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
             [1, 0],
             [0, 1]
         ],
-        coeffs_func=lambda i: [
-            coef_identity[i],
-            w * sig * D[i, 0],
-            w * sig * D[i, 1],
-            -w * sig * U_div_D[i, 0],
-            -w * sig * U_div_D[i, 1],
-        ]
+        coeffs_func=lambda i: [c[i] for c in coefs]
     )
 
 def make_transport_bc(normals, D):

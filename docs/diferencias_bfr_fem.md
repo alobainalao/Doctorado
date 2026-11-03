@@ -33,3 +33,19 @@ mallas distintas de H0/H1 impiden usar `comparar.py` nodo a nodo.)
    la diferencia de condición de salida la domina; en H el efecto es invisible porque el cono (Q = 0.3) fija el rango.
 3. La mejora aparente de H en main a partir del 2026-10-28 viene en parte de **Q_std 1e-3 → 0.3**: el cono domina el
    rango y los errores relativos al rango (y la escala de color 305–309 m de los videos) hacen invisibles 0.04–0.1 m.
+
+## Causa adicional encontrada el 2026-11-02: la advección de BFR estaba a la mitad
+`make_transport_operator` armaba las filas del transporte con `U_div_D = (V − ∇·D)/2`, pero la difusión
+llevaba el peso completo `w·sig·D`. El operador del documento es `L(C) = D:∂²C + (∇·D − u)·∇C`, con los mismos
+pesos 2θ_C / 2(1−θ_C) para todos los términos, así que la advección y `∇·D` salían multiplicadas por 1/2
+(medido con un campo lineal: coeficiente efectivo −0.5 V con θ_C = 0.5; con θ_C = 1 el 1/2 también sobra).
+BFR transportaba el soluto a la mitad de velocidad. Prueba (caso N_adr, 144 pasos, FEM como referencia,
+métrica oficial de `experimentos/comparar.py`):
+
+| | C_L2_rel final | pico de C en t=30 d (BFR / FEM) | masa BFR/FEM |
+|---|---|---|---|
+| antes (1/2) | 0.271 | 4.08e-11 / 2.081e-11 | 1.19 (remuestreo al vecino más cercano) / 0.94 (comparar) |
+| después (peso completo) | 0.111 | 2.080e-11 / 2.081e-11 | 0.94 / 0.92 |
+
+El pico de C coincide al 0.05 %. H y |U| no cambian (el flujo no usa ese operador: H_rms 0.0384 m y
+|U|_L2 0.130 idénticos). Queda un 11 % de diferencia de C que ya no se explica por la advección.
