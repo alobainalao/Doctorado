@@ -329,7 +329,7 @@ no hay $\partial_th$.
 
 \subsection{Variación respecto de $h$: adjunto del flujo}
 Se perturba $h\to h+\epsilon\,\delta h$, $\delta h(0)=0$. Entonces $\delta\bu=-\bK\nabla\delta h$ y
-$\delta(\partial_th)=\partial_t\delta h$. $h$ entra en $\mathcal{L}^{\rm A}$ por tres vías:
+$\delta(\partial_th)=\partial_t\delta h$. $h$ entra en $\mathcal{L}^{\rm A}$ por cuatro vías:
 \begin{enumerate}[label=\textbf{(\alph*)},nosep]
 \item \emph{Ecuación de flujo.} $\langle S_s\partial_t\delta h,\phA\rangle+a_h(\delta h,\phA)$ (lineal en $h$).
 \item \emph{Advección} $\int(\bu\cdot\nabla C)\pA$: $\delta=\int(\delta\bu\cdot\nabla C)\pA=-\int\bK\nabla\delta h\cdot(\pA\nabla C)$.
@@ -516,7 +516,8 @@ ecuaciones de $\tilde{\mathbf{C}}_r$:
 con $\boldsymbol\psi_C^{N_t+1}=\boldsymbol\psi_r^{N_t}=\mathbf{0}$. Para $N_r=0$ se recupera \eqref{eq:disc_adr}.
 
 \subsection{Adjunto discreto del flujo (las tres variantes)}
-Paso de flujo $A_h\mathbf{h}^{n+1}=B_h\mathbf{h}^n+\mathbf{f}^{n+1}$, $\mathbf{f}=-Q\mathbf{g}$. La
+Paso de flujo $A_h\mathbf{h}^{n+1}=B_h\mathbf{h}^n+\mathbf{f}^{n+1}$ con $\mathbf{f}^{n+1}=-Q_{n+1}\mathbf{g}$ (el caudal
+del paso que llega al nivel $n+1$ es $Q_{n+1}$). La
 fuente del adjunto del flujo tiene dos partes:
 \begin{multline}
 \boldsymbol\sigma^{m}=\underbrace{-\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{*,m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m}
@@ -530,7 +531,7 @@ discretización de la fuente $-S_s\partial_t(C\psi_C)$ de \eqref{eq:adj_flujo}. 
 A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^{m},
 \quad\boldsymbol\psi_h^{N_t+1}=\mathbf{0},
 \qquad
-\frac{\partial\hat J}{\partial Q_n}=2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}
+\frac{\partial\hat J}{\partial Q_n}=2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n}
 \ (\text{con pesos }\theta).
 \label{eq:disc_flujo}
 \end{equation}
@@ -600,7 +601,7 @@ gradiente adjunto.
   \State resolver $(\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}-\nabla j_n(\mathbf{C}^n)$ \hfill \eqref{eq:disc_adr}
   \State calcular $\boldsymbol\sigma^{n}$ (velocidad $+$ almacenamiento) y resolver
          $A_h^\top\boldsymbol\psi_h^{n}=B_h^\top\boldsymbol\psi_h^{n+1}-\boldsymbol\sigma^{n}$ \hfill \eqref{eq:disc_flujo}
-  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}$
+  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n}$
 \EndFor
 \State $g_{z_p}\gets$ \eqref{eq:grad_z} discretizada
 \State \Return $\hat J,\ \mathbf{g}=(g_{Q_1},\dots,g_{Q_{N_t}},g_{z_p})$
@@ -622,7 +623,7 @@ gradiente adjunto.
   \EndFor
   \State resolver $(\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}+\sum_r\kappa_r(\boldsymbol\psi_r^{n}+\boldsymbol\psi_r^{n+1})-\nabla j_n$
   \State $\boldsymbol\sigma^n$ y $\boldsymbol\psi_h^{n}$ como en el Algoritmo~\ref{alg:adr}
-  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n+1}$
+  \State $g_{Q_n}\gets2\beta d_p\Delta t\,Q_n+\mathbf{g}^\top\boldsymbol\psi_h^{n}$
 \EndFor
 \State $g_{z_p}\gets$ \eqref{eq:grad_z} discretizada;\ \Return $\hat J,\mathbf{g}$
 \end{algorithmic}
@@ -677,9 +678,24 @@ Todo lo siguiente se ejecutó; lo que no figura aquí no se verificó.
   advección a $\sim10^{-2}$. Para \eqref{eq:adj_flujo}, la descomposición de $(\partial_hR^C)^\top\psi_C$ en los
   términos $\int\bK\pA\nabla C\cdot\nabla v$, $\int\bK\bd\cdot\nabla v$ y $\int\phi C\pA v/\Delta t$ da
   coeficientes $-1.000000$ y residuo $5\times10^{-16}$.
+\item \textbf{Modelo y adjunto continuos en un banco 1D independiente del simulador} (Galerkin $\mathbb P_1$,
+  flujo dispersivo nulo en ambos extremos, $h$ con carga fija; el adjunto del flujo se ensambla con las fórmulas
+  \eqref{eq:adj_fuerte}, \eqref{eq:adj_flujo} y \eqref{eq:grad_Q} de este documento, no derivando matrices).
+  Gradiente respecto de $Q(t)$ frente a diferencias finitas, con $n=100,200,400$ nodos y pasos: error relativo
+  $2.6,1.3,0.6\times10^{-3}$ (ADR, $S=1$), $9.3,4.6,2.3\times10^{-3}$ (ADR, $S=4$), $3.1,1.6,0.8\times10^{-3}$
+  (MRMT, $N_r=2$): decrece en $O(h)$. Con $\partial_th=0$ (sin almacenamiento) coincide a $10^{-9}$.
+  \emph{Controles negativos:} sin la fuente $-S_s\partial_t(C\pA)$ de \eqref{eq:adj_flujo} el error es $0.8$--$1.6$;
+  sin el término $\bd$ ($\partial_{\bu}\bD$) es $0.7$--$0.95$ ($\alpha_L$ grande). Por tanto el test discrimina.
+  Con condición de Dirichlet $C=0$ (versión anterior de este documento) el comportamiento es el mismo.
+  Gradiente respecto de la posición del pozo: error $2.8,0.9,0.2\times10^{-3}$ (ADR) y $2.1,0.6,0.05\times10^{-3}$ (MRMT).
+  Proposición~\ref{prop:equiv}: la forma conservativa con $fC$ explícito y la forma \eqref{eq:N_ADR} dan el mismo
+  $C$ en $t=T$ con diferencia relativa $2.6,0.7,0.17\times10^{-3}$ (convergente), es decir, el sumidero se cancela.
+\item \textbf{Recursiones del adjunto discreto (§\ref{sec:discreto}) con matrices densas aleatorias:}
+  $\partial\hat J/\partial\mathbf{F}^n=-\boldsymbol\psi_C^{n+1}$ para ADR, MRMT por bloque y MRMT semi-analítico,
+  error máximo $\sim10^{-9}$ (el de las diferencias finitas). Es una prueba del álgebra, no de la implementación.
 \item \textbf{No verificado:} el adjunto de BFR (con $C$ no uniforme no coincide con las diferencias finitas: factor
-  2--7), las ecuaciones continuas de MRMT, el balance de masa numérico, la convergencia en malla y tiempo, y una
-  optimización completa convergida.
+  2--7), el balance de masa en 2D, la convergencia en malla y tiempo del simulador, y una optimización completa
+  convergida. El banco 1D no ejercita el contorno libre de $\Gamma_{\rm out}$ ni las paredes en 2D.
 \end{itemize}
 
 \end{document}

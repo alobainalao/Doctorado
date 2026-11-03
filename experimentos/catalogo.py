@@ -51,6 +51,36 @@ GRUPOS = {
         },
     },
 
+    # ── H. Ablación del flujo BFR↔FEM: de la configuración antigua a la actual ──────
+    # Pregunta: ¿por qué H y |U| diferían tanto entre BFR y FEM en main y ahora casi no?
+    # Cada caso suma UN cambio al anterior (acumulativo). Horizonte corto (12 pasos): sólo
+    # importa el flujo. Los cambios son los de config/default.json del 2026-10-24/28 y la malla saneada.
+    "H_ablacion_flujo": {
+        "desc": "Ablación acumulativa: configuración antigua → actual (sólo flujo, 12 pasos)",
+        "pregunta": "¿Qué cambio explica que H y |U| de BFR y FEM ahora casi coincidan?",
+        "casos": {
+            nombre: {"desc": desc,
+                     "cfg": {**SIN_FUENTE, "T": 12 * 18000, **ac},
+                     **({"bfr": extra_bfr, "backends": ["bfr"], "ref_fem": "H_ablacion_flujo/H5_theta1"} if extra_bfr else {})}
+            for nombre, desc, ac, extra_bfr in (
+                ("H0_antiguo", "Config. antigua: malla sin sanear, Q=1e-3, kernel 2.5·h por suma, θ=0.9",
+                 {"mesh_pkl": "data/input/malla_compartida/malla_2026-10-22_sin_saneo.pkl", "r_pozo": None,
+                  "norm_delta_pozo": "suma", "Q_std": 1e-3, "theta": 0.9, "theta_C": 0.9}, None),
+                ("H1_Q0p3", "H0 con Q_std = 0.3",
+                 {"mesh_pkl": "data/input/malla_compartida/malla_2026-10-22_sin_saneo.pkl", "r_pozo": None,
+                  "norm_delta_pozo": "suma", "Q_std": 0.3, "theta": 0.9, "theta_C": 0.9}, None),
+                ("H2_malla_saneada", "H1 con la malla saneada",
+                 {"r_pozo": None, "norm_delta_pozo": "suma", "Q_std": 0.3, "theta": 0.9, "theta_C": 0.9}, None),
+                ("H3_r_pozo20", "H2 con r_pozo = 20 m (soporte fijo del kernel)",
+                 {"norm_delta_pozo": "suma", "Q_std": 0.3, "theta": 0.9, "theta_C": 0.9}, None),
+                ("H4_delta_area", "H3 con delta normalizada por área",
+                 {"Q_std": 0.3, "theta": 0.9, "theta_C": 0.9}, None),
+                ("H5_theta1", "H4 con θ = θ_C = 1 (configuración actual)", {}, None),
+                ("H6_bc_fem", "H5 con bc_outlet_mode = fem (sólo BFR)", {}, {"bc_outlet_mode": "fem"}),
+            )
+        },
+    },
+
     # ── B. BC de salida: BFR con la condición natural de FEniCS ──────────────
     # Sólo cambia BFR → la referencia FEM es el caso homólogo del grupo A.
     "B_bc_salida_fem": {

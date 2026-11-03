@@ -318,7 +318,12 @@ def video(datos, s, titulo, M, out_dir, fuente=None):
                 q = ax.quiver(q_pts[:, 0], q_pts[:, 1], *_dir(Bq, fuente_U["U"][0]), scale=60,
                               scale_units="width", width=0.0016, headwidth=4, headlength=4,
                               color="black", alpha=0.75, zorder=5)
-            cax = fig.add_subplot(gs[i, 1])
+            # Una sola barra de color para BFR y FEM (misma norma, abarca las dos filas);
+            # la diferencia es otra magnitud y lleva la suya.
+            if i == 1:
+                paneles.append((tp, arr, q, fuente_U))
+                continue
+            cax = fig.add_subplot(gs[0:2, 1] if i == 0 else gs[2, 1])
             cb = fig.colorbar(tp, cax=cax, extend=cf["ext"] if i < 2 else
                               ("both" if lim < lim_max else "neither"))
             cb.set_label(("Δ" if i == 2 else "") + f"{campo if campo != 'V' else '|U|'} ({cf['unidad']})")

@@ -191,8 +191,10 @@ def animar_caso(g, c, spec, force=False):
         print(f"[animar] ⏭  {tag}: sin resultados", flush=True)
         return False
     hecho = os.path.join(fuentes.get("bfr", caso_dir), "figures", "C.mp4")
-    if os.path.exists(hecho) and not force:
-        print(f"[animar] ⏭  {tag}: ya animado (usar --force)", flush=True)
+    # Un video sólo vale si es más nuevo que TODOS los resultados que muestra (si no, quedó viejo).
+    npz_mtime = max(os.path.getmtime(os.path.join(p, "simulation_results.npz")) for p in fuentes.values())
+    if os.path.exists(hecho) and not force and os.path.getmtime(hecho) >= npz_mtime:
+        print(f"[animar] ⏭  {tag}: ya animado y vigente (usar --force)", flush=True)
         return True
 
     datos = {b: _cargar(os.path.join(p, "simulation_results.npz")) for b, p in fuentes.items()}
