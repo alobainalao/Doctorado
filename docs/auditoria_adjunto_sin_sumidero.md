@@ -85,7 +85,7 @@ Lo que sí quedó confirmado hoy: V3 (columna `Q`, ADR `S_s=1,4`, MRMT) reproduc
 
 | ID | Decisión | Por qué no se resolvió |
 |---|---|---|
-| D1 | **Cierre de Γout**: RESUELTO por el autor (4 nov): derivada normal de u nula, adoptada como cierre (D) (componente normal). Pendiente confirmar que no se exige la componente tangencial y si FEniCSx debe pasar de (B) a (D). | — |
+| D1 | **Cierre de Γout**: RESUELTO por el autor (4 nov): derivada normal de u nula, adoptada como cierre (D) (componente normal). Confirmado: no se impone la tangencial. Pendiente: si FEniCSx debe pasar de (B) a (D). | — |
 | D2 | Modelo de almacenamiento: `φ` constante con `−S_s∂ₜh C`, o `∂ₜφ=S_s∂ₜh` (término nulo); `S_s=φ` numérico vs valores físicos. | Es una decisión de modelación. |
 | D3 | Decaimiento en MRMT: con o sin `λ_dφRC_m` (hoy FEniCSx sí, BFR no). | Afecta resultados del nitrato. |
 | D4 | Concentración de entrada en Γin (`C_in`). | Dato físico. |

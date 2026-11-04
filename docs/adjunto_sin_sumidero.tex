@@ -996,7 +996,7 @@ ejercita el contorno $\Gamma_{\rm out}$ ni las paredes en 2D. Tampoco se ha veri
 
 \paragraph{Decisiones que corresponden al autor.}
 \begin{enumerate}[label=\textbf{D\arabic*.},nosep]
-\item \textbf{Cierre de $\Gamma_{\rm out}$} (\S\ref{sec:salida}): adoptado el (D) (componente normal de $\partial_n\bu=\mathbf 0$). Falta confirmar que no se pretende imponer también la componente tangencial, que con $\bK$ variable sobredetermina el problema, y decidir si FEniCSx debe pasar del cierre (B) al (D) para comparar.
+\item \textbf{Cierre de $\Gamma_{\rm out}$} (\S\ref{sec:salida}): adoptado el (D) (componente normal de $\partial_n\bu=\mathbf 0$). Confirmado por el autor: la componente tangencial no se impone. Queda decidir si FEniCSx debe pasar del cierre (B) al (D) para comparar.
 \item \textbf{Modelo de almacenamiento} (\S\ref{sec:modelo}): $\phi$ constante con $-S_s\partial_th\,C$, o $\partial_t\phi=S_s\partial_th$ (sin el término); y $S_s=\phi$ numéricamente frente a valores físicos de $S_s$.
 \item \textbf{Decaimiento en MRMT}: con o sin $\lambda_d\phi RC_m$; hoy FEniCSx lo aplica y BFR no.
 \item \textbf{Concentración de entrada} en $\Gamma_{\rm in}$: dejar la condición $(\bD\nabla C)\cdot\bn=0$ o prescribir $C_{\rm in}$.
