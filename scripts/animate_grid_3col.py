@@ -38,6 +38,7 @@ MODELOS = ["adr", "mrmt_semi", "mrmt_block"]
 BACK = ["bfr", "fenicsx"]
 LM = {"adr": "ADR", "mrmt_semi": "MRMT Semi", "mrmt_block": "MRMT Bloque"}
 LB = {"bfr": "BFR — RBF-FD", "fenicsx": "FEniCS — FEM"}
+PREFIJO = os.environ.get("EXP_PREFIJO", "NA_")      # carpeta de cada caso: <PREFIJO><modelo> (grupo M_adjunto: MA_)
 ROOT = os.environ.get("EXP_ROOT", os.path.join(_CODIGO, "data", "output", "experimentos", "N_adjunto"))
 is_adj = campo.startswith("adj_")
 
@@ -65,7 +66,7 @@ if _h_rango:
 
 
 def cargar(m, b):
-    d0 = os.path.join(ROOT, f"NA_{m}", b)
+    d0 = os.path.join(ROOT, f"{PREFIJO}{m}", b)
     if is_adj:
         z = np.load(os.path.join(d0, "adjoint_results.npz"), allow_pickle=True)
         fk = "psi_H" if campo == "adj_H" else "psi_C"
@@ -93,7 +94,7 @@ for m in MODELOS:
     for b in BACK:
         try:
             r = cargar(m, b)
-        except KeyError:
+        except (KeyError, FileNotFoundError):
             r = None
         if r is not None:
             n, f, dt = r[:3]
@@ -218,7 +219,7 @@ else:
 timer = fig.text(p2.x1, 0.992, f"{INFO['pfx']} = 0.0 h", ha="right", va="top", fontsize=22,
                  fontweight="bold", fontfamily="monospace", color="#000080",
                  bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="#aaaacc", lw=1.5, alpha=0.92))
-for j, tt in enumerate([LB["bfr"] + (" (no validado)" if is_adj else ""), LB["fenicsx"],
+for j, tt in enumerate([LB["bfr"], LB["fenicsx"],
                         "BFR/máx − FEniCS/máx" if is_adj else "BFR − FEniCS"]):
     p = ax[(0, j)].get_position()
     fig.text(p.x0 + p.width / 2, p.y1 + 0.006, tt, ha="center", va="bottom", fontsize=20,
