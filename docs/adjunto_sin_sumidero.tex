@@ -62,7 +62,7 @@
 \title{Flujo y transporte en un acuífero con pozo de extracción:\\
 modelos ADR y MRMT, sistema adjunto y gradiente\\ para el control óptimo}
 \author{Tesis doctoral --- control óptimo de la contaminación en acuíferos profundos}
-\date{\today}
+\date{4 de noviembre de 2026}
 
 \begin{document}
 \maketitle
@@ -133,6 +133,9 @@ de $t$ y $\phi R\ge c>0$.\end{hyp}
 \S\ref{sec:verif} para $\bu=\mathbf 0$).\end{hyp}
 \begin{hyp}\label{hyp:reg} El estado es suficientemente regular para que $\nabla\!\cdot(\bu C)=\bu\cdot\nabla C+C\,\nabla\!\cdot\bu$
 se cumpla casi en todo punto.\end{hyp}
+\begin{hyp}\label{hyp:dth} $\partial_th\in L^\infty(Q_T)$. Hace que el almacenamiento $-S_s\,\partial_th\,C$ sea una reacción acotada
+(de signo indefinido) y, con ello, que la forma $a_C$ cumpla una desigualdad de G\aa rding; no se demuestra aquí
+para los núcleos de bombeo empleados.\end{hyp}
 \begin{hyp}\label{hyp:datos} Los estados iniciales $h_0,C_0,C_{\im,r,0}$ son datos (no dependen de los controles) y el funcional no tiene
 término terminal.\end{hyp}
 
@@ -140,6 +143,11 @@ término terminal.\end{hyp}
 \section{Modelo de flujo y transporte}
 \label{sec:modelo}
 %===========================================================
+
+\paragraph{Un solo núcleo.} Se usa el mismo $g_\varepsilon$ en el sumidero de flujo $f=-Q\,g_\varepsilon$ y en el funcional $J_m$.
+Si el sumidero de flujo usara otro núcleo $w(\cdot;z_p)$ de masa unitaria (por ejemplo el de Wendland), bastaría sustituir
+$g_\varepsilon$ por $w$ y $\dot g_\varepsilon$ por $\dot w$ en $\ell_h$ y en el último término de \eqref{eq:grad_Q}--\eqref{eq:grad_z};
+el gradiente es exacto solo si el estado y el gradiente emplean el mismo núcleo.
 
 \subsection{Balance de agua}
 La conservación de la masa de agua con la ley de Darcy $\bu=-\bK\nabla h$ da
@@ -244,7 +252,7 @@ $\Gamma_{\rm wall}$ son impermeables. Se imponen:
 \midrule
 $\Gamma_{\rm in}$ & $(\bK\nabla h)\cdot\bn=f_{\rm in}\ge0$, es decir $\bu\cdot\bn=-f_{\rm in}\le0$ & $(\bD\nabla C)\cdot\bn=0$ \\
 $\Gamma_{\rm wall}$ & $(\bK\nabla h)\cdot\bn=0$ & $(\bD\nabla C)\cdot\bn=0$ \\
-$\Gamma_{\rm out}$ & condición libre ($\nabla(\bK\nabla h)\cdot\bn=0$) & $(\bD\nabla C)\cdot\bn=0$ \\
+$\Gamma_{\rm out}$ & flujo libre (no se impone dato: $\bK\nabla h\cdot\bn$ es incógnita) & $(\bD\nabla C)\cdot\bn=0$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -422,9 +430,10 @@ La fuente verde acopla el adjunto del flujo con $C\pA$ incluso cuando $\bb=0$.
 
 \subsection{Gradiente}
 Con $h$, $C$ y los multiplicadores en su valor de estado y de adjunto, el Lema~\ref{lem:grad} da
-$\partial_Q\hat J=\partial_Q\mathcal{L}^{\rm A}$. Los controles aparecen en tres lugares: en
-$-\ell_h(\phA;Q,z_p)=Q\int g_\varepsilon\phA-\int_{\Gamma_{\rm in}}f_{\rm in}\phA$ (derivada respecto de $Q$: $\int g_\varepsilon\phA$),
-en $\beta J_{\rm op}$ (derivada $2\beta d_pQ$) y en el kernel $g_\varepsilon(z_p)$. No aparecen en el transporte, pues
+$d\hat J/d\theta=\partial_\theta\mathcal{L}^{\rm A}$ para $\theta\in\{Q,z_p\}$. El caudal $Q$ aparece en dos lugares:
+en $-\ell_h(\phA;Q,z_p)=Q\int g_\varepsilon\phA-\int_{\Gamma_{\rm in}}f_{\rm in}\phA$ (derivada: $\int g_\varepsilon\phA$) y en
+$\beta J_{\rm op}$ (derivada: $2\beta d_pQ$). La profundidad $z_p$ aparece en cuatro: en $\gamma J_m$ y en $-\ell_h$ a través del
+núcleo $g_\varepsilon(z_p)$, en $\alpha J_{\rm inst}$ y en $d_p$ de $\beta J_{\rm op}$. Ningún control aparece en el transporte, pues
 la ecuación \eqref{eq:ADR} no contiene término de extracción. Resulta
 \begin{equation}
 \boxed{\ \nabla_Q\hat J(t)=2\beta\,d_p\,Q(t)+\int_\Omega\Ceps\,\phA\,\dd\bx\ }
@@ -477,7 +486,7 @@ Bajo las hipótesis~\ref{hyp:dominio}--\ref{hyp:datos}, los multiplicadores $\pM
 &-\phi R\partial_t\pM-\nabla\!\cdot(\bD\nabla\pM)-\bu\cdot\nabla\pM
 +\Bigl(\textstyle\sum_r\lambda_r\Bigr)\pM+\sumi{Q\Ceps\pM}-\textstyle\sum_r\lambda_r\pim^{\,r}=-2\gamma\Ceps C_m,\\
 &\phi_{\im,r}R\,\partial_t\pim^{\,r}=\lambda_r(\pim^{\,r}-\pM),\quad r=1,\dots,N_r,\\
-&\pM(T)=\pim^{\,r}(T)=0 .
+&\pM(T)=\pim^{\,r}(T)=0,\qquad(\bD\nabla\pM+\bu\,\pM)\cdot\bn=0\ \text{ en }\partial\Omega .
 \end{aligned}\right.
 \label{eq:sistema_adjunto_MRMT}
 \end{equation}
@@ -545,7 +554,7 @@ se agrega $-\sum_r\kappa_r(\boldsymbol\psi_r^{n}+\boldsymbol\psi_r^{n+1})$ a la 
 \begin{equation}
 \left\{\begin{aligned}
 \boldsymbol\psi_r^{n}&=(1-2\kappa_r)\,\boldsymbol\psi_r^{n+1}+\mathcal{Q}_r\boldsymbol\psi_C^{n+1},
-\qquad \boldsymbol\psi_r^{N_t}=\mathbf{0},\\
+\qquad \boldsymbol\psi_r^{N_t+1}=\mathbf{0},\\
 (\mathcal{P}^{n})^\top\boldsymbol\psi_C^{n}&=(\mathcal{R}^{n})^\top\boldsymbol\psi_C^{n+1}
 +\sum_r\kappa_r\bigl(\boldsymbol\psi_r^{n}+\boldsymbol\psi_r^{n+1}\bigr)-\nabla j_n(\mathbf{C}^n).
 \end{aligned}\right.
@@ -592,6 +601,14 @@ A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^
 \label{eq:disc_flujo}
 \end{equation}
 $\partial\hat J/\partial z_p$ es \eqref{eq:grad_z} con las integrales en $t$ sustituidas por sumas con el mismo $\Delta t$.
+
+\begin{remark}[Pesos $\theta$]
+Las fórmulas \eqref{eq:disc_flujo} y la de $\boldsymbol\sigma^m$, y con ellas los Algoritmos~\ref{alg:adr}--\ref{alg:semi}, están escritos para
+$\theta=\theta_C=1$ (esquema implícito en el flujo y en el transporte). Para $\theta<1$, $Q_n$ interviene en el paso que llega al
+nivel $n$ y, a través del caudal «viejo», en el siguiente: $\partial\hat J/\partial Q_n$ combina el $\boldsymbol\psi_h$ de ambos
+niveles con los pesos $\theta$ y $1-\theta$ del esquema, y los coeficientes de $\boldsymbol\sigma^m$ (también los de la parte verde) se ponderan
+con los pesos $\theta_C$ del transporte. La implementación incluye esas ponderaciones; la verificación V5 con $\theta=0.9$, $\theta_C=0.5$ la ejercita.
+\end{remark}
 
 \paragraph{Evaluación de $\boldsymbol\sigma^m$ con diferencias finitas RBF.} Cada fila del transporte es
 $\sum_kc_{k,i}\,(O_k\mathbf{C})_i$ con estenciles fijos $O_k\in\{I,\partial_{xx},\partial_{zz},\partial_x,\partial_z\}$ y
@@ -677,7 +694,7 @@ de suministro de ese esquema exterior.
 \State \textbf{Directo.} como en el Algoritmo~\ref{alg:adr}, pero en cada paso
   $\mathcal{P}^{n+1}\mathbf{C}^{n+1}=\mathcal{R}^n\mathbf{C}^n+\sum_r\mathcal{Q}_r\mathbf{C}_{\im,r}^n+\mathbf{F}^n$
   y luego $\mathbf{C}_{\im,r}^{n+1}=\kappa_r(\mathbf{C}^{n+1}+\mathbf{C}^n)+(1-2\kappa_r)\mathbf{C}_{\im,r}^n$;\ guardar también $\mathbf{C}_{\im,r}^n$
-\State \textbf{Adjunto.} $\boldsymbol\psi_C^{N_t+1},\boldsymbol\psi_h^{N_t+1},\boldsymbol\psi_r^{N_t}\gets\mathbf{0}$
+\State \textbf{Adjunto.} $\boldsymbol\psi_C^{N_t+1},\boldsymbol\psi_h^{N_t+1},\boldsymbol\psi_r^{N_t+1}\gets\mathbf{0}$
 \For{$n=N_t,\dots,1$}
   \For{$r=1,\dots,N_r$}
     \State $\boldsymbol\psi_r^{n}\gets(1-2\kappa_r)\boldsymbol\psi_r^{n+1}+\mathcal{Q}_r\boldsymbol\psi_C^{n+1}$ \hfill \eqref{eq:disc_block}
