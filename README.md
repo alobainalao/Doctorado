@@ -1,4 +1,12 @@
-# Simulador ADR / MRMT
+# Simulador ADR / MRMT — línea «sin sumidero»
+
+> **Esta es la rama `sin-sumidero`** (worktree `codigo-sumidero/`). El modelo no considera
+> explícitamente el término de sumidero $W_-$; en su lugar lleva el término de almacenamiento
+> $-S_s\,\partial_t h\,C$ ($S_s=\varphi$). La versión legacy está en `main` (carpeta `codigo/`) y no
+> se modifica. Ver `docs/EQUIVALENCIAS_LEGACY.md` (qué cambió y cómo activarlo),
+> `docs/PENDIENTES.md`, `docs/resultados_modelo_nuevo.md`, `docs/parametros_nitrato.md`,
+> `docs/inventario_data_output.md` y `docs/adjunto_sin_sumidero.pdf` (análisis desde cero).
+> Los benchmarks del libro están en `benchmarks_libro/` (en `main`: `notebooks/2_benchmarks_libro/`).
 
 Simulación numérica de flujo y transporte en medios porosos (contaminación en
 acuíferos), con:
