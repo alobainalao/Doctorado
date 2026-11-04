@@ -79,8 +79,7 @@ $-S_s\,\partial_th\,C$. Para el problema de control óptimo del caudal $Q(t)$ y 
 se construye el Lagrangiano de cada variante y se deducen, paso a paso, las ecuaciones adjuntas del
 transporte, de las regiones inmóviles y del flujo, con sus condiciones de frontera, y el gradiente del
 funcional reducido. Se analiza la condición pretendida en la frontera de salida, $\partial_{\bn}\bu=\mathbf 0$, y se
-muestra que como condición vectorial no cierra el problema de flujo; se formulan las alternativas
-admisibles y su efecto sobre la forma débil y el adjunto, sin elegir entre ellas. Se escriben el adjunto discreto exacto de cada
+muestra que como condición vectorial no cierra el problema de flujo; se adopta su componente normal, que sí cierra el problema (condición de borde dinámica), y se formulan las alternativas y su efecto sobre la forma débil y el adjunto. Se escriben el adjunto discreto exacto de cada
 esquema, los algoritmos y las verificaciones numéricas, indicando qué demuestra cada una y qué no.
 \end{abstract}
 
@@ -244,8 +243,7 @@ Las implementaciones usan: FEniCSx y BFR con \texttt{bc\_outlet\_mode="fem"}, el
 segundo orden cuya relación con \eqref{eq:dnu} no se ha podido establecer (véase la decisión~D\ref{dec:pfs} de la \S\ref{sec:pendientes}). Como consecuencia, \textbf{BFR con \texttt{"pfs"} y FEniCSx resuelven
 problemas continuos distintos en $\Gamma_{\rm out}$}, y las diferencias entre ellos no son solo de discretización: en el caso ADR de la malla compartida el error relativo de $|\bu|$
 es $0.72$ con \texttt{"pfs"} y $0.10$ con \texttt{"fem"} (resultados de los casos M0 y M3 del grupo \texttt{M\_modelo\_nuevo}).
-\decision{Elegir el cierre de $\Gamma_{\rm out}$: (A), (B), (C) o (D), o proponer otra condición con su dato físico. El resto del documento trata (A), (B) y (D) en paralelo; difieren solo en el espacio de ensayo
-de $h$ (\S\ref{sec:control}) y en la condición de frontera de $\psi_h$ en $\Gamma_{\rm out}$ (\S\ref{sec:adj_ADR}). Los gradientes \eqref{eq:grad_Q}--\eqref{eq:grad_z} no cambian.}
+\paragraph{Cierre adoptado.} El autor fija como condición de salida libre la derivada normal nula de $\bu$. Como \eqref{eq:dnu} vectorial no puede imponerse completa, el modelo la adopta en el único sentido en que cierra el problema: \textbf{el cierre (D)}, es decir, la componente normal $\partial_n(\bu\cdot\bn)=0$, equivalente a \eqref{eq:borde_dinamica}; la componente tangencial no se impone (se cumple, en general, solo de forma aproximada). Es lo que implementa BFR con \texttt{"libre"}. Los cierres (A), (B) y (C) quedan como alternativas y no se usan; \texttt{"pfs"} y \texttt{"fem"} no representan esta condición. Con (D), $\delta h=0$ y $\psi_h=0$ en $\Gamma_{\rm out}$, y los gradientes \eqref{eq:grad_Q}--\eqref{eq:grad_z} valen sin cambios.
 
 \subsection{Balance de soluto en forma conservativa}
 La masa de soluto por unidad de volumen es $\phi RC$ y su flujo es $\bu C-\bD\nabla C$. El agua que extrae el
@@ -360,7 +358,7 @@ $\Gamma_{\rm wall}$ son impermeables. Se imponen:
 \midrule
 $\Gamma_{\rm in}$ & $(\bK\nabla h)\cdot\bn=f_{\rm in}\ge0$, es decir $\bu\cdot\bn=-f_{\rm in}\le0$ & $(\bD\nabla C)\cdot\bn=0$ \\
 $\Gamma_{\rm wall}$ & $(\bK\nabla h)\cdot\bn=0$ & $(\bD\nabla C)\cdot\bn=0$ \\
-$\Gamma_{\rm out}$ & cierre (A), (B), (C) o (D) de la \S\ref{sec:salida}, pendiente de decisión & $(\bD\nabla C)\cdot\bn=0$ \\
+$\Gamma_{\rm out}$ & cierre (D) de la \S\ref{sec:salida} ($\partial_n(\bu\cdot\bn)=0$) & $(\bD\nabla C)\cdot\bn=0$ \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -998,7 +996,7 @@ ejercita el contorno $\Gamma_{\rm out}$ ni las paredes en 2D. Tampoco se ha veri
 
 \paragraph{Decisiones que corresponden al autor.}
 \begin{enumerate}[label=\textbf{D\arabic*.},nosep]
-\item \textbf{Cierre de $\Gamma_{\rm out}$} (\S\ref{sec:salida}): (A), (B), (C) o (D), o una condición nueva con su dato físico. Decisión crítica: de ella dependen la formulación débil, el adjunto del flujo en $\Gamma_{\rm out}$ y la comparación BFR--FEniCSx.
+\item \textbf{Cierre de $\Gamma_{\rm out}$} (\S\ref{sec:salida}): adoptado el (D) (componente normal de $\partial_n\bu=\mathbf 0$). Falta confirmar que no se pretende imponer también la componente tangencial, que con $\bK$ variable sobredetermina el problema, y decidir si FEniCSx debe pasar del cierre (B) al (D) para comparar.
 \item \textbf{Modelo de almacenamiento} (\S\ref{sec:modelo}): $\phi$ constante con $-S_s\partial_th\,C$, o $\partial_t\phi=S_s\partial_th$ (sin el término); y $S_s=\phi$ numéricamente frente a valores físicos de $S_s$.
 \item \textbf{Decaimiento en MRMT}: con o sin $\lambda_d\phi RC_m$; hoy FEniCSx lo aplica y BFR no.
 \item \textbf{Concentración de entrada} en $\Gamma_{\rm in}$: dejar la condición $(\bD\nabla C)\cdot\bn=0$ o prescribir $C_{\rm in}$.
