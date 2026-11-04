@@ -746,7 +746,7 @@ for n in (20, 40, 80):
 # * el control es **finito-dimensional** ($u\in\mathbb R^K$, como $Q_{out}$) y **con cotas** ⇒ proyección;
 # * es el equivalente estacionario del sumidero del pozo en `step_time` (sin flujo de Darcy acoplado).
 #
-# > **Nota (revisión del 28-oct-2026, ver `../3_cuadrado_pozo`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
+# > **Nota (revisión del 28-oct-2026, ver `../notebooks/3_cuadrado_pozo`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
 # > transporte, y eso es correcto **porque la velocidad de Graetz no siente el pozo** ($\nabla\cdot\mathbf b=0$). En el
 # > acuífero de la tesis el pozo sí cambia el flujo ($\nabla\cdot\mathbf q=-Q\delta_p$), y entonces la extracción ya
 # > está dentro de $\mathbf q\cdot\nabla C$ en la forma no conservativa. Añadir además el sumidero ($W_-$ del

@@ -5,7 +5,7 @@ Tres bloques, en el orden en que conviene leerlos:
 | # | Carpeta | Qué contiene | Corre simulaciones | Tiempo |
 |---|---|---|---|---|
 | 1 | `1_resultados/` | `1_resultados_experimentos`: los resultados de los grupos A–F, S, W y Z de `experimentos/` (BFR vs FEniCS), ordenados por pregunta, con tablas, figuras finales y qué es fiable hoy | no (lee `data/output/experimentos/`) | ~10 s |
-| 2 | `2_benchmarks_libro/` | Casos de Manzoni–Quarteroni–Salsa (2021) resueltos con RBF-FD + FEM propio + adjunto discreto. Cada uno abre con una **ficha** (el problema en palabras, cómo lo resuelve el libro, cómo lo implementamos, cómo comparamos y resultados) | sí (casos pequeños) | 1–4 min |
+| 2 | `../benchmarks_libro/` (fuera de `notebooks/`) | Casos de Manzoni–Quarteroni–Salsa (2021) resueltos con RBF-FD + FEM propio + adjunto discreto. Cada uno abre con una **ficha** (el problema en palabras, cómo lo resuelve el libro, cómo lo implementamos, cómo comparamos y resultados) | sí (casos pequeños) | 1–4 min |
 | 3 | `3_cuadrado_pozo/` | `3_cuadrado_pozo_sumidero`: cuadrado con un pozo central, con y sin el sumidero $W_-$. Teoría (la cancelación en la forma no conservativa), un modelo mínimo de volúmenes finitos y las corridas reales (grupos Z y S). Se ve cómo se escapa el contaminante en los dos casos | modelo mínimo sí; el simulador sólo se lee | ~30 s |
 
 ## Bloque 2: benchmarks del libro

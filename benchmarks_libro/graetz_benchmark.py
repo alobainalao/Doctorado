@@ -1,6 +1,6 @@
 """Benchmark de referencia: control óptimo de Graetz (Manzoni–Quarteroni–Salsa 2021, §6.5.1) + pozos.
 
-Uso (desde codigo/notebooks):
+Uso (desde codigo/benchmarks_libro):
     python3 graetz_benchmark.py                 # nivel rápido (h = 1/40): verificación en segundos
     python3 graetz_benchmark.py --convergencia  # h = 1/20, 1/40, 1/80 contra la referencia extrapolada
     python3 graetz_benchmark.py --referencia    # recalcula graetz_referencia.json (FEM fino + Richardson)

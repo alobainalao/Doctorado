@@ -1,6 +1,6 @@
 """Benchmark de referencia del peldaño 4: canal de Graetz con 4 pozos y tasas de extracción u_i(t) (transitorio).
 
-Uso (desde codigo/notebooks):
+Uso (desde codigo/benchmarks_libro):
     python3 pozos_benchmark.py                # nivel rápido (h = 1/20): RBF-FD y FEM contra la referencia, OK/FALLA
     python3 pozos_benchmark.py --referencia   # recalcula pozos_referencia.json (FEM n = 20, 40, 80 + Richardson)
     python3 pozos_benchmark.py --congelar     # guarda la instantánea de regresión del nivel rápido

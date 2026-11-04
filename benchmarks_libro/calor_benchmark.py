@@ -1,6 +1,6 @@
 """Benchmark de referencia: control distribuido de la ecuación del calor (Manzoni–Quarteroni–Salsa 2021, §8.3).
 
-Uso (desde codigo/notebooks):
+Uso (desde codigo/benchmarks_libro):
     python3 calor_benchmark.py                # nivel rápido (n = 20): RBF-FD y FEM contra la referencia, OK/FALLA
     python3 calor_benchmark.py --libro        # Tablas 8.2–8.3 del libro frente a nuestros valores
     python3 calor_benchmark.py --referencia   # recalcula calor_referencia.json (FEM n = 20, 40, 80 + Richardson)

@@ -143,7 +143,7 @@ FORMAS = {"cons": ("cons", 0, None), "nc": ("nc_fv", 0, None), "Wq": ("nc_fv", 1
 # 5. **Excepción:** si la dispersión alimenta el agujero ($\mathbf D$ grande, $Q$ pequeño), $W_-$ con $\kappa=1$ saca
 #    masa que el pozo no podría extraer. Se mide en §7.
 #
-# **¿De dónde salió $W_-$?** En los peldaños 2a (Parte B) y 2c (`2_benchmarks_libro`) el pozo es un sumidero
+# **¿De dónde salió $W_-$?** En los peldaños 2a (Parte B) y 2c (`benchmarks_libro/libro`) el pozo es un sumidero
 # $u_i\psi_i\,y$ en la ecuación de transporte, **porque allí la velocidad es la de Graetz y no siente el pozo**
 # ($\nabla\cdot\mathbf b=0$). En ese problema es correcto. En el acuífero, en cambio, el pozo cambia el flujo
 # ($\nabla\cdot\mathbf u=-Q\,w_R$) y la extracción ya está dentro de $-\mathbf u\cdot\nabla C_m$, así que ponerla
