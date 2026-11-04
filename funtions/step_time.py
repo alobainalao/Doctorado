@@ -31,7 +31,12 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     D_N = D_total(D_f, U)
     Div_D_N = Div_KD(D_N, grad)
 
-    if _upwind:
+    if getattr(p, 'transport_form', 'nonconservative') == 'conservative':
+        from funtions.conservative_operators import build_conservative_transport_matrix, kernel_pozo
+        kp = kernel_pozo(p, delta_p, gauss_p)
+        C_solver = build_conservative_transport_matrix(U, nodes, groups, normals, pho, D_N, Qout_N, eps_M, kp, -1, p, grad)
+        C_right  = build_conservative_transport_matrix(U, nodes, groups, normals, pho, D_n, Qout_n, eps_M, kp,  1, p, grad)
+    elif _upwind:
         from funtions.upwind_operators import build_upwind_transport_matrix
         C_solver = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, p)
         C_right  = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p,  1, p)
@@ -115,6 +120,7 @@ def step_adjoint(
     forced_well_node=-1,   # índice del nodo forzado en p.pozo (-1 si no hay)
     forced_well_nbrs=None,  # vecinos Poisson-disc para IDW
     forced_well_idw=None,   # pesos IDW normalizados
+    delta_p=None,           # núcleo del sumidero de flujo (forma conservativa)
 ):
 
     p = RUNTIME.get()
@@ -129,14 +135,23 @@ def step_adjoint(
     Div_D_n = Div_KD(D_n, grad)
 
     # reconstruir A_fwd y B_fwd exactamente como en step_time
-    A_fwd = build_transport_matrix(
-        V_N, nodes, groups, normals, pho, D_N, Div_D_N,
-        Qout_N, eps_M, gauss_p, sig=-1
-    )
-    B_fwd = build_transport_matrix(
-        V_N, nodes, groups, normals, pho, D_n, Div_D_n,
-        Qout_n, eps_M, gauss_p, sig=+1
-    )
+    conservative = getattr(p, 'transport_form', 'nonconservative') == 'conservative'
+    if conservative:
+        from funtions.conservative_operators import build_conservative_transport_matrix, kernel_pozo
+        kp = kernel_pozo(p, delta_p, gauss_p)
+        A_fwd = build_conservative_transport_matrix(
+            V_N, nodes, groups, normals, pho, D_N, Qout_N, eps_M, kp, -1, p, grad)
+        B_fwd = build_conservative_transport_matrix(
+            V_N, nodes, groups, normals, pho, D_n, Qout_n, eps_M, kp, +1, p, grad)
+    else:
+        A_fwd = build_transport_matrix(
+            V_N, nodes, groups, normals, pho, D_N, Div_D_N,
+            Qout_N, eps_M, gauss_p, sig=-1
+        )
+        B_fwd = build_transport_matrix(
+            V_N, nodes, groups, normals, pho, D_n, Div_D_n,
+            Qout_n, eps_M, gauss_p, sig=+1
+        )
 
     # transponer
     AT = A_fwd.T.tocsr()
@@ -247,7 +262,8 @@ def step_adjoint(
         K=K,
         grad=grad,
         nodes=nodes,
-        groups=groups
+        groups=groups,
+        conservative=conservative
     )
 
     # solve ψ_H

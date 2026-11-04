@@ -30,7 +30,7 @@ class Parameters:
 
                 "spacing", "min_sp", "min_sp_boundary", "s_cone", "r_circle", "r_cone", "sigma_fuente",
                 "fenicsx_lc_near", "dt", "T",
-                "upwind_transport",
+                "upwind_transport", "transport_form",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 
@@ -130,6 +130,10 @@ class Parameters:
         # conservativa el soluto ya sale con el agua (exp/sumidero-W, grupo Z);
         # 1 recupera el modelo anterior.
         self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
+        # Forma de la ecuación de transporte en BFR: "nonconservative" (default,
+        # D∂² + (∇·D−u)·∇ desarrollado) o "conservative" (∇·(uC − D∇C) como
+        # flujo→divergencia, con sumidero Q w_R C del balance; ignora factor_sumidero_C).
+        self.transport_form = str(getattr(self, "transport_form", "nonconservative"))
 
         # =========================
         # TIEMPO

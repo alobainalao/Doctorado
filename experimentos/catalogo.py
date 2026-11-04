@@ -132,6 +132,42 @@ GRUPOS = {
         },
     },
 
+    # ── G. Forma conservativa del transporte en BFR ──────────────────────────
+    "G_conservativa": {
+        "desc": "Transporte BFR en forma conservativa ∇·(uC − D∇C), sin desarrollar",
+        "pregunta": "¿La forma conservativa acerca el transporte BFR al de FEM?",
+        "casos": {
+            "G1_cons_solo_fuente": {
+                "desc": "Como A1, BFR con transport_form=conservative",
+                "cfg": {**SIN_POZO},
+                "bfr": {"transport_form": "conservative"},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A1_solo_fuente",
+            },
+            "G3_cons_fuente_pozo": {
+                "desc": "Como A3, BFR con transport_form=conservative (sumidero Q w_R C)",
+                "cfg": {},
+                "bfr": {"transport_form": "conservative"},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A3_fuente_pozo",
+            },
+            "G1u_cons_upwind_solo_fuente": {
+                "desc": "Como G1, flujo advectivo uC con stencil upwind",
+                "cfg": {**SIN_POZO},
+                "bfr": {"transport_form": "conservative", "upwind_transport": True},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A1_solo_fuente",
+            },
+            "G3u_cons_upwind_fuente_pozo": {
+                "desc": "Como G3, flujo advectivo uC con stencil upwind",
+                "cfg": {},
+                "bfr": {"transport_form": "conservative", "upwind_transport": True},
+                "backends": ["bfr"],
+                "ref_fem": "A_terminos/A3_fuente_pozo",
+            },
+        },
+    },
+
     # ── W. Sumidero de transporte W- = χ(Q) g_ε C (decisión 1 de la tesis) ──
     # Fuente activa sólo los primeros 30 días; después no entra contaminante y
     # se sigue hasta T. Si la advección basta para sacar el soluto por el pozo,

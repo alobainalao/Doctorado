@@ -1041,10 +1041,19 @@ def build_adj_H_rhs(
     grad,
 
     nodes,
-    groups
+    groups,
+    conservative=False
 ):
 
     p = RUNTIME.get()
+    # Forma conservativa: δ∫ψ∇·(uC) = −∫δh ∇·(K C ∇ψ), de signo opuesto al de
+    # la no conservativa (+∫δh ∇·(K ψ ∇C)) y con ψ y C intercambiados.
+    if conservative:
+        def _src(psi, C):
+            return -div_Kpsi_gradC(C, psi, K, grad[0], grad[1], nodes, groups)
+    else:
+        def _src(psi, C):
+            return div_Kpsi_gradC(psi, C, K, grad[0], grad[1], nodes, groups)
     # -----------------------------------------------------
     # término temporal
     # B ψ_h^n
@@ -1057,24 +1066,7 @@ def build_adj_H_rhs(
     # -∇·(K ψ_C^{n+1} ∇C^{n+1})
     # -∇·(K ψ_C^n     ∇C^n)
     # -----------------------------------------------------
-    rhs -= (1-p.theta)*div_Kpsi_gradC(
-        psiC_N,
-        C_N,
-        K,
-        grad[0],
-        grad[1],
-        nodes,
-        groups
-    )
-
-    rhs -= p.theta*div_Kpsi_gradC(
-        psiC_n,
-        C_n,
-        K,
-        grad[0],
-        grad[1],
-        nodes,
-        groups
-    )
+    rhs -= (1-p.theta)*_src(psiC_N, C_N)
+    rhs -= p.theta*_src(psiC_n, C_n)
 
     return rhs
