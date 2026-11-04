@@ -177,7 +177,7 @@ def taylor_bfr(model: str) -> bool:
     ax.set_title(f"Test de Taylor — bfr/{model}")
     ax.legend(fontsize=8); ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fname = f"taylor_bfr_{model}.png"
+    fname = f"data/output/verificacion_adjunto/taylor_bfr_{model}.png"
     fig.savefig(fname, dpi=150)
     plt.close(fig)
     print(f"  Figura: {fname}")
@@ -248,7 +248,7 @@ def taylor_fenicsx(model: str) -> bool:
     ax.set_title(f"Test de Taylor — fenicsx/{model}")
     ax.legend(fontsize=8); ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fname = f"taylor_fenicsx_{model}.png"
+    fname = f"data/output/verificacion_adjunto/taylor_fenicsx_{model}.png"
     fig.savefig(fname, dpi=150)
     plt.close(fig)
     print(f"  Figura: {fname}")

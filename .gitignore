@@ -55,3 +55,10 @@ data/input/*
 # =========================
 *.log
 
+
+# artefactos de compilación LaTeX
+*.aux
+*.fdb_latexmk
+*.fls
+*.out
+*.log

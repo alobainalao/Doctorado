@@ -132,7 +132,7 @@ def run_model(model: str) -> bool:
     ax.legend(fontsize=8)
     ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fname = f"adjoint_identity_bfr_{model}.png"
+    fname = f"data/output/verificacion_adjunto/adjoint_identity_bfr_{model}.png"
     fig.savefig(fname, dpi=150)
     plt.close(fig)
     print(f"\n  Figura: {fname}")
