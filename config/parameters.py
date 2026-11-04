@@ -134,6 +134,10 @@ class Parameters:
         # conservativa el soluto ya sale con el agua (exp/sumidero-W, grupo Z);
         # 1 recupera el modelo anterior.
         self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
+        # Condición de salida del flujo. En esta rama el defecto es «libre»: derivada normal de u nula (componente normal,
+        # docs/adjunto_sin_sumidero.tex §2.2, cierre D). Otros: "fem" (Neumann u·n=f_out, el de FEniCSx anterior), "pfs",
+        # "dirichlet". default.json no se modifica: solo cambia el valor por defecto del código.
+        self.bc_outlet_mode = str(getattr(self, "bc_outlet_mode", "libre"))
         # Término de almacenamiento -S_s ∂ₜh·C del transporte (docs/adjunto_sin_sumidero.tex):
         # sobrevive al eliminar W- al despejar ∇·u del flujo. 1 lo activa (estado, adjunto
         # ψ_C y fuente -S_s ∂ₜ(Cψ_C) del adjunto del flujo); 0 = modelo reducido anterior.

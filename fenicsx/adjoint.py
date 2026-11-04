@@ -61,6 +61,7 @@ _QD = 8
 dx = ufl.dx(metadata={"quadrature_degree": _QD})
 
 from funtions.utils import chi_eps, dchi_eps, get_init_values
+from fenicsx.salida_libre import BordeLibre, es_libre
 from fenicsx.forward import (
     _config_phys, _boundaries_elements, _K_ope, _D_ope, _fuente_C,
     _mrmt_exp_lam_dt,
@@ -125,6 +126,14 @@ def build_context(pozo, p, mesh_cache):
     ctx.ds_in, ctx.ds_out = ds_in, ds_out
     ctx.h0 = h0
     ctx.c0 = np.nan_to_num(c0, nan=phys["C_0"])
+    # Salida libre (∂ₙ(u·n)=0): Dirichlet en Γ_out con dato h_Γ independiente de los controles (fenicsx/salida_libre.py).
+    ctx.borde, ctx.bc_h, ctx.bc_h0 = None, [], []
+    if es_libre(p):
+        h_outlet.x.array[:] = 0.0
+        ctx.borde = BordeLibre(G, facet_tags, phys["outlet_marker"], K_z.x.array, phi.x.array, p.dt, phys["theta"], h0)
+        ctx.h_bc = fem.Function(G)
+        ctx.bc_h = [fem.dirichletbc(ctx.h_bc, ctx.borde.dofs)]
+        ctx.bc_h0 = [fem.dirichletbc(fem.Function(G), ctx.borde.dofs)]     # homogéneo: ψ_h = 0 en Γ_out
     ctx.xp = float(pozo[0])
 
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
@@ -203,7 +212,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     p, phys = ctx.p, ctx.phys
     x = SpatialCoordinate(ctx.domain)
     z = TestFunction(ctx.Q)
-    theta, R, landa = _const_theta(ctx, phys["theta_C"]), phys["R"], phys["landa"]
+    theta, R, landa = _const_theta(ctx, phys["theta_C"]), phys["R"], fem.Constant(ctx.domain, PETSc.ScalarType(phys["landa"]))
     a_l, a_t, eps = phys["a_l"], phys["a_t"], phys["eps"]
 
     u_new = _u_expr(h_cur, ctx.K_z, phys["alpha"])
@@ -293,9 +302,11 @@ def _solve_forward(ctx, Q, zp):
         ctx, dh, h_prev, Qc, zp_c
     )
     a_h = fem.form(ufl.lhs(Rh_trial))
-    A1 = assemble_matrix(a_h, bcs=[])
+    A1 = assemble_matrix(a_h, bcs=ctx.bc_h)
     A1.assemble()
     solver_h = _lu_solver(A1, ctx.comm)
+    if ctx.borde is not None:
+        ctx.borde.reiniciar()
 
     # Kernel de observación δ_p (fijo dado z_p) para J1.
     x = SpatialCoordinate(ctx.domain)
@@ -339,6 +350,11 @@ def _solve_forward(ctx, Q, zp):
         # --- flujo ---
         L_h = fem.form(ufl.rhs(_flow_residual(ctx, dh, h_prev, Qc, zp_c)))
         b = assemble_vector(L_h)
+        if ctx.borde is not None:
+            ctx.h_bc.x.array[ctx.borde.dofs] = ctx.borde.avanzar()
+            apply_lifting(b, [a_h], [ctx.bc_h])
+            b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+            set_bc(b, ctx.bc_h)
         solver_h.solve(b, h_cur.x.petsc_vec)
         h_cur.x.scatter_forward()
         b.destroy()
@@ -461,7 +477,7 @@ def _solve_adjoint_grad(ctx, states):
     # --- Jacobianos de flujo (constantes) ---
     Rh_cur = _flow_residual(ctx, h_cur, h_prev, Qc, zp_c)
     a_hh = fem.form(ufl.adjoint(ufl.derivative(Rh_cur, h_cur, dh)))
-    Ahh_T = assemble_matrix(a_hh, bcs=[]); Ahh_T.assemble()
+    Ahh_T = assemble_matrix(a_hh, bcs=ctx.bc_h0); Ahh_T.assemble()
     solver_h = _lu_solver(Ahh_T, ctx.comm)
     Ahh_prev = assemble_matrix(
         fem.form(ufl.derivative(Rh_cur, h_prev, dh)), bcs=[]
@@ -628,6 +644,8 @@ def _solve_adjoint_grad(ctx, states):
         if termH_next is not None:
             rhsH.axpy(-1.0, termH_next)
             termH_next.destroy()
+        if ctx.bc_h0:
+            set_bc(rhsH, ctx.bc_h0)      # ψ_h = 0 en Γ_out (dato de Dirichlet independiente de los controles)
         solver_h.solve(rhsH, psiH.x.petsc_vec)
         psiH.x.scatter_forward()
         rhsH.destroy()

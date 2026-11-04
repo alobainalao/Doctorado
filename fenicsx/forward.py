@@ -53,6 +53,7 @@ from ufl import (
 
 from funtions.utils import chi_eps, get_init_values
 from fenicsx.mesh import build_mesh
+from fenicsx.salida_libre import BordeLibre, es_libre
 
 # ---------------------------------------------------------------------------
 # Parámetros ESPECÍFICOS del backend FEM (geometría de los perfiles de
@@ -85,6 +86,10 @@ def _config_phys(p):
     phys = dict(FEM_DEFAULTS)
     for k in _SHARED_WITH_BFR:
         phys[k] = getattr(p, k)
+    # El decaimiento λ_d solo pertenece al modelo ADR (como en BFR, funtions/operators.py): en MRMT el
+    # término de reacción móvil es solo el intercambio con las regiones inmóviles.
+    if getattr(p, "model", "adr") != "adr":
+        phys["landa"] = 0.0
     # θ del transporte: theta_C si se da (mismo parámetro que bfr), si no el θ del flujo.
     phys["theta_C"] = float(getattr(p, "theta_C", phys["theta"]))
     # Anchos de la fuente de contaminante: misma fórmula que bfr (geometry.py líneas 83-84)
@@ -334,6 +339,7 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
                            alpha_sum=0.0, C_im_sum=None, f_W=1.0, f_A=0.0, h_new=None, h_old=None):
     """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
     alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
+    landa = fem.Constant(G.mesh, PETSc.ScalarType(landa))   # Constant: un 0.0 de Python anularía el término (MRMT)
     z_t = TestFunction(Q)
     theta_C = fem.Constant(Q.mesh, PETSc.ScalarType(theta_C))   # ver _flow_forms
     f_W = fem.Constant(Q.mesh, PETSc.ScalarType(f_W))           # ídem (0 → Zero)
@@ -463,6 +469,16 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     expr_Ki = 8.3e-3 * phys["g"] * phys["d_z"] ** 2 * phi ** 3 / (phys["nu"] * (1 - phi) ** 2)
     K_z.interpolate(fem.Expression(expr_Ki, G.element.interpolation_points))
 
+    # Salida libre (∂ₙ(u·n) = 0): Dirichlet en Γ_out con h|Γ_out evolucionando por su ecuación de borde
+    # (fenicsx/salida_libre.py). Con otro modo (p.ej. "fem") se conserva el Neumann u·n = f_out.
+    borde, bc_h = None, []
+    if es_libre(p):
+        h_outlet.x.array[:] = 0.0          # sin dato de flujo de salida
+        borde = BordeLibre(G, facet_tags, phys["outlet_marker"], K_z.x.array, phi.x.array, dt, phys["theta"], h_n.x.array)
+        h_bc = fem.Function(G)
+        h_bc.x.array[:] = h_n.x.array
+        bc_h = [fem.dirichletbc(h_bc, borde.dofs)]
+
     expr_un = as_vector([-K_z * phys["alpha"] ** 2 * grad(h_n)[0], -K_z * grad(h_n)[1]])
     u_n.interpolate(fem.Expression(expr_un, V.element.interpolation_points))
     expr_u = as_vector([-K_z * phys["alpha"] ** 2 * grad(h_)[0], -K_z * grad(h_)[1]])
@@ -498,7 +514,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     # A1 (flujo) no depende de QOut (el término QOut*delta es del lado
     # derecho, no bilineal en h) — se ensambla y factoriza una sola vez.
-    A1 = assemble_matrix(a_h, bcs=[])
+    A1 = assemble_matrix(a_h, bcs=bc_h)
     A1.assemble()
     solver1 = _create_solver(A1, domain.comm)
 
@@ -546,7 +562,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             "C_div_u": fem.form(C_n * div(u) * dx),
             "u_grad_C": fem.form(dot(u, grad(C_n)) * dx),
             "fuente": fem.form(Src * dx),
-            "decaimiento": fem.form(phys["landa"] * phys["R"] * phi * C_n * dx),
+            "decaimiento": fem.form(fem.Constant(domain, PETSc.ScalarType(phys["landa"])) * phys["R"] * phi * C_n * dx),
             "C_pozo": fem.form(g_pozo * C_n * dx),
         }
         bal = {k: np.zeros(Nt) for k in f_bal}
@@ -574,7 +590,9 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         t += dt
         QOut_const.value = float(Qout[step]) if ext_on else 0.0
 
-        h_ = _solve_step(L_h, a_h, [], solver1, h_)
+        if borde is not None:
+            h_bc.x.array[borde.dofs] = borde.avanzar()
+        h_ = _solve_step(L_h, a_h, bc_h, solver1, h_)
         h_old.x.array[:] = h_n.x.array[:]
         h_n.x.array[:] = h_.x.array[:]
 

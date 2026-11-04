@@ -22,6 +22,9 @@ ENVS = {"bfr": "bfr_env", "fenicsx": "fenics_env"}
 
 SIN_FUENTE = {"activate_fuente": False}
 SIN_POZO = {"activate_ext": False}
+# Grupo M: configuración de main.py (default.json + malla_sp60: dt 18000 s, 30 d, n_stencil 25, Q_std 1e-3) salvo la malla compartida
+# (necesaria para que BFR y FEniCSx usen los mismos nodos). La fuente es más estrecha en z y menos intensa, igual en todas las variantes.
+MAIN_FUENTE = {"n_stencil": 25, "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}
 T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
 T_Z = 90 * 86400       # horizonte del grupo Z (limpieza completa del cuadrado)
 C_Z = 5.94e-11         # C inicial del grupo Z: máximo de la CI del dominio real
@@ -89,14 +92,12 @@ GRUPOS = {
         "casos": {
             f"M{i}_{modelo}": {"desc": f"{modelo} sin W-, con almacenamiento, Q_std = 1e-3",
                                "cfg": {"model": modelo, "Q_std": 1e-3, "factor_sumidero_C": 0.0,
-                                       "factor_almacenamiento_C": 1.0}}
+                                       "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
         } | {
-            "M3_adr_bc_fem": {"desc": "M0 con bc_outlet_mode = fem (sólo BFR): ¿la BC de salida explica |U|?",
+            "M3_adr_bc_fem": {"desc": "ADR con el cierre (B) Neumann u·n=f_out en ambos backends (bc_outlet_mode = fem): referencia del cierre anterior",
                               "cfg": {"model": "adr", "Q_std": 1e-3, "factor_sumidero_C": 0.0,
-                                      "factor_almacenamiento_C": 1.0},
-                              "bfr": {"bc_outlet_mode": "fem"}, "backends": ["bfr"],
-                              "ref_fem": "M_modelo_nuevo/M0_adr"},
+                                      "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "fem", **MAIN_FUENTE}},
         },
     },
 
@@ -299,6 +300,20 @@ GRUPOS = {
             f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, run_type=comparison",
                         "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
                                 "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+
+    # ── M_adjunto: forward + adjunto del modelo nuevo con la configuración de main (grupo M) y salida libre ──
+    "M_adjunto": {
+        "desc": "ADR / MRMT Semi / MRMT Bloque, configuración de main + fuente común, salida libre; forward + adjunto",
+        "pregunta": "¿Cómo son los adjuntos ψ_h, ψ_C del modelo nuevo con la configuración final?",
+        "comparar": False,
+        "casos": {
+            f"MA_{m}": {"desc": f"{m}, modelo nuevo, salida libre, run_type=comparison",
+                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False, "Q_std": 1e-3,
+                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
     },
