@@ -587,9 +587,10 @@ del paso que llega al nivel $n+1$ es $Q_{n+1}$). La fuente del adjunto del flujo
 \begin{multline}
 \boldsymbol\sigma^{m}=\underbrace{-\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{*,m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m}
 -\Bigl(\partial_{\mathbf{h}}\bigl[\mathcal{L}(\bu(\mathbf{h}^m))\mathbf{C}^{m}\bigr]\Bigr)^{\!\top}\boldsymbol\psi_C^{m+1}}_{\text{velocidad}}\\
-\alm{+\,\frac{S_s}{\Delta t}\Bigl[\boldsymbol\psi_C^{m+1}\!\circ(\mathbf{C}^{m+1}+\mathbf{C}^m)-\boldsymbol\psi_C^{m}\!\circ(\mathbf{C}^{m}+\mathbf{C}^{m-1})\Bigr]}
+\alm{+\,\frac{S_s}{\Delta t}\Bigl[\boldsymbol\psi_C^{m+1}\!\circ(w_A\mathbf{C}^{m+1}+w_B\mathbf{C}^m)-\boldsymbol\psi_C^{m}\!\circ(w_A\mathbf{C}^{m}+w_B\mathbf{C}^{m-1})\Bigr]}
 \end{multline}
-($\mathbf{C}^{*,m}=\mathbf{C}^m$ en ADR y bloque; en el semi-analítico, el par $(\mathbf{C}^*,\mathbf{C}^n)$ del primer
+($w_A,w_B$ son los pesos temporales del operador de transporte, $w_A=2\theta_C$ y $w_B=2(1-\theta_C)$ en la escala en que la
+identidad lleva $2/\Delta t$; en el esquema trapezoidal $\theta_C=\tfrac12$ valen $w_A=w_B=1$. $\mathbf{C}^{*,m}=\mathbf{C}^m$ en ADR y bloque; en el semi-analítico, el par $(\mathbf{C}^*,\mathbf{C}^n)$ del primer
 paso). La parte verde es la derivada temporal discreta de $C\boldsymbol\psi_C$, es decir, la discretización de la fuente
 $-S_s\partial_t(C\pA)$ de \eqref{eq:adj_flujo}. Entonces
 \begin{equation}
@@ -603,11 +604,13 @@ A_h^\top\boldsymbol\psi_h^{m}=B_h^\top\boldsymbol\psi_h^{m+1}-\boldsymbol\sigma^
 $\partial\hat J/\partial z_p$ es \eqref{eq:grad_z} con las integrales en $t$ sustituidas por sumas con el mismo $\Delta t$.
 
 \begin{remark}[Pesos $\theta$]
-Las fórmulas \eqref{eq:disc_flujo} y la de $\boldsymbol\sigma^m$, y con ellas los Algoritmos~\ref{alg:adr}--\ref{alg:semi}, están escritos para
-$\theta=\theta_C=1$ (esquema implícito en el flujo y en el transporte). Para $\theta<1$, $Q_n$ interviene en el paso que llega al
-nivel $n$ y, a través del caudal «viejo», en el siguiente: $\partial\hat J/\partial Q_n$ combina el $\boldsymbol\psi_h$ de ambos
-niveles con los pesos $\theta$ y $1-\theta$ del esquema, y los coeficientes de $\boldsymbol\sigma^m$ (también los de la parte verde) se ponderan
-con los pesos $\theta_C$ del transporte. La implementación incluye esas ponderaciones; la verificación V5 con $\theta=0.9$, $\theta_C=0.5$ la ejercita.
+Las fórmulas de este apartado y los Algoritmos~\ref{alg:adr}--\ref{alg:semi} se escriben para el transporte trapezoidal ($\theta_C=\tfrac12$) y
+el flujo implícito ($\theta=1$); con otros valores intervienen los pesos del esquema. En el transporte, la parte verde de
+$\boldsymbol\sigma^m$ lleva $w_A,w_B$ (arriba); por ejemplo, con Euler implícito ($\theta_C=1$, el valor de
+\texttt{default.json} y \texttt{nitrato.json}) es $w_A=2$, $w_B=0$. En el flujo, $Q_n$ interviene en el paso que llega al nivel $n$ y,
+a través del caudal «viejo», en el siguiente: $\partial\hat J/\partial Q_n$ combina el $\boldsymbol\psi_h$ de ambos niveles con los pesos $\theta$ y
+$1-\theta$, y lo mismo vale para el término en $\dot g_\varepsilon$ de $\partial\hat J/\partial z_p$. Esas ponderaciones están en la
+implementación (\texttt{funtions/adjunto\_exacto.py}); la verificación V5 con $\theta=0.9$ y $\theta_C=0.5$ las ejercita.
 \end{remark}
 
 \paragraph{Evaluación de $\boldsymbol\sigma^m$ con diferencias finitas RBF.} Cada fila del transporte es
