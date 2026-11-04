@@ -85,7 +85,7 @@ Lo que sí quedó confirmado hoy: V3 (columna `Q`, ADR `S_s=1,4`, MRMT) reproduc
 
 | ID | Decisión | Por qué no se resolvió |
 |---|---|---|
-| D1 | **Cierre de Γout**: (A) Dirichlet `h=h_out`, (B) Neumann `u·n=f_out`, (C) Robin `u·n=c_g(h−h_ext)`, (D) componente normal de `∂ₙu=0` (condición de borde dinámica de Wentzell), u otra. | `∂ₙu=0` como vector no cierra el problema; cada alternativa necesita un dato físico (`h_out`, `f_out`, `c_g`, `h_ext`) que el documento no tiene. Elegir una sería inventar una condición. |
+| D1 | **Cierre de Γout**: RESUELTO por el autor (4 nov): derivada normal de u nula, adoptada como cierre (D) (componente normal). Pendiente confirmar que no se exige la componente tangencial y si FEniCSx debe pasar de (B) a (D). | — |
 | D2 | Modelo de almacenamiento: `φ` constante con `−S_s∂ₜh C`, o `∂ₜφ=S_s∂ₜh` (término nulo); `S_s=φ` numérico vs valores físicos. | Es una decisión de modelación. |
 | D3 | Decaimiento en MRMT: con o sin `λ_dφRC_m` (hoy FEniCSx sí, BFR no). | Afecta resultados del nitrato. |
 | D4 | Concentración de entrada en Γin (`C_in`). | Dato físico. |
