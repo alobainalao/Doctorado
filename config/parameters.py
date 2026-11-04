@@ -56,6 +56,8 @@ class Parameters:
                 "factor_sumidero_C", "factor_almacenamiento_C",
                 # Recorte de positividad C >= 0 en BFR (diagnóstico de la oscilación del pozo)
                 "clip_C",
+                # Fuente de contaminante: ancho vertical e intensidad (1.0 = estándar)
+                "epsilon_z_fuente", "intensidad_fuente",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
@@ -191,6 +193,13 @@ class Parameters:
                               getattr(self, "lado_cuadrado", 1000.0))
         for k, v in geom.items():
             setattr(self, k, v)
+        # Fuente de contaminante: valores absolutos opcionales (None = los de la configuración estándar).
+        #   epsilon_z_fuente [m]: ancho vertical ε_z (= epsilon_y) de la gaussiana (estándar: spacing·sigma_fuente).
+        #   intensidad_fuente: coeficiente del pico temporal de la fuente (estándar: 1e-11; el de la base, 1e-12, es 1/10).
+        self.epsilon_z_fuente = getattr(self, "epsilon_z_fuente", None)
+        self.intensidad_fuente = getattr(self, "intensidad_fuente", None)
+        if self.epsilon_z_fuente is not None:
+            self.epsilon_y = float(self.epsilon_z_fuente)
 
         # Soporte de los kernels del pozo [m], fijo e independiente de la malla.
         # r_pozo = radio del Wendland C2 del sumidero de flujo; las gaussianas

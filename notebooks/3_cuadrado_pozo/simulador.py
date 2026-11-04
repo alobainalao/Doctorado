@@ -64,6 +64,21 @@ def cargar_Z(caso):
     )
 
 
+def cargar_Zo(caso):
+    """Zo_oscilacion/<caso> (BFR, cuadrado sin W-, 30 d): masa, C en el nodo del pozo y máx |C|."""
+    d_caso = rutas.grupo("Zo_oscilacion") / caso / "bfr"
+    cfg = json.load(open(d_caso / "config.json"))
+    d = np.load(d_caso / "simulation_results.npz")
+    n, C, dt = d["nodes"], d["C"][:, 0], float(d["dt"])
+    L, tol, C0 = float(cfg["lado_cuadrado"]), 1e-9, float(cfg["C_init_const"])
+    dentro = (n[:, 0] >= -tol) & (n[:, 0] <= L + tol) & (n[:, 1] >= -L - tol) & (n[:, 1] <= tol)
+    _, w = _areas_nodales(n, dentro)
+    k_pozo = int(np.argmin(np.linalg.norm(n - np.array([L / 2, -L / 2]), axis=1)))
+    masa = (C * w).sum(1)
+    return dict(t=np.arange(len(masa)) * dt / DIA, masa=masa / masa[0], c_nodo_pozo=C[:, k_pozo] / C0,
+                max_abs=np.abs(C).max(1) / C0, cfg=cfg, r_max=np.linalg.norm(n[np.abs(C).argmax(1)] - n[k_pozo], axis=1))
+
+
 def cargar_balance_fem(caso):
     """Balance por paso de FEniCS (S2_limpieza_sin / S3_limpieza_con)."""
     d = rutas.grupo("S_sumidero") / caso / "fenicsx"

@@ -45,6 +45,21 @@ El adjunto de FEniCSx se obtiene derivando los residuos discretos (\texttt{ufl.d
 debe coincidir con las diferencias finitas hasta el redondeo; el de BFR es la transpuesta de los operadores discretos y
 est\'a sujeto, adem\'as, al tratamiento del nodo del pozo y de los nodos de frontera.
 
+\paragraph{Ecuaciones adjuntas continuas frente al c\'odigo (FEniCSx, ADR).}
+Se escribi\'o de forma independiente la forma d\'ebil de la ecuaci\'on adjunta del transporte de la Secci\'on~\ref{sec:adj_ADR}
+(Euler impl\'icito, $\theta_C=1$, $S_s=\phi$, frontera natural $(\bD\nabla\pA+\bu\pA)\cdot\bn=0$) y se evalu\'o sobre los
+estados guardados (\texttt{tests/verificar\_adjunto\_continuo.py}; 3 pasos, $C$ modulada). Con
+$\pA=-\psi_{\text{c\'odigo}}/\Delta t$ el residuo, medido en la norma dual y relativo al mayor t\'ermino, es $1.6\times10^{-15}$ como m\'aximo en
+los tres pasos, es decir, a nivel de redondeo; si se omite el t\'ermino de almacenamiento sube a $3.9\times10^{-4}$ y si se omite la advecci\'on a $2.9\times10^{-3}$.
+La relaci\'on de signo $\pA=-\psi_{\text{c\'odigo}}/\Delta t$ es la de las convenciones: el c\'odigo usa $\mathcal{L}=J-\psi\cdot R$ con
+$R$ en forma de tasa y $J=\gamma\Delta t\sum\int\delta_pC^2$, el documento $\mathcal{L}=J+\int\langle R,\psi\rangle dt$; por eso $\psi_C$
+del c\'odigo es positivo donde $C>0$ y el del documento negativo.
+Para el adjunto del flujo (\texttt{tests/verificar\_adjunto\_flujo\_continuo.py}, \'ultimo paso) se descompuso $(\partial_hR^C)^\top\psi_C$ por
+m\'inimos cuadrados en los tres t\'erminos del segundo miembro de la Secci\'on~\ref{sec:adj_ADR}: $\int\bK(\pA\nabla C)\cdot\nabla v$,
+$\int\bK\,\mathbf{d}\cdot\nabla v$ (con $\partial_{\bu}\bD$) y $\int\phi C\pA v/\Delta t$; los coeficientes ajustados son
+$-1.000000$, $-1.000000$ y $-1.000000$ (todos $-1$ en la convenci\'on del c\'odigo, que es lo que impone la ecuaci\'on del documento) con residuo relativo $4.9e-16$.
+S\'olo se verific\'o ADR con FEniCSx; MRMT y BFR no tienen esta verificaci\'on.
+
 
 \paragraph{Limitaciones del adjunto BFR.} Con concentraci\'on no uniforme el adjunto de BFR no coincide con las diferencias finitas
 (factor 2--7 con almacenamiento; sin almacenamiento el adjunto es $\approx0$ y las diferencias finitas dan valores grandes). No cambia

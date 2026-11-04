@@ -65,6 +65,8 @@ def main(backend, model, factor_alm):
     p.clip_C = "--sin-recorte" not in sys.argv         # el recorte C ≥ 0 no es diferenciable
     p.adj_disp_u = "--sin-dterm" not in sys.argv       # BFR: término ∂_u D en el adjunto del flujo
     p.adj_C_bc_exacta = "--bc-exacta" in sys.argv      # BFR: transpuesta exacta en inlet/outlet
+    if "--normalizar" in sys.argv:      # J1, J2, J3 divididos entre su máximo (C_ref = 1: la CI del test es C = 1)
+        p.normalizar_J, p.C_ref = True, 1.0
     if "--modulada" in sys.argv:        # C no uniforme: ∇C ≠ 0 y el término advectivo del adjunto trabaja
         p.C_init_modulacion = (0.5, 2000.0, 800.0)
     p.factor_almacenamiento_C = factor_alm
@@ -104,14 +106,18 @@ def main(backend, model, factor_alm):
 
     z0 = float(getattr(p, "z0", 0.0))
     dt = float(p.dt)
+    w3 = 1.0                           # peso de J3 (1 sin --normalizar)
+    if "--normalizar" in sys.argv:
+        from fenicsx.adjoint import _pesos_J
+        w3 = _pesos_J(p, (len(x0) - 1) * dt)[2]
 
     def eco(x):                        # J_op = |z_p - z_0| Σ Q_n² Δt   (koppa = 0)
-        return abs(x[-1] - z0) * float(np.sum(x[:-1] ** 2)) * dt
+        return w3 * abs(x[-1] - z0) * float(np.sum(x[:-1] ** 2)) * dt
 
     def eco_grad(x):
         g = np.zeros_like(x)
-        g[:-1] = 2.0 * abs(x[-1] - z0) * x[:-1] * dt
-        g[-1] = np.sign(x[-1] - z0) * float(np.sum(x[:-1] ** 2)) * dt
+        g[:-1] = 2.0 * w3 * abs(x[-1] - z0) * x[:-1] * dt
+        g[-1] = w3 * np.sign(x[-1] - z0) * float(np.sum(x[:-1] ** 2)) * dt
         return g
 
     # Se prueba sólo γ J_m: se resta la parte económica (analítica) del funcional y del gradiente.
@@ -144,7 +150,7 @@ def main(backend, model, factor_alm):
 
     out = os.path.join(_CODIGO, "data", "output", "verificacion_adjunto")
     os.makedirs(out, exist_ok=True)
-    with open(os.path.join(out, f"{backend}_{model}_alm{int(factor_alm)}{'_mod' if '--modulada' in sys.argv else ''}{'_bcx' if '--bc-exacta' in sys.argv else ''}{'_sindterm' if '--sin-dterm' in sys.argv else ''}.json"), "w") as f:
+    with open(os.path.join(out, f"{backend}_{model}_alm{int(factor_alm)}{'_mod' if '--modulada' in sys.argv else ''}{'_bcx' if '--bc-exacta' in sys.argv else ''}{'_norm' if '--normalizar' in sys.argv else ''}{'_sindterm' if '--sin-dterm' in sys.argv else ''}.json"), "w") as f:
         json.dump(filas, f, indent=1)
 
 

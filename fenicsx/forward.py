@@ -177,7 +177,10 @@ def _dv(x0, xb):
 
 
 def _fuente_C(t, T):
-    return 1e-11 * t / T * np.exp(-8 * t / T) + 1e-12 * (1 - np.exp(-8 * t / T))
+    from funtions.runtime import RUNTIME
+    A = getattr(RUNTIME.get(), "intensidad_fuente", None)   # None = estándar
+    pico, base = (1e-11, 1e-12) if A is None else (float(A), float(A) / 10.0)
+    return pico * t / T * np.exp(-8 * t / T) + base * (1 - np.exp(-8 * t / T))
 
 
 def _gaussian_2d(x, pozo_ext, amplitude, epsilon_x, epsilon_y):

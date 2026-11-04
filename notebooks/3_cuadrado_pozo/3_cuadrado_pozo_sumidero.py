@@ -149,12 +149,16 @@ FORMAS = {"cons": ("cons", 0, None), "nc": ("nc_fv", 0, None), "Wq": ("nc_fv", 1
 # ($\nabla\cdot\mathbf u=-Q\,w_R$) y la extracción ya está dentro de $-\mathbf u\cdot\nabla C_m$, así que ponerla
 # además la cuenta dos veces.
 #
-# **El término de almacenamiento.** La ec. (transporte_noconservativo) lleva $+S_s(\partial_th)\,C_m$, que el
-# modelo ec. (transporte_adr) omite. Durante el abatimiento ($\partial_th<0$) ese término es negativo, así que al
-# omitirlo $C_m$ no baja lo que debería: la masa **sube** sin fuente cuando el pozo está activo, y más aún con
-# $S_s=\phi$, el valor por defecto. Es lo que muestran los grupos D y W. Es un problema distinto de $W_-$ y $W_-$ no lo
-# arregla. En el modelo mínimo el flujo es estacionario y el término es nulo; en el cuadrado del simulador
-# $S_s=10^{-5}$ y es despreciable.
+# **El término de almacenamiento.** La ec. (transporte_noconservativo) lleva $+S_s(\partial_th)\,C_m$ **porque allí
+# se fijó $\phi$ constante** en la forma conservativa. Pero con almacenamiento el contenido de agua no es constante:
+# $\partial_t\theta=S_s\,\partial_th$. Con $\theta(t)=\phi+S_s(h-h_0)$ en la acumulación,
+# $\partial_t(\theta C_m)=\theta\,\partial_tC_m+C_m S_s\partial_th$ y el término se **cancela otra vez**:
+# $\theta\,\partial_tC_m+\mathbf u\cdot\nabla C_m=\nabla\cdot(\mathbf D\nabla C_m)$ es la forma no conservativa
+# coherente, **sin** $S_s\partial_th\,C_m$. Por tanto la ec. (transporte_adr) no «omite» nada que haga falta: lo que
+# sobra es el $+S_s\partial_th\,C_m$ de la ec. (transporte_noconservativo) si se usa con $\theta$ variable, y lo que
+# produce masa aparente es medirla como $\phi\int C_m$ con $S_s$ grande. Se comprueba en el Experimento E (§7.1).
+# Un campo uniforme $C_m\equiv C_0$ debe seguir uniforme sea cual sea el flujo, y sólo lo cumplen las formas con
+# $\theta(t)$ o con $S_s$ despreciable.
 
 # %% [markdown]
 # ## 3. Modelo mínimo: cuadrado con pozo central (volúmenes finitos)
@@ -337,6 +341,51 @@ for i, D in enumerate((1e-5, 1e-3)):
 ax[0].legend(fontsize=7); plt.tight_layout(); plt.show()
 
 # %% [markdown]
+# ## 7.1 Experimento E: flujo transitorio y almacenamiento ($S_s$)
+#
+# Hasta aquí el flujo era estacionario. Con $S_s\ne0$ el bombeo arranca en $t=0$ con $h\equiv h_b$ y la velocidad se
+# construye en el tiempo: $\sum_fF_f=-Q\,w_R-S_sA\,\partial_th$ (ec. div_u completa). `transitorio_nucleo.py` resuelve
+# ese flujo (Euler implícito, continuidad discreta exacta) y el transporte en cuatro formas:
+# `cons` y `nc` con $\phi$ constante (como los backends), y `consT`, `ncT` con $\theta(t)=\phi+S_s(h-h_b)$.
+# Limpieza de 30 d (como el Experimento B), sin $W_-$. Se mide el cierre del balance, masa perdida menos $Q\int c_w\,dt$
+# (con $\theta\!\int C_m$ en las formas T), y si $C_m\equiv1$ se conserva.
+
+# %%
+from transitorio_nucleo import CuadradoTransitorio
+lim_ = None
+print(f"{'S_s':>7s} {'forma':6s} {'perdida':>8s} {'Q∫c_w/m0':>9s} {'cierre':>8s} {'c_w(30 d)':>9s} {'C≡1: mín':>9s}")
+for S_s in (1e-5, 1e-2, 0.1):
+    mt = CuadradoTransitorio(S_s=S_s)
+    lim_ = ((np.abs(mt.X) < 240) & (np.abs(mt.Z) < 240)).ravel() * 1.0
+    M0 = mt.masa(lim_)
+    for f in (("cons", "nc") if S_s != 1e-2 else ("nc", "consT", "ncT")):
+        if S_s == 0.1 and f in ("consT", "ncT"):
+            continue
+        o = mt.correr_tr(f, lim_, T_fin=30 * DIA, dt=0.5 * DIA)
+        Mfin = mt.A * (o["theta"] * o["C"]).sum() if f.endswith("T") else o["masa"][-1]
+        u1 = mt.correr_tr(f, np.ones(mt.N), T_fin=30 * DIA, dt=0.5 * DIA, C_b=1.0)
+        print(f"{S_s:7.0e} {f:6s} {1 - Mfin / M0:8.4f} {o['sale'][-1] / M0:9.4f} {1 - Mfin / M0 - o['sale'][-1] / M0:+8.4f} "
+              f"{o['c_w'][-1]:9.3f} {u1['C'].min():9.4f}")
+
+# %% [markdown]
+# * Con el $S_s$ realista del cuadrado ($10^{-5}$ m$^{-1}$) las formas **coinciden** y el almacenamiento es
+#   irrelevante: $\Delta\theta/\phi\sim-7\cdot10^{-4}$.
+# * Con $S_s=\phi=0.1$ m$^{-1}$ (el valor por defecto del simulador, `S_s = φ`; dimensionalmente $S_s$ no es
+#   adimensional como $\phi$) la forma `nc` con $\phi$ constante **pierde 37 % en vez de 57 %** y su «salida con el
+#   agua» $Q\int c_w$ llega a 111 % de $m_0$. Es la misma firma que el 149 % del grupo Z (§8.1). Además
+#   $\theta=\phi+S_s(h-h_b)$ llega a $-0.54$ cerca del pozo (el abatimiento es de 6.9 m): contenido de agua negativo, así que
+#   **ese $S_s$ no es físico**.
+# * Con $S_s=10^{-2}$ y $\theta(t)$ (`consT` y `ncT`) el balance cierra a $10^{-4}$ y $C_m\equiv1$ se conserva. La
+#   `nc` con $\phi$ constante no cierra (10 % de $m_0$; aquí $\theta$ baja hasta 0.03).
+# * La forma `cons` con $\phi$ constante **no** conserva un campo uniforme cuando $S_s$ es grande (mín $0.53$): es
+#   la inconsistencia de fijar $\phi$. La forma no conservativa sin término, la de los backends, sí lo hace.
+#
+# **Conclusión del experimento.** Para $C_m$ de agua no hace falta ningún $S_s\partial_th\,C_m$. Lo que hay que
+# corregir es el **parámetro** $S_s=\phi$ por un valor del orden $10^{-5}$–$10^{-4}$ m$^{-1}$, o usar $\theta(t)$.
+# También se comprobó que $c_w$ y $c_g$ (núcleos $w_R$ y $g_\varepsilon$) difieren menos de 1 % sin $W_-$
+# (0.319 frente a 0.321 con $S_s=10^{-5}$), así que la elección del núcleo de $J_m$ importa mucho menos que $W_-$.
+
+# %% [markdown]
 # * Con dispersión pequeña y $Q\ge10^{-3}$, la masa perdida es **la misma** con y sin $W_-$ (consecuencia 3): el
 #   término no saca más soluto, sólo cambia $C_m$ en el entorno del pozo. Con $Q=10^{-4}$, la ec. (W_menos) ya saca
 #   2.9 veces más que el pozo físico.
@@ -386,12 +435,48 @@ for k, z in Z.items():
 #   $z$.
 # * Con $W_-$, $c_g$ cae entre 100 y 300 veces (a ≈0.001–0.005 de $C_0$), del orden de $(Q+\kappa)/Q=101$ que predice
 #   la celda bien mezclada.
-# * Sin $W_-$ aparece un defecto **de la discretización RBF-FD, no del modelo**: $C_m(\mathbf x_p)$ alterna entre 0 y
-#   0.65 $C_0$ de un paso a otro, y $c_g$ oscila entre ≈0.02 y ≈0.4 $C_0$ (al principio llega a 1.9, una
-#   sobreoscilación). Euler implícito ($\theta_C=1$) no produce por sí solo una oscilación de periodo 2. La sospecha es
-#   el recorte $C_m\ge0$ de cada paso junto con el esquema centrado en el punto donde convergen las líneas de
-#   corriente, pero **no está verificado**. $W_-$ lo tapaba con el agujero, y la masa no se ve afectada. Queda
-#   pendiente: upwind local en el pozo, $g_\varepsilon$ más ancho en el transporte o quitar el recorte.
+# * Sin $W_-$, $C_m(\mathbf x_p)$ alterna entre 0 y 0.65 $C_0$ de un paso a otro. **Diagnóstico verificado en
+#   §8.1.1**: no es el recorte $C_m\ge0$ ni el paso de tiempo. El recorte *oculta* una inestabilidad local del esquema
+#   centrado en el pozo que, sin recorte, crece exponencialmente. Con upwind desaparece.
+#
+# ### 8.1.1 ¿Qué produce la oscilación? (grupo `Zo_oscilacion`, BFR, 30 d, sin $W_-$)
+#
+# Cada caso cambia **una** cosa respecto a la base (centrado, $\theta_C=1$, $\Delta t=5$ h, recorte $C\ge0$):
+# sin recorte (`clip_C=False`), upwind, $\Delta t/2$ y Crank–Nicolson ($\theta_C=\tfrac12$).
+
+# %%
+ZO = {k: S.cargar_Zo(k) for k in ("Zo0_base", "Zo1_sin_recorte", "Zo2_upwind", "Zo3_dt_mitad", "Zo4_cn")}
+ROT = {"Zo0_base": "base (centrado, recorte)", "Zo1_sin_recorte": "sin recorte", "Zo2_upwind": "upwind",
+       "Zo3_dt_mitad": "Δt/2", "Zo4_cn": "Crank–Nicolson"}
+print(f"{'caso':26s} {'C(x_p)/C0, 2.ª mitad':>24s} {'máx |C|/C0':>12s} {'1.er paso |C|>10C0':>19s} {'m(30 d)/m0':>11s}")
+for k, z in ZO.items():
+    m2 = len(z["t"]) // 2
+    ex = np.nonzero(z["max_abs"] > 10)[0]
+    print(f"{ROT[k]:26s} [{z['c_nodo_pozo'][m2:].min():9.3g}, {z['c_nodo_pozo'][m2:].max():9.3g}] {z['max_abs'].max():12.3g} "
+          f"{(str(ex[0]) + ' (r=' + format(z['r_max'][ex[0]], '.1f') + ' m)') if len(ex) else '—':>19s} {z['masa'][-1]:11.3g}")
+fig, ax = plt.subplots(1, 2, figsize=(10, 3.2))
+for k, col in (("Zo0_base", "tab:red"), ("Zo2_upwind", "tab:blue")):
+    ax[0].plot(ZO[k]["t"], ZO[k]["c_nodo_pozo"], ".-", ms=3, color=col, label=ROT[k])
+    ax[1].plot(ZO[k]["t"], ZO[k]["masa"], color=col)
+ax[0].set(xlabel="t (d)", title="$C_m(\\mathbf{x}_p)/C_0$"); ax[0].legend(fontsize=7)
+ax[1].set(xlabel="t (d)", title="$m(t)/m(0)$")
+plt.tight_layout(); plt.show()
+
+# %% [markdown]
+# * **Con esquema centrado la solución explota (~$10^{60}$ o más) salvo que el recorte la contenga.** Sin recorte
+#   explota la base; $\Delta t/2$ y Crank–Nicolson explotan **aunque el recorte esté puesto**, porque el recorte sólo
+#   elimina valores negativos y no frena el crecimiento positivo. Con $\Delta t=5$ h el modo alterna de signo en cada
+#   paso, y el recorte lo trunca en cero: de ahí la alternancia. El modo
+#   inestable nace en el nodo del pozo ($r<2$ m) al cabo de 17–23 pasos y crece exponencialmente. **El recorte lo
+#   convierte en la alternancia 0 ↔ 1.4 $C_0$ que se veía: es el resto truncado de un modo que crece.**
+# * Con **upwind** el nodo del pozo es suave (0.63–0.88 $C_0$), el máximo de $C_m$ es 1.002 $C_0$ (principio del
+#   máximo) y la masa coincide con la base a 0.3 % (0.568 frente a 0.565). El centrado, en cambio, produce
+#   sobreoscilaciones de hasta 3.8 $C_0$ en el pozo.
+# * Es una propiedad del **operador espacial**: no depende del recorte, de $\Delta t$ ni del esquema temporal. La
+#   hipótesis anterior (recorte + centrado) queda **refutada en su primera mitad** y confirmada en la segunda.
+# * Consecuencia: **toda corrida BFR sin upwind con el pozo activo** (grupos A–D, S, Z y la configuración estándar)
+#   tiene un modo local creciente en el pozo que el recorte esconde. La masa total casi no se ve afectada, pero $C_m$ y
+#   $c_g$ en el entorno del pozo, que son lo que pesa $J_m$, sí.
 #
 # ### 8.2 FEniCS en el dominio real: $W_+$ durante 30 d y 90 d de limpieza (grupo S, S2/S3)
 #
@@ -427,7 +512,8 @@ print("\nS0/S1 (30 d, BFR y FEniCS; «C captada» = c_g):\n" + res.read_text() i
 #
 # Sin $W_-$, la salida acumulada $Q\int c_w\,dt$ (≈59 % de $m(0)$) es mucho mayor que la masa perdida (≈36 %). Hay dos
 # razones: las discretizaciones de la forma no conservativa no conservan masa exactamente (como `fd` en §5), y el
-# modelo omite el término $S_s(\partial_th)\,C_m$ (§2). Ninguna de las dos tiene que ver con $W_-$.
+# dominio real usa $S_s=\phi$ (§7.1), con el que la masa $\phi\int C_m$ deja de ser la conservada. Ninguna de las
+# dos tiene que ver con $W_-$.
 #
 # ## 9. Veredicto e implicaciones para la tesis
 #
@@ -445,8 +531,10 @@ print("\nS0/S1 (30 d, BFR y FEniCS; «C captada» = c_g):\n" + res.read_text() i
 #    $\chi$, $\chi'$ y $\varepsilon_\chi$ del transporte. Conviene anotar que el modelo de pozo-reacción de los peldaños
 #    del libro sólo vale cuando la velocidad no siente el pozo.
 # 5. **Pendientes que este análisis destapa** (independientes de $W_-$):
-#    (a) la oscilación de $C_m(\mathbf x_p)$ en BFR sin $W_-$ (§8.1);
-#    (b) el término $S_s(\partial_th)\,C_m$ que omite la ec. (transporte_adr), que crea masa aparente con
-#    $S_s=\phi$ (§2; queda por cuantificarlo, como pide la tesis);
-#    (c) las discretizaciones de la forma no conservativa no cierran el balance $Q\int c_w$ con la masa perdida. Para
-#    diagnosticar la masa en el simulador, usar $m(t)$ y no la «salida con el agua».
+#    (a) **resuelto el diagnóstico, no la corrección**: la oscilación de $C_m(\mathbf x_p)$ en BFR es un modo local
+#    inestable del esquema centrado en el pozo, que el recorte $C_m\ge0$ oculta (§8.1.1). Falta decidir el remedio
+#    (upwind sólo cerca del pozo, hiperviscosidad o forma conservativa) y repetir A–F, que se corrieron con $W_-=1$;
+#    (b) **corregida la conclusión sobre $S_s\partial_th\,C_m$** (§2, §7.1): con $\theta(t)$ el término no aparece. Lo
+#    que hay que cambiar es $S_s=\phi$ por un valor físico ($10^{-5}$–$10^{-4}$ m$^{-1}$) en el dominio real;
+#    (c) las discretizaciones de la forma no conservativa no cierran el balance $Q\int c_w$ con la masa perdida
+#    (`fd`: 82 % frente a 90 %). Para diagnosticar la masa en el simulador, usar $m(t)$ y no la «salida con el agua».

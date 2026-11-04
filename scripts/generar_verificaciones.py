@@ -53,6 +53,39 @@ Equivalencia conservativa/expandida & anal\'itica: Proposici\'on~\ref{prop:equiv
 """
 
 
+def _continuo():
+    """Verificación de las ecuaciones adjuntas continuas del documento contra el adjunto de FEniCSx (ADR)."""
+    rc = os.path.join(ENTRADA, "continuo_adr.json")
+    rf = os.path.join(ENTRADA, "continuo_flujo_adr.json")
+    if not (os.path.exists(rc) and os.path.exists(rf)):
+        return r"\paragraph{Ecuaciones adjuntas continuas frente al c\'odigo.} no ejecutado."
+    c, f = json.load(open(rc)), json.load(open(rf))
+    mx = max(x["residuo_rel"] for x in c)
+    pe = min(x["sin_almacenamiento"] for x in c)
+    pa = min(x["sin_adveccion"] for x in c)
+    co = f["coeficientes"]
+    return (r"""\paragraph{Ecuaciones adjuntas continuas frente al c\'odigo (FEniCSx, ADR).}
+Se escribi\'o de forma independiente la forma d\'ebil de la ecuaci\'on adjunta del transporte de la Secci\'on~\ref{sec:adj_ADR}
+(Euler impl\'icito, $\theta_C=1$, $S_s=\phi$, frontera natural $(\bD\nabla\pA+\bu\pA)\cdot\bn=0$) y se evalu\'o sobre los
+estados guardados (\texttt{tests/verificar\_adjunto\_continuo.py}; 3 pasos, $C$ modulada). Con
+$\pA=-\psi_{\text{c\'odigo}}/\Delta t$ el residuo, medido en la norma dual y relativo al mayor t\'ermino, es $%s$ como m\'aximo en
+los tres pasos, es decir, a nivel de redondeo; si se omite el t\'ermino de almacenamiento sube a $%s$ y si se omite la advecci\'on a $%s$.
+La relaci\'on de signo $\pA=-\psi_{\text{c\'odigo}}/\Delta t$ es la de las convenciones: el c\'odigo usa $\mathcal{L}=J-\psi\cdot R$ con
+$R$ en forma de tasa y $J=\gamma\Delta t\sum\int\delta_pC^2$, el documento $\mathcal{L}=J+\int\langle R,\psi\rangle dt$; por eso $\psi_C$
+del c\'odigo es positivo donde $C>0$ y el del documento negativo.
+Para el adjunto del flujo (\texttt{tests/verificar\_adjunto\_flujo\_continuo.py}, \'ultimo paso) se descompuso $(\partial_hR^C)^\top\psi_C$ por
+m\'inimos cuadrados en los tres t\'erminos del segundo miembro de la Secci\'on~\ref{sec:adj_ADR}: $\int\bK(\pA\nabla C)\cdot\nabla v$,
+$\int\bK\,\mathbf{d}\cdot\nabla v$ (con $\partial_{\bu}\bD$) y $\int\phi C\pA v/\Delta t$; los coeficientes ajustados son
+$%.6f$, $%.6f$ y $%.6f$ (todos $-1$ en la convenci\'on del c\'odigo, que es lo que impone la ecuaci\'on del documento) con residuo relativo $%.1e$.
+S\'olo se verific\'o ADR con FEniCSx; MRMT y BFR no tienen esta verificaci\'on.
+""" % (_fmt_t(mx), _fmt_t(pe), _fmt_t(pa), *co.values(), f["residuo_rel"]))
+
+
+def _fmt_t(x):
+    m, e = f"{x:.1e}".split("e")
+    return f"{m}\\times10^{{{int(e)}}}"
+
+
 def main():
     L = [TABLA_VERIF]
     for titulo, sufijo, alm in (
@@ -74,6 +107,7 @@ El adjunto de FEniCSx se obtiene derivando los residuos discretos (\texttt{ufl.d
 debe coincidir con las diferencias finitas hasta el redondeo; el de BFR es la transpuesta de los operadores discretos y
 est\'a sujeto, adem\'as, al tratamiento del nodo del pozo y de los nodos de frontera.
 """)
+    L.append(_continuo())
     L.append(r"""
 \paragraph{Limitaciones del adjunto BFR.} Con concentraci\'on no uniforme el adjunto de BFR no coincide con las diferencias finitas
 (factor 2--7 con almacenamiento; sin almacenamiento el adjunto es $\approx0$ y las diferencias finitas dan valores grandes). No cambia

@@ -242,6 +242,20 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     return F_C
 
 
+def _pesos_J(p, T_total):
+    """Pesos (w1, w2, w3) de J1, J2, J3. Sin `normalizar_J` valen 1 (funcional original).
+    Con `normalizar_J` cada término se divide entre su máximo posible, que sale de las
+    cotas del propio problema: J1 entre C_ref²·T (C_ref = límite de salud, mismas unidades
+    que C), J2 entre max|z_p − z0|² sobre [zp_min, zp_max], J3 entre Q_max²·T·max|z_p − z0|."""
+    if not getattr(p, "normalizar_J", False):
+        return 1.0, 1.0, 1.0
+    z0 = float(getattr(p, "z0", 0.0))
+    dz = max(abs(float(p.zp_min) - z0), abs(float(p.zp_max) - z0))
+    C_ref = float(p.C_ref)
+    Q_max = float(getattr(p, "Q_max", 1e-2))
+    return 1.0 / (C_ref ** 2 * T_total), 1.0 / dz ** 2, 1.0 / (Q_max ** 2 * T_total * dz)
+
+
 # ---------------------------------------------------------------------------
 # FORWARD: resuelve paso a paso, guarda estados nativos y evalúa J.
 # ---------------------------------------------------------------------------
@@ -256,7 +270,8 @@ def _solve_forward(ctx, Q, zp):
     T_total = Nt * dt
     ext_on = bool(getattr(p, "activate_ext", True))
     fuente_on = bool(getattr(p, "activate_fuente", True))
-    gamma = float(getattr(p, "gamma", 1.0))
+    w1, w2, w3 = _pesos_J(p, T_total)
+    gamma = float(getattr(p, "gamma", 1.0)) * w1
     z0 = float(getattr(p, "z0", 0.0))
 
     # Constants controlables.
@@ -403,9 +418,9 @@ def _solve_forward(ctx, Q, zp):
     A1.destroy()
 
     # Términos económicos del funcional (idénticos a compute_functional de bfr).
-    koppa = float(getattr(p, "koppa", 1.0))
+    koppa = float(getattr(p, "koppa", 1.0)) * w2
     J2 = koppa * abs(zp - z0) ** 2
-    J3 = float(np.sum(np.asarray(Q) ** 2)) * dt * abs(zp - z0)
+    J3 = w3 * float(np.sum(np.asarray(Q) ** 2)) * dt * abs(zp - z0)
     J = J1 + J2 + J3
 
     return dict(h=h_hist, C=C_hist, chi=chi_hist, src=src_hist, J=J, J1=J1,
@@ -425,8 +440,9 @@ def _solve_adjoint_grad(ctx, states):
     Nt = len(Q)
     dt = p.dt
     theta = _const_theta(ctx, phys["theta_C"])
-    gamma = float(getattr(p, "gamma", 1.0))
-    koppa = float(getattr(p, "koppa", 1.0))
+    w1, w2, w3 = _pesos_J(p, Nt * dt)
+    gamma = float(getattr(p, "gamma", 1.0)) * w1
+    koppa = float(getattr(p, "koppa", 1.0)) * w2
     z0 = float(getattr(p, "z0", 0.0))
 
     zp_c = fem.Constant(ctx.domain, PETSc.ScalarType(zp))
@@ -623,7 +639,7 @@ def _solve_adjoint_grad(ctx, states):
 
         # ---- gradiente: dJ/dθ = ∂J/∂θ − ψ_h·∂R^h/∂θ − ψ_C·∂R^C/∂θ ----
         # Q_n:  J3 + flujo (Q·gauss_flow) + transporte (χ'(Q)·gauss_C·C)
-        gQ = 2.0 * abs(zp - z0) * float(Q[n]) * dt
+        gQ = 2.0 * w3 * abs(zp - z0) * float(Q[n]) * dt
         dRh_dQ = arr(G, inner(gauss_flow, gtest) * dx)
         gQ -= psiH.x.petsc_vec.dot(dRh_dQ)
         dRh_dQ.destroy()
@@ -701,7 +717,7 @@ def _solve_adjoint_grad(ctx, states):
     # Términos económicos independientes del adjunto.
     sgn = np.sign(zp - z0) if zp != z0 else 0.0
     grad_zp += 2.0 * koppa * (zp - z0)
-    grad_zp += float(np.sum(np.asarray(Q) ** 2)) * dt * sgn
+    grad_zp += w3 * float(np.sum(np.asarray(Q) ** 2)) * dt * sgn
 
     # Invertir al orden forward (psiH_hist[0] = paso 0, ..., [Nt-1] = paso Nt-1)
     adj_states = {
@@ -751,7 +767,9 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     if ctx.comm.rank == 0:
         print("[fenicsx-opt] Evaluando J₀ para normalización...", flush=True)
     J0_raw  = functional_fenicsx(x0, ctx)
-    J_scale = max(abs(J0_raw), 1.0)
+    # Con normalizar_J cada término ya es adimensional (≤ 1): escalar por J(x₀) con x₀ fuera de
+    # cotas (J₀ ~ 10²) subestima el gradiente y hace que gtol se cumpla lejos del óptimo.
+    J_scale = 1.0 if getattr(p, "normalizar_J", False) else max(abs(J0_raw), 1.0)
     if ctx.comm.rank == 0:
         print(f"[fenicsx-opt] J₀={J0_raw:.4e}  J_scale={J_scale:.4e}", flush=True)
 

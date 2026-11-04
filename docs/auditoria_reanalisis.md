@@ -60,4 +60,12 @@ ningún término explícito de extracción.
 - **Optimización FEniCSx** (6 pasos, 10 iteraciones de trust-constr, C modulada): no convergió (límite de
   evaluaciones); J escalada 0.9985–0.9990; la iterada final de Q tiene componentes negativas (≈ −3e-4) aunque los
   límites son Q≥0. Prueba de funcionamiento, no un resultado.
+- **Ecuaciones adjuntas continuas frente al código (FEniCSx, ADR, θ_C = 1, 3 pasos, C modulada)**:
+  `tests/verificar_adjunto_continuo.py` evalúa la forma débil de la ecuación adjunta del documento (escrita de forma
+  independiente) sobre los ψ_C del código con ψ_doc = −ψ_código/Δt: residuo relativo ~1e-15 en los 3 pasos; sin el término
+  de almacenamiento ~1e-3 y sin advección ~1e-2. `tests/verificar_adjunto_flujo_continuo.py`: (∂R^C/∂h)ᵀψ_C = −[∫K(ψ∇C)·∇v
+  + ∫K d·∇v + ∫φCψ v/Δt] con los tres coeficientes = −1.000000 y residuo 5e-16 (incluye el término ∂ᵤD). Convención: el
+  código usa L = J − ψ·R (R en forma de tasa, J con Δt); el documento L = J + ∫⟨R,ψ⟩dt ⇒ ψ_C del código > 0 y el del
+  documento < 0. Con θ_C = 0.9 (valor por defecto del entorno de prueba) los términos espaciales aparecen ponderados por 0.9,
+  como corresponde. **Sólo ADR/FEniCSx**: MRMT y BFR no tienen esta verificación.
 - **No ejecutado**: balance de masa numérico, convergencia en malla/tiempo, optimización BFR.

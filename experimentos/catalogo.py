@@ -81,6 +81,25 @@ GRUPOS = {
         },
     },
 
+    # ── M. Modelo nuevo (sin sumidero W-, con almacenamiento S_s = φ) con la configuración de main ──
+    # Q_std = 1e-3 (orden de main, dentro de [0, Q_max]) en vez del 0.3 de base.json; el resto es la base.
+    "M_modelo_nuevo": {
+        "desc": "Modelo nuevo ADR / MRMT semi / MRMT bloque, Q_std = 1e-3, 30 días",
+        "pregunta": "¿El directo del modelo nuevo es consistente entre BFR y FEniCS en los tres modelos?",
+        "casos": {
+            f"M{i}_{modelo}": {"desc": f"{modelo} sin W-, con almacenamiento, Q_std = 1e-3",
+                               "cfg": {"model": modelo, "Q_std": 1e-3, "factor_sumidero_C": 0.0,
+                                       "factor_almacenamiento_C": 1.0}}
+            for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
+        } | {
+            "M3_adr_bc_fem": {"desc": "M0 con bc_outlet_mode = fem (sólo BFR): ¿la BC de salida explica |U|?",
+                              "cfg": {"model": "adr", "Q_std": 1e-3, "factor_sumidero_C": 0.0,
+                                      "factor_almacenamiento_C": 1.0},
+                              "bfr": {"bc_outlet_mode": "fem"}, "backends": ["bfr"],
+                              "ref_fem": "M_modelo_nuevo/M0_adr"},
+        },
+    },
+
     # ── B. BC de salida: BFR con la condición natural de FEniCS ──────────────
     # Sólo cambia BFR → la referencia FEM es el caso homólogo del grupo A.
     "B_bc_salida_fem": {
@@ -206,6 +225,32 @@ GRUPOS = {
         },
     },
 
+    # ── Zo. Oscilación del nodo del pozo en BFR sin W- (cuadrado del grupo Z) ──
+    # Z0 (sin W-) muestra C(x_p) alternando 0 ↔ 0.65 C0 entre pasos. Hipótesis:
+    # recorte C ≥ 0 + esquema centrado donde convergen las líneas de corriente.
+    # Cada caso cambia UNA cosa respecto a Z0 (sin W-, θ_C = 1, centrado, recorte).
+    "Zo_oscilacion": {
+        "desc": "Cuadrado sin W-: ¿qué produce la oscilación de C en el nodo del pozo?",
+        "pregunta": "¿Es el recorte C≥0, el esquema centrado o el paso de tiempo?",
+        "comparar": False,
+        "casos": {
+            nombre: {"desc": desc,
+                     "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
+                             "extract_C": False, "factor_sumidero_C": 0.0, "bc_outlet_mode": "libre", "phi_const": 0.1,
+                             "C_init_const": C_Z, "h_init_const": 300.0,
+                             "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": 30 * 86400,
+                             "S_s_const": 1e-5, "Q_std": 0.01, "spacing": 30, "min_sp": 4, **extra},
+                     "backends": ("bfr",)}
+            for nombre, desc, extra in (
+                ("Zo0_base", "Z0 a 30 d (referencia de este grupo)", {}),
+                ("Zo1_sin_recorte", "sin recorte C ≥ 0", {"clip_C": False}),
+                ("Zo2_upwind", "upwind en el transporte", {"upwind_transport": True}),
+                ("Zo3_dt_mitad", "dt = 9000 s", {"dt": 9000}),
+                ("Zo4_cn", "Crank–Nicolson (θ_C = 0.5)", {"theta_C": 0.5}),
+            )
+        },
+    },
+
     # ── S. Sumidero W- del pozo (decisión 1) ─────────────────────────────────
     # W- = χ(Q) g_ε C escalado por factor_sumidero_C (0 por defecto desde la
     # comparativa del cuadrado, rama exp/sumidero-W). Configuración de
@@ -240,6 +285,50 @@ GRUPOS = {
             f"N_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C",
                        "cfg": {"model": m, "extract_C": False, "factor_sumidero_C": 0.0,
                                "factor_almacenamiento_C": 1.0}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+
+    # ── N_adjunto: las 6 variantes del modelo nuevo con forward + adjunto (run_type=comparison) ──
+    # Misma configuración física que N_modelo_nuevo; sólo cambia run_type para que se guarde adjoint_results.npz.
+    "N_adjunto": {
+        "desc": "ADR / MRMT Semi / MRMT Bloque sin W- y con almacenamiento, forward + adjunto",
+        "pregunta": "¿Cómo son los adjuntos ψ_h, ψ_C del modelo nuevo en BFR y FEniCS?",
+        "comparar": False,
+        "casos": {
+            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, run_type=comparison",
+                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
+                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+
+    # ── N_fuente: como N_adjunto pero con la fuente de contaminante más estrecha en z y menos intensa ──
+    # ε_z de la fuente baja de 60 m (spacing·sigma_fuente) a 30 m y su intensidad de 1e-11 a 5e-12 (valores en
+    # la config); el resto es idéntico a N_adjunto.
+    "N_fuente": {
+        "desc": "N_adjunto con ε_z de la fuente = 30 m e intensidad = 5e-12",
+        "pregunta": "¿Cómo cambian la pluma y los adjuntos con una fuente más estrecha en z y menos intensa?",
+        "comparar": False,
+        "casos": {
+            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12",
+                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
+                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}}
+            for m in ("adr", "mrmt_semi", "mrmt_block")
+        },
+    },
+
+    # ── N_fuente_Q: N_fuente con el caudal del pozo Q_std = 1e-3 (valor de default.json hasta el 28-oct) ──
+    "N_fuente_Q": {
+        "desc": "N_fuente con Q_std = 1e-3",
+        "pregunta": "¿Cómo cambian el cono de h, la pluma y los adjuntos con Q_std = 1e-3 en vez de 0.3?",
+        "comparar": False,
+        "casos": {
+            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12, Q_std=1e-3",
+                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
+                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12, "Q_std": 1e-3}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
     },

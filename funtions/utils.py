@@ -74,7 +74,9 @@ def gaussian_2d(x, x_s, amplitude, epsilon_x, epsilon_y=None):
 def fuente_C(t, T):
     p = RUNTIME.get()
 
-    return 1e-11 * t/T * np.exp(-8*t/T) + 1e-12 * (1 - np.exp(-8*t/T))
+    A = getattr(p, "intensidad_fuente", None)
+    pico, base = (1e-11, 1e-12) if A is None else (float(A), float(A) / 10.0)
+    return pico * t/T * np.exp(-8*t/T) + base * (1 - np.exp(-8*t/T))
 
 def normalizar_delta_area(delta, wi):
     """Reescala la delta discreta (Σδ_i = 1) para que ∫δ dΩ ≈ Σ δ_i·w_i = 1,
