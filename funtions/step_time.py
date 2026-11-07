@@ -22,6 +22,7 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     Div_D_n = Div_KD(D_n, grad)
 
     # --- FLOW ---
+    H_old = H
     rhs = H_vector(H, A_right, delta_p, groups, nodes, N, None, Qout_n, Qout_N, gauss_p=gauss_p)
     H = A_solver.solve(rhs)
 
@@ -31,13 +32,30 @@ def step_time(H, U, C, C_im, nodes, groups, normals, A_solver, eps_M, K, grad,
     D_N = D_total(D_f, U)
     Div_D_N = Div_KD(D_N, grad)
 
-    if _upwind:
+    form = getattr(p, 'transport_form', 'nonconservative')
+    if getattr(p, 'diffusion_form', 'expanded') == 'composed':
+        if form == 'conservative':
+            raise NotImplementedError("composed + conservative: usar build_conservative (ya compone)")
+        from funtions.composed_operators import build_transport_matrix_composed
+        C_solver = build_transport_matrix_composed(U, nodes, groups, normals, pho, D_N, Qout_N, eps_M, gauss_p, -1, p, grad)
+        C_right  = build_transport_matrix_composed(U, nodes, groups, normals, pho, D_n, Qout_n, eps_M, gauss_p,  1, p, grad)
+    elif form == 'conservative':
+        from funtions.transport_forms import build_conservative_transport_matrix, well_kernel
+        w_R = well_kernel(p, delta_p, gauss_p)
+        C_solver = build_conservative_transport_matrix(U, nodes, groups, normals, pho, D_N, Qout_N, eps_M, w_R, -1, p, grad)
+        C_right  = build_conservative_transport_matrix(U, nodes, groups, normals, pho, D_n, Qout_n, eps_M, w_R,  1, p, grad)
+    elif _upwind:
         from funtions.upwind_operators import build_upwind_transport_matrix
         C_solver = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1, p)
         C_right  = build_upwind_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p,  1, p)
     else:
         C_solver = build_transport_matrix(U, nodes, groups, normals, pho, D_N, Div_D_N, Qout_N, eps_M, gauss_p, -1)
         C_right  = build_transport_matrix(U, nodes, groups, normals, pho, D_n, Div_D_n, Qout_n, eps_M, gauss_p, 1)
+    if form == 'continuity':
+        from funtions.transport_forms import storage_rate, add_storage_term
+        kappa = storage_rate(p, pho, H_old, H)
+        C_solver = add_storage_term(C_solver, kappa, groups, p, -1)
+        C_right  = add_storage_term(C_right,  kappa, groups, p, +1)
     rhs = C_vector(C, C_right, gauss_f, groups, t, T, N, C_im, pho)
 
     C_new = splu(C_solver).solve(rhs)

@@ -379,6 +379,11 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
     p = RUNTIME.get()
     N = len(nodes)
 
+    if getattr(p, "diffusion_form", "expanded") == "composed" and operator != "Identity":
+        from funtions.composed_operators import build_H_matrix_composed
+        return build_H_matrix_composed(nodes, groups, normals, theta, S_s, K, Div_K,
+                                       eps_M, sig, p)
+
     op_def = make_H_operator(
         nodes, groups, theta, S_s, K, Div_K,
         eps_M, eps_arr, sig, p, operator

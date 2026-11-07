@@ -328,9 +328,11 @@ def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
 def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
                            delta, delta_C, phi, C, C_n, D, D_n, u, u_n,
-                           alpha_sum=0.0, C_im_sum=None, f_W=1.0):
+                           alpha_sum=0.0, C_im_sum=None, f_W=1.0, storage=None):
     """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
-    alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
+    alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r).
+    storage=(S_s, h_new, h_old) añade la sustitución de continuidad
+    +Ss·(h_new−h_old)/dt·C (transport_form="continuity"; ver funtions/transport_forms.py)."""
     z_t = TestFunction(Q)
     theta_C = fem.Constant(Q.mesh, PETSc.ScalarType(theta_C))   # ver _flow_forms
     f_W = fem.Constant(Q.mesh, PETSc.ScalarType(f_W))           # ídem (0 → Zero)
@@ -353,6 +355,12 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
         + f_W * theta_C * inner(delta_C * C, z_t) * dx
         + f_W * (1 - theta_C) * inner(delta_C * C_n, z_t) * dx
     )
+
+    # Sustitución de continuidad: fuente +κ(θ_C·C + (1−θ_C)·C_n), κ = Ss·∂h/∂t.
+    # En F_C los sumideros entran con +, así que la fuente entra con −.
+    if storage is not None:
+        S_st, h_new, h_old = storage
+        F_C -= inner(S_st * (h_new - h_old) / dt * (theta_C * C + (1 - theta_C) * C_n), z_t) * dx
 
     # Acoplamiento MRMT Block: mismo escalado que BFR (alpha_r ya absorbe dt).
     # +R*alpha_sum*phi*(C+C_n) → intercambio; -2*R*phi*C_im_sum → fuente de C_im.
@@ -445,6 +453,8 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     h0, _ = get_init_values(G.tabulate_dof_coordinates()[:, :2])
     _, c0 = get_init_values(Q.tabulate_dof_coordinates()[:, :2])
     h_n.x.array[:] = h0
+    h_prev = fem.Function(G)   # H del paso anterior (h_n ya vale H^{n+1} al resolver C)
+    h_prev.x.array[:] = h0
     C_n.x.array[:] = np.nan_to_num(c0, nan=phys["C_0"])
     Src_n.x.array[:] = 0.0
 
@@ -475,12 +485,18 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_im_sum = fem.Function(Q)
             C_im_sum.x.array[:] = 0.0
 
+    form = getattr(p, "transport_form", "nonconservative")
+    if form == "conservative":
+        raise NotImplementedError("transport_form='conservative' no está implementado en FEniCS")
+    if form == "continuity" and getattr(p, "S_s_const", None):
+        raise NotImplementedError("FEniCS usa Ss = φ; S_s_const no se aplica al flujo FEM")
     a_h, L_h, a_C, L_C = _variational_form_h_C(
         Q, G, phys["R"], phys["landa"], phi, h, h_n, dt, phys["theta"], phys["theta_C"],
         K_z, phys["alpha"], h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
         delta, delta_C, phi, C, C_n, D + D_m, D + Dm_n, u, u_n,
         alpha_sum=mrmt_alpha_sum, C_im_sum=C_im_sum,
         f_W=float(getattr(p, "factor_sumidero_C", 0.0)),
+        storage=(phi, h_, h_prev) if form == "continuity" else None,
     )
 
     # A1 (flujo) no depende de QOut (el término QOut*delta es del lado
@@ -603,6 +619,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_im = _mrmt_block_step(C_raw, C_prev_arr, C_im, mrmt_coef, phys["theta_C"])
             _update_C_im_sum(C_im_sum, C_im, np.array(p.alpha_r))
 
+        h_prev.x.array[:] = h_.x.array[:]
         C_raw = np.maximum(C_raw, 0.0)  # positividad física (igual que BFR en funtions/step_time.py)
         C_n.x.array[:] = C_raw
         Src_n.x.array[:] = Src.x.array[:]

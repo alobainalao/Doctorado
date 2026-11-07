@@ -30,7 +30,7 @@ class Parameters:
 
                 "spacing", "min_sp", "min_sp_boundary", "s_cone", "r_circle", "r_cone", "sigma_fuente",
                 "fenicsx_lc_near", "dt", "T",
-                "upwind_transport",
+                "upwind_transport", "transport_form", "S_s_const", "diffusion_form",
 
                 "phi_const", "a_l", "a_t", "D_d", "eps",
 
@@ -131,6 +131,21 @@ class Parameters:
         # 1 recupera el modelo anterior.
         self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
 
+        # Forma de la ecuación de transporte (rama experiment/transport-continuity-
+        # substitution): "nonconservative" (estándar, = formulación C del informe:
+        # sin Ss·∂h/∂t·C ni sumidero), "conservative" (A: ∇·(qC) y sumidero Q w_R C),
+        # "continuity" (B: q·∇C + Ss·∂h/∂t·C) o "continuity_noSs" (C explícita).
+        self.transport_form = str(getattr(self, "transport_form", "nonconservative"))
+        if self.transport_form not in ("nonconservative", "conservative", "continuity", "continuity_noSs"):
+            raise ValueError(f"transport_form inválido: {self.transport_form}")
+
+        # Difusión: "expanded" (estándar, D∂²+∇D·∇ en un stencil de 2.º orden) o
+        # "composed" (∇·(D∇·) = Gx·D·Gx + Gz·D·Gz con matrices de 1.er orden, también
+        # en el flujo; advección completa diag(V)·G). Ver funtions/composed_operators.py.
+        self.diffusion_form = str(getattr(self, "diffusion_form", "expanded"))
+        if self.diffusion_form not in ("expanded", "composed"):
+            raise ValueError(f"diffusion_form inválido: {self.diffusion_form}")
+
         # =========================
         # TIEMPO
         # =========================
@@ -217,6 +232,10 @@ class Parameters:
         # de optimización no mezcla sus iteraciones con las corridas de
         # sanity-check, y cada quien vive bajo su propia carpeta.
         self.run_type = getattr(self, "run_type", "standard")
+        if self.run_type == "optimization" and (self.transport_form != "nonconservative"
+                                                or self.diffusion_form != "expanded"):
+            raise NotImplementedError(
+                "El adjunto no está derivado para transport_form != 'nonconservative'")
         self.save_data = f"./data/output/{self.metodo}/data/{self.domain}/{self.model}/{self.run_type}"
         self.save_video = f"./data/output/{self.metodo}/figures/{self.domain}/{self.model}/{self.run_type}"
         self.save_preprocess = f"./data/input/{self.metodo}/{self.domain}/{self.model}"
