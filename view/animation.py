@@ -38,7 +38,15 @@ def solve_adjoint(h, U, C, Qout, d, animate=False, save_data=False):
     # =====================================================
     # SIMULACIÓN ADJUNTA
     # =====================================================
-    sim = SimulationAdjoint(d.psi_H, d.psi_C)
+    # ψ guardado/animado = variables del adjunto discreto EXACTO (el del gradiente), no las de step_adjoint
+    exacto = None
+    if (getattr(p, "adjoint_exact", True) and not getattr(p, "upwind_transport", False)
+            and getattr(p, "factor_sumidero_C", 0.0) == 0.0):
+        from funtions.adjunto_exacto import gradiente_exacto
+        Ci = get_solucion(["Ci"], f"{p.save_data}/simulation_results.npz")[0] if "mrmt" in p.model else None
+        exacto = {}
+        gradiente_exacto(d, p, np.asarray(Qout[0], float), float(d.pozo_cor[1]), h, U, C, Ci=Ci, debug=exacto)
+    sim = SimulationAdjoint(d.psi_H, d.psi_C, exacto=exacto)
 
     outputs = setup_outputs_adj(
         figs=figs,
@@ -871,7 +879,9 @@ class Simulation:
 
 class SimulationAdjoint:
 
-    def __init__(self, psi_H_list, psi_C_list):
+    def __init__(self, psi_H_list, psi_C_list, exacto=None):
+
+        self.exacto = exacto   # {'LamH','LamC'} de gradiente_exacto (nivel l = paso+1) o None
 
         self.psi_H = [h.copy() for h in psi_H_list]
         self.psi_C = [c.copy() for c in psi_C_list]
@@ -898,7 +908,18 @@ class SimulationAdjoint:
             # =====================================================
             # STEP ADJUNTO
             # =====================================================
-            self.psi_H[k], self.psi_C[k], psiC_im_n = step_adjoint(
+            if self.exacto is not None:
+                # multiplicador nodal Λ → ψ del documento: ψ(x_i) = Λ_i/(Δt w_i) (Δt de la cuadratura temporal, w_i de la espacial)
+                self.psi_H[k] = self.exacto["LamH"][step + 1] / (p.dt * d.wi)
+                if getattr(p, "bc_outlet_mode", "pfs") == "libre":
+                    # Cierre (D): h|Γ_out evoluciona solo (las filas de salida de A_left/A_right no usan columnas de
+                    # otros nodos), su multiplicador no realimenta al interior ni entra en ∇Q ni ∇z_p, y FEniCSx lo
+                    # elimina (Dirichlet). Convención del documento (§salida): ψ_h = 0 en Γ_out.
+                    self.psi_H[k][np.asarray(d.groups["boundary:outlet"], int)] = 0.0
+                self.psi_C[k] = self.exacto["LamC"][step + 1] / (p.dt * d.wi)
+                psiC_im_n = None
+            else:
+              self.psi_H[k], self.psi_C[k], psiC_im_n = step_adjoint(
                 A_solver=d.A_H,
                 B=d.B_H,
                 psiH_N=self.psi_H[k],

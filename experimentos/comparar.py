@@ -115,15 +115,20 @@ def _leer(path):
 
 
 def _cfg(dir_):
-    with open(os.path.join(dir_, "config.json")) as f:
+    ruta = os.path.join(dir_, "config.json")
+    if not os.path.exists(ruta):    # diseño de main: la config del lanzador está en data/output/_cfg/
+        partes = os.path.normpath(dir_).split(os.sep)
+        ruta = os.path.join(CODIGO_DIR, "data", "output", "_cfg", f"{partes[-5]}_{partes[-2]}_{partes[-1]}.json")
+    with open(ruta) as f:
         return json.load(f)
 
 
-def cargar_caso(g, c, spec, M):
-    """Campos de ambos backends sobre los nodos comunes (orden de M['nodes'])."""
+def cargar_caso(g, c, spec, M, dirs=None):
+    """Campos de ambos backends sobre los nodos comunes (orden de M['nodes']).
+    dirs=(d_bfr, d_fem) lee las salidas con el diseño de main (data/output/<backend>/data/real/<modelo>/<run_type>)."""
     ref = spec.get("ref_fem", f"{g}/{c}")
-    d_bfr = os.path.join(OUT_ROOT, g, c, "bfr")
-    d_fem = os.path.join(OUT_ROOT, ref, "fenicsx")
+    d_bfr = dirs[0] if dirs else os.path.join(OUT_ROOT, g, c, "bfr")
+    d_fem = dirs[1] if dirs else os.path.join(OUT_ROOT, ref, "fenicsx")
     for d in (d_bfr, d_fem):
         if not os.path.exists(os.path.join(d, "simulation_results.npz")):
             raise ErrorCaso(f"falta {os.path.relpath(d, CODIGO_DIR)}/simulation_results.npz")
@@ -397,12 +402,12 @@ def _dir(B, U):
 _M = None
 
 
-def comparar_caso(g, c, spec, con_video=True):
+def comparar_caso(g, c, spec, con_video=True, dirs=None, out=None):
     global _M
     if _M is None:
         _M = malla_comun()
-    out = os.path.join(OUT_ROOT, g, c, "comparacion")
-    datos, dt, cfg, ref = cargar_caso(g, c, spec, _M)
+    out = out or os.path.join(OUT_ROOT, g, c, "comparacion")
+    datos, dt, cfg, ref = cargar_caso(g, c, spec, _M, dirs)
     s, r = metricas(datos, dt, cfg, _M)
     titulo = c if ref == f"{g}/{c}" else f"{c}  (FEM: {ref.split('/')[-1]})"
     if con_video:

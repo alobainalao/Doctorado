@@ -22,7 +22,7 @@ ENVS = {"bfr": "bfr_env", "fenicsx": "fenics_env"}
 
 SIN_FUENTE = {"activate_fuente": False}
 SIN_POZO = {"activate_ext": False}
-# Grupo M: configuración de main.py (default.json + malla_sp60: dt 18000 s, 30 d, n_stencil 25, Q_std 1e-3) salvo la malla compartida
+# Grupo M: configuración de main.py (default.json + malla_sp60: dt 18000 s, 30 d, n_stencil 25, Q_std 0.3) salvo la malla compartida
 # (necesaria para que BFR y FEniCSx usen los mismos nodos). La fuente es más estrecha en z y menos intensa, igual en todas las variantes.
 MAIN_FUENTE = {"n_stencil": 25, "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}
 T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
@@ -85,18 +85,18 @@ GRUPOS = {
     },
 
     # ── M. Modelo nuevo (sin sumidero W-, con almacenamiento S_s = φ) con la configuración de main ──
-    # Q_std = 1e-3 (orden de main, dentro de [0, Q_max]) en vez del 0.3 de base.json; el resto es la base.
+    # Q_std = 0.3 (default.json de main desde el 28-oct). Las corridas con 1e-3 quedaron archivadas en *_Q1e-3.
     "M_modelo_nuevo": {
-        "desc": "Modelo nuevo ADR / MRMT semi / MRMT bloque, Q_std = 1e-3, 30 días",
+        "desc": "Modelo nuevo ADR / MRMT semi / MRMT bloque, Q_std = 0.3, 30 días",
         "pregunta": "¿El directo del modelo nuevo es consistente entre BFR y FEniCS en los tres modelos?",
         "casos": {
-            f"M{i}_{modelo}": {"desc": f"{modelo} sin W-, con almacenamiento, Q_std = 1e-3",
-                               "cfg": {"model": modelo, "Q_std": 1e-3, "factor_sumidero_C": 0.0,
+            f"M{i}_{modelo}": {"desc": f"{modelo} sin W-, con almacenamiento, Q_std = 0.3",
+                               "cfg": {"model": modelo, "Q_std": 0.3, "factor_sumidero_C": 0.0,
                                        "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
         } | {
             "M3_adr_bc_fem": {"desc": "ADR con el cierre (B) Neumann u·n=f_out en ambos backends (bc_outlet_mode = fem): referencia del cierre anterior",
-                              "cfg": {"model": "adr", "Q_std": 1e-3, "factor_sumidero_C": 0.0,
+                              "cfg": {"model": "adr", "Q_std": 0.3, "factor_sumidero_C": 0.0,
                                       "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "fem", **MAIN_FUENTE}},
         },
     },
@@ -311,7 +311,7 @@ GRUPOS = {
         "comparar": False,
         "casos": {
             f"MA_{m}": {"desc": f"{m}, modelo nuevo, salida libre, run_type=comparison",
-                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False, "Q_std": 1e-3,
+                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False, "Q_std": 0.3,
                                 "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
                                 "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for m in ("adr", "mrmt_semi", "mrmt_block")

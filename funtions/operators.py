@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse.linalg import splu
 from rbf.pde.fd import weight_matrix
 from rbf.sputils import expand_rows
-from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix, csc_matrix, diags
 from scipy.linalg import solve
 from funtions.runtime import RUNTIME
 from funtions.utils import In_h, apply_boundary, fuente_C
@@ -374,7 +374,7 @@ def make_H_bc(nodes, groups, K, Div_K, normals):
     ]
 
 def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
-                   eps_M, sig=1, eps_arr=None, operator=None):
+                   eps_M, sig=1, eps_arr=None, operator=None, triangulos=None):
 
     p = RUNTIME.get()
     N = len(nodes)
@@ -398,7 +398,52 @@ def build_H_matrix(nodes, groups, normals, theta, S_s, K, Div_K,
     )
     if getattr(p, "bc_outlet_mode", "pfs") == "libre" and operator != "Identity":
         A = ecuacion_borde_libre(A, nodes, groups, normals, theta, S_s, K, sig, p.dt)
+    ancho = float(getattr(p, "galerkin_banda", 0.0))
+    if ancho > 0.0 and operator != "Identity":
+        if triangulos is None:
+            raise ValueError("galerkin_banda > 0 necesita la triangulación de la malla congelada (mesh_pkl)")
+        A = filas_galerkin_banda(A, nodes, groups, triangulos, S_s, K, theta, sig, p.dt, ancho)
     return A
+
+
+def filas_galerkin_banda(A, nodes, groups, triangulos, S_s, K, theta, sig, dt, ancho):
+    """
+    Sustituye las filas del flujo de los nodos interiores y de pared a menos de `ancho` metros de la superficie
+    (z máxima del dominio) por filas Galerkin P1 con masa concentrada:
+        S_s/dt H_i − θ σ (Kst H)_i / w_i ,   w_i = masa concentrada P1 del nodo i,
+    con la misma convención de signo que `make_H_operator` (σ = -1 izquierda, +1 derecha). Es la misma ecuación por
+    unidad de volumen, pero con rigidez simétrica y conservativa: el transpuesto del operador queda W-simétrico en la
+    franja, donde la colocación RBF-FD (estenciles unilaterales) hace rugoso el adjunto exacto. Las filas de entrada
+    y salida no se tocan (su condición entra por el fantasma). Los nodos fantasma ya no aparecen en las filas
+    sustituidas; sus filas de Neumann se conservan.
+    """
+    tri = np.asarray(triangulos, int)
+    N = len(nodes)
+    X = nodes[tri]
+    e1, e2 = X[:, 1] - X[:, 0], X[:, 2] - X[:, 0]
+    det = e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]
+    area = 0.5 * np.abs(det)
+    bz = np.stack([X[:, 1, 1] - X[:, 2, 1], X[:, 2, 1] - X[:, 0, 1], X[:, 0, 1] - X[:, 1, 1]], 1) / det[:, None]
+    bx = np.stack([X[:, 2, 0] - X[:, 1, 0], X[:, 0, 0] - X[:, 2, 0], X[:, 1, 0] - X[:, 0, 0]], 1) / det[:, None]
+    Kx, Kz = K[tri, 0].mean(1), K[tri, 1].mean(1)
+    Ke = area[:, None, None] * (Kx[:, None, None] * bz[:, :, None] * bz[:, None, :]
+                                + Kz[:, None, None] * bx[:, :, None] * bx[:, None, :])
+    Kst = csr_matrix((Ke.ravel(), (np.repeat(tri, 3, 1).ravel(), np.tile(tri, (1, 3)).ravel())), shape=(N, N))
+    w = np.zeros(N)
+    np.add.at(w, tri.ravel(), np.repeat(area / 3.0, 3))
+
+    idx_dom = np.hstack([groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'],
+                         groups['boundary:wall']]).astype(int)
+    z_top = nodes[idx_dom, 1].max()
+    cand = np.hstack([groups['interior'], groups['boundary:wall']]).astype(int)
+    sel = cand[(z_top - nodes[cand, 1]) <= ancho]
+    m = np.zeros(N)
+    m[sel] = 1.0
+    S_s = np.asarray(S_s, float)
+    Gal = diags(S_s / dt) - theta * sig * (diags(1.0 / np.where(w > 0, w, 1.0)) @ Kst)
+    A = diags(1.0 - m) @ csr_matrix(A) + diags(m) @ Gal
+    A.eliminate_zeros()
+    return A.tocsc()
 
 
 def ecuacion_borde_libre(A, nodes, groups, normals, theta, S_s, K, sig, dt):
@@ -445,12 +490,11 @@ def ecuacion_borde_libre(A, nodes, groups, normals, theta, S_s, K, sig, dt):
 # 5. BUILD TRANSPORT MATRIX (UNIFICADO)
 # =========================================================
 def peso_theta_C(p, sig):
-    """Peso temporal del operador de transporte en la escala de Crank–Nicolson
-    (2/dt en la identidad): 2θ_C en el lado implícito (sig<0) y 2(1−θ_C) en el
-    explícito (sig>0). θ_C = 0.5 (default) reproduce el CN original; θ_C = 1 es
-    Euler implícito (incluidos sumidero del pozo, decaimiento y fuente)."""
+    """Peso temporal del esquema θ del transporte (la identidad lleva 1/dt): θ_C en el lado implícito
+    (sig<0) y 1−θ_C en el explícito (sig>0). θ_C = 0.5 es Crank–Nicolson; θ_C = 1 es Euler implícito
+    (incluidos sumidero del pozo, decaimiento y fuente). Cada fila es la ecuación puntual, sin escalar."""
     th = float(getattr(p, "theta_C", 0.5))
-    return 2.0 * th if sig < 0 else 2.0 * (1.0 - th)
+    return th if sig < 0 else 1.0 - th
 
 
 def almacenamiento_coef(p, pho, h_t):
@@ -464,7 +508,7 @@ def almacenamiento_coef(p, pho, h_t):
 def factor_avance():
     """Peso de la advección y de ∇·D en las filas del transporte: 1.
 
-    El operador del documento es L(C) = D:∂² C + (∇·D − u)·∇C, con los mismos pesos 2θ_C / 2(1−θ_C) que la
+    El operador del documento es L(C) = D:∂² C + (∇·D − u)·∇C, con los mismos pesos θ_C / (1−θ_C) que la
     difusión. Antes se usaba (u − ∇·D)/2: ese 1/2 dejaba la advección a la mitad (con θ_C = 1 y con θ_C = 0.5),
     de modo que BFR transportaba el soluto a la mitad de velocidad que FEniCS (error L2 de C del 79 % frente
     a 11 % tras el cambio; pico de C idéntico a FEM). Ver docs/diferencias_bfr_fem.md."""
@@ -481,7 +525,7 @@ def coeficientes_transporte(p, pho, V, D, Div_D, sig, h_t=None):
     a = factor_avance()
     U_div_D = (V - Div_D[:, :2]) * a
     base = pho * p.R
-    cI = base * (2. / p.dt) * np.ones(len(base))
+    cI = base * (1. / p.dt) * np.ones(len(base))
 
     # Almacenamiento -S_s ∂ₜh·C (reacción c_s = -S_s ∂ₜh, con S_s = pho como en el flujo).
     cI = cI + w * sig * almacenamiento_coef(p, pho, h_t)
@@ -947,12 +991,12 @@ def C_vector(C, M_right, gauss_f, groups, t, T, N, C_im, pho):
         b[idx] += fuente[idx]
 
     # 🔹 Acoplamiento MRMT block: C_im^n → C (complemento de Schur).
-    # Factor 4 = 2×2: un factor 2 del RHS Schur y otro de la regla trapezoidal.
-    # Exactamente el transpuesto del término 4·base·α_r que aparece en la
+    # Factor 2 del intercambio (RHS del complemento de Schur): 2·base·α_r·C_im^n.
+    # Exactamente el transpuesto del término 2·base·α_r que aparece en la
     # actualización adjunta de ψ_im_r (step_time.py:step_adjoint).
     if p.model == "mrmt_block":
         b[idx] += np.sum(
-            4 * p.R * p.alpha_r[:, None] * pho[idx] * C_im[:, idx],
+            2 * p.R * p.alpha_r[:, None] * pho[idx] * C_im[:, idx],
             axis=0
         )
 

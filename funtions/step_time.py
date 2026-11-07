@@ -228,9 +228,9 @@ def step_adjoint(
     # --------------------------------------------------
     # MRMT Block: ψ_C_im_r^n tras el solve del transporte.
     #   ψ_C_im_r^n = (1−2·coef_r)·ψ_C_im_r^{n+1}
-    #              + 4R·pho·α_r · ψ_C^n
+    #              + 2R·pho·α_r · ψ_C^n
     # El segundo término es el adjunto de la fuente
-    # 4R·α_r·pho·C_im_r^n en el RHS del transporte.
+    # 2R·α_r·pho·C_im_r^n en el RHS del transporte.
     # --------------------------------------------------
     if p.model == "mrmt_block" and psiC_im_N is not None:
         coef = p.dt * np.asarray(p.alpha_r, float) / np.asarray(p.beta, float)
@@ -239,7 +239,7 @@ def step_adjoint(
         for r in range(p.Nr):
             psiC_im_n[r][idx_dom] = (
                 (1.0 - 2.0 * coef[r]) * psiC_im_N[r][idx_dom]
-                + 4.0 * p.R * pho[idx_dom] * alpha_r_arr[r] * psiC_n[idx_dom]
+                + 2.0 * p.R * pho[idx_dom] * alpha_r_arr[r] * psiC_n[idx_dom]
             )
 
     # -----------------------------------------------------

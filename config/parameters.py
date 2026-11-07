@@ -56,6 +56,8 @@ class Parameters:
                 "factor_sumidero_C", "factor_almacenamiento_C",
                 # Recorte de positividad C >= 0 en BFR (diagnóstico de la oscilación del pozo)
                 "clip_C",
+                # Franja Galerkin P1 bajo la superficie (m) en las filas del flujo; 0 = RBF-FD puro
+                "galerkin_banda",
                 # Fuente de contaminante: ancho vertical e intensidad (1.0 = estándar)
                 "epsilon_z_fuente", "intensidad_fuente",
             }
@@ -145,6 +147,9 @@ class Parameters:
         # Recorte C >= 0 en cada paso de BFR (docs/clip_positividad_C.md). True por
         # defecto; False sólo para diagnosticar la oscilación del nodo del pozo.
         self.clip_C = bool(getattr(self, "clip_C", True))
+        # Filas del flujo en una franja de este ancho [m] bajo la superficie: Galerkin P1 en vez de colocación RBF-FD
+        # (docs/adjunto_sin_sumidero.tex, ruido de ψ_H en la superficie). 0 = esquema estándar.
+        self.galerkin_banda = float(getattr(self, "galerkin_banda", 0.0))
 
         # =========================
         # TIEMPO

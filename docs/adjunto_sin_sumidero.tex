@@ -249,11 +249,11 @@ fue $0.72$ con \texttt{"pfs"} y $0.10$ con \texttt{"fem"} (casos M0 y M3 del gru
 \begin{enumerate}[label=(\arabic*),nosep]
 \item Los nodos de $\Gamma_{\rm out}$ son los vértices de las facetas de salida, ordenados por $z$ y sin las dos esquinas (que pertenecen a las paredes, como en BFR).
 \item El dato $h_\Gamma^{n+1}$ se obtiene de $h_\Gamma^n$ resolviendo \eqref{eq:borde_dinamica} con diferencias finitas de 3 puntos y el mismo $\theta$ del flujo:
-$\bigl(\mathrm{diag}(S_s/\Delta t)-\theta L\bigr)h_\Gamma^{n+1}=\bigl(\mathrm{diag}(S_s/\Delta t)+(1-\theta)L\bigr)h_\Gamma^{n}$, con $(Lh)_i=w\bigl[k_b(h_{i+1}-h_i)/s_b+k_c(h_{i-1}-h_i)/s_c\bigr]$, $w=2/(s_b+s_c)$, $k$ la media de $K_{\tau\tau}=K_z$ entre vecinos y $S_s=\phi$. Los dos nodos extremos del tramo no tienen vecino a un lado y quedan congelados ($L$ nula en sus filas), igual que en BFR; el análisis continuo pide en cambio una condición de Neumann en los extremos, y la diferencia no está cuantificada.
+$\bigl(\mathrm{diag}(S_s/\Delta t)-\theta L\bigr)h_\Gamma^{n+1}=\bigl(\mathrm{diag}(S_s/\Delta t)+(1-\theta)L\bigr)h_\Gamma^{n}$, con $(Lh)_i=w\bigl[k_b(h_{i+1}-h_i)/s_b+k_c(h_{i-1}-h_i)/s_c\bigr]$, $w=2/(s_b+s_c)$, $k$ la media de $K_{\tau\tau}=K_z$ entre vecinos y $S_s=\phi$. La matriz de la izquierda no cambia en el tiempo, de modo que se factoriza una sola vez (LU) y cada paso cuesta una resolución triangular; la ecuación vale porque $\Gamma_{\rm out}$ es recta y vertical y $K_{\tau n}=0$ (proposición~\ref{prop:salida_normal}). Los dos nodos extremos del tramo no tienen vecino a un lado y quedan congelados ($L$ nula en sus filas), igual que en BFR; el análisis continuo pide en cambio una condición de Neumann en los extremos, y la diferencia no está cuantificada.
 \item El dato se impone como condición de Dirichlet en el paso de flujo (con el levantamiento habitual del lado derecho) y se anula el término de flujo saliente $\int_{\Gamma_{\rm out}}f_{\rm out}v$.
 \item El dato no depende de los controles (hipótesis~\ref{hyp:datos}), de modo que en el adjunto $\psi_h=0$ en los grados de libertad de $\Gamma_{\rm out}$: la transpuesta de la matriz del flujo se ensambla con la condición homogénea y el lado derecho del adjunto se anula allí. El resto del adjunto no cambia.
 \end{enumerate}
-La selección es \texttt{bc\_outlet\_mode}, con valor \texttt{"libre"} por defecto en esta línea; con \texttt{"fem"} se conserva el cierre (B). Con esta condición, el gradiente adjunto de FEniCSx coincide con diferencias finitas en los tres modelos (errores relativos de $1.3\times10^{-10}$ a $1.9\times10^{-7}$ en ADR, de $1.4\times10^{-9}$ a $6.5\times10^{-7}$ en MRMT semi-analítico y de $3.5\times10^{-10}$ a $1.9\times10^{-7}$ en MRMT por bloque; \texttt{tests/test\_gradiente\_modelo\_nuevo.py}, $C\equiv1$, 3 pasos, cuatro direcciones, pasos de diferencias $10^{-2}$ y $3\times10^{-3}$).
+Al repetir la simulación se reinicia $h_\Gamma$ a su valor inicial (\texttt{BordeLibre.reiniciar}), de modo que el dato es el mismo en cada evaluación del funcional (módulo \texttt{fenicsx/salida\_libre.py}). La selección es \texttt{bc\_outlet\_mode}, con valor \texttt{"libre"} por defecto en esta línea; con \texttt{"fem"} se conserva el cierre (B). Con esta condición, el gradiente adjunto de FEniCSx coincide con diferencias finitas en los tres modelos (errores relativos de $1.3\times10^{-10}$ a $1.9\times10^{-7}$ en ADR, de $1.4\times10^{-9}$ a $6.5\times10^{-7}$ en MRMT semi-analítico y de $3.5\times10^{-10}$ a $1.9\times10^{-7}$ en MRMT por bloque; \texttt{tests/test\_gradiente\_modelo\_nuevo.py}, $C\equiv1$, 3 pasos, cuatro direcciones, pasos de diferencias $10^{-2}$ y $3\times10^{-3}$).
 
 \subsection{Balance de soluto en forma conservativa}
 La masa de soluto por unidad de volumen es $\phi RC$ y su flujo es $\bu C-\bD\nabla C$. El agua que extrae el
@@ -990,21 +990,20 @@ las demás se citan tal como estaban, sin reejecutarlas.
 
 \subsection{Directo BFR frente a FEniCSx con el cierre (D)}\label{sec:directo}
 Casos M0--M2 del grupo \texttt{M\_modelo\_nuevo} (\texttt{experimentos/catalogo.py}, \texttt{MAIN\_FUENTE}): modelo sin sumidero con almacenamiento, salida libre en los dos backends, malla compartida de 15\,626 nodos más 862 fantasmas,
-$\Delta t=5$\,h, $T=30$\,d (144 pasos), $\theta=\theta_C=1$, \texttt{n\_stencil}$=25$, $Q_{\rm std}=10^{-3}$\,m$^2$/s, decaimiento solo en ADR y fuente de soluto con $\varepsilon_z=30$\,m e intensidad $5\times10^{-12}$ (la de \texttt{main} es $60$\,m y $10^{-11}$), igual en las tres variantes.
+$\Delta t=5$\,h, $T=30$\,d (144 pasos), $\theta=\theta_C=1$, \texttt{n\_stencil}$=25$, $Q_{\rm std}=0.3$\,m$^2$/s (el de \texttt{main}), decaimiento solo en ADR y fuente de soluto con $\varepsilon_z=30$\,m e intensidad $5\times10^{-12}$ (la de \texttt{main} es $60$\,m y $10^{-11}$), igual en las tres variantes.
 Diferencias relativas al final de los 30 días (BFR frente a FEniCSx):
 \begin{center}\small
 \begin{tabular}{lccccc}
 \toprule
 modelo & $\Delta H_{\rm rms}$ [m] & $C$ L2 & $C$ L$\infty$ & $|\bu|$ L2 & masa BFR/FEM \\
 \midrule
-ADR & $0.0236$ & $0.077$ & $0.326$ & $0.165$ & $1.006$ \\
-MRMT semi-analítico & $0.0236$ & $0.071$ & $0.279$ & $0.165$ & $1.005$ \\
-MRMT por bloque & $0.0236$ & $0.069$ & $0.272$ & $0.165$ & $1.005$ \\
+ADR & $0.0239$ & $0.054$ & $0.172$ & $0.155$ & $1.001$ \\
+MRMT semi-analítico & $0.0239$ & $0.055$ & $0.197$ & $0.155$ & $1.000$ \\
+MRMT por bloque & $0.0239$ & $0.055$ & $0.197$ & $0.155$ & $1.000$ \\
 \bottomrule
 \end{tabular}
 \end{center}
-El rango de $H$ del FEM es $3.10$\,m. Con una configuración anterior (fuente de \texttt{main}, \texttt{n\_stencil}$=35$) el error de $|\bu|$ del ADR fue $0.095$; no se ha separado cuánto se debe al estencil y cuánto a la fuente.
-Estas cifras cuantifican la diferencia entre los dos backends, que incluye error de discretización (RBF-FD frente a elementos finitos) y la diferencia de núcleo del pozo (Wendland en la simulación de BFR); no son una medida de error frente a una solución exacta.
+El rango de $H$ del FEM es $3.76$\,m. Las corridas anteriores con $Q_{\rm std}=10^{-3}$ (que no marcaban el cono de depresión) quedaron archivadas y no se citan. Estas cifras cuantifican la diferencia entre los dos backends, que incluye error de discretización (RBF-FD frente a elementos finitos) y la diferencia de núcleo del pozo (Wendland en la simulación de BFR); no son una medida de error frente a una solución exacta.
 
 \paragraph{Dos precisiones sobre la diferenciabilidad.} (i) El recorte $C\ge0$ no es derivable en $C=0$; el gradiente
 exacto usa su derivada en casi todo punto. (ii) Con $\bD$ proporcional a $|\bu|$ la dispersión no es derivable en $\bu=\mathbf 0$;

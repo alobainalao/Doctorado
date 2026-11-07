@@ -10,15 +10,16 @@ Enfoque (discretize-then-optimize), ver el plan y
 - El forward resuelve, por paso n, dos sistemas lineales: flujo `R^h_n(h)=0`
   (matriz constante) y transporte `R^C_n(C)=0` (matriz que depende de u(h) y del
   gateo χ_ε(Q)). Se guarda el historial de estados NATIVOS (h∈G, C∈Q) por paso.
-- El adjunto discreto es la transpuesta de esos operadores, resuelto hacia atrás:
-    (∂R^C_n/∂C_n)^T ψ_C^n = ∂J/∂C_n − (∂R^C_{n+1}/∂C_n)^T ψ_C^{n+1}
+- El adjunto discreto es la transpuesta de esos operadores, resuelto hacia atrás, con el Lagrangiano
+  L = J + ⟨ψ, R⟩ (la convención de docs/adjunto_sin_sumidero.tex y de BFR):
+    (∂R^C_n/∂C_n)^T ψ_C^n = −∂J/∂C_n − (∂R^C_{n+1}/∂C_n)^T ψ_C^{n+1}
     (∂R^h_n/∂h_n)^T ψ_h^n = −(∂R^C_n/∂h_n)^T ψ_C^n
                              − (∂R^h_{n+1}/∂h_n)^T ψ_h^{n+1}
                              − (∂R^C_{n+1}/∂h_n)^T ψ_C^{n+1}
   Todos los bloques Jacobianos salen de `ufl.derivative` del residual respecto a
   los estados; el acople h→C (advección u=−K∇h y dispersión D(u)) es EXACTO
   porque el residual se escribe con la velocidad simbólica en h (no interpolada).
-- Gradiente: dJ/dθ = ∂J/∂θ − Σ_n [ψ_h^n·∂R^h_n/∂θ + ψ_C^n·∂R^C_n/∂θ], con
+- Gradiente: dJ/dθ = ∂J/∂θ + Σ_n [ψ_h^n·∂R^h_n/∂θ + ψ_C^n·∂R^C_n/∂θ], con
   θ ∈ {Q(t), z_p}. Q entra en el RHS de flujo (Q·gauss_flow) y en el gateo
   χ_ε(Q) del sumidero de transporte; z_p entra en los kernels gaussianos del pozo
   (sumideros y observación) y en la fuente de contaminante, todos escritos
@@ -226,7 +227,7 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     f_W = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_sumidero_C", 0.0))))
     gauss_C = f_W * _gauss(x, ctx.xp, zp_c, ctx.es)
     f_A = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_almacenamiento_C", 0.0))))
-    src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
+    src_shape = _gauss_aniso(x, p.fnte[0], p.fnte[1], ctx.ex, ctx.ey)   # fuente de contaminante fija en p.fnte (no sigue al pozo)
 
     F_C = (
         R * inner(ctx.phi * (C_cur - C_prev) / p.dt, z) * dx
@@ -492,8 +493,7 @@ def _solve_adjoint_grad(ctx, states):
     gauss_C = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(ctx.p, "factor_sumidero_C", 0.0)))) \
         * _gauss(x, ctx.xp, zp_c, ctx.es)
     dgauss_C = gauss_C * (x[1] - zp_c) / ctx.es ** 2
-    src_shape = _gauss_aniso(x, ctx.xp, zp_c, ctx.ex, ctx.ey)
-    dsrc_shape = src_shape * (x[1] - zp_c) / ctx.ey ** 2
+    src_shape = _gauss_aniso(x, p.fnte[0], p.fnte[1], ctx.ex, ctx.ey)   # fuente de contaminante fija en p.fnte (no sigue al pozo)
 
     grad_Q = np.zeros(Nt)
     grad_zp = 0.0
@@ -563,13 +563,13 @@ def _solve_adjoint_grad(ctx, states):
         )
         Rh = _flow_residual(ctx, h_cur, h_prev, Qc, zp_c)
 
-        # ---- ψ_C^n:  (∂R^C_n/∂C_n)^T ψ_C = ∂J/∂C_n − termC_next ----
+        # ---- ψ_C^n:  (∂R^C_n/∂C_n)^T ψ_C = −∂J/∂C_n − termC_next ----
         a_cc_T = fem.form(ufl.adjoint(ufl.derivative(Rc, C_cur, dC)))
         Acc_T = assemble_matrix(a_cc_T, bcs=ctx.bc_C); Acc_T.assemble()
         solver_C = _lu_solver(Acc_T, ctx.comm)
 
         # ∂J₁/∂C · v = 2γ ∫ δₚ C v dΩ  (adjunto exacto de J₁ = γ∫δₚC²dΩ)
-        rhsC = arr(Qs, 2.0 * gamma * dt * inner(delta_p * C_cur, TestFunction(Qs)) * dx)
+        rhsC = arr(Qs, -2.0 * gamma * dt * inner(delta_p * C_cur, TestFunction(Qs)) * dx)
         if termC_next is not None:
             rhsC.axpy(-1.0, termC_next)
             termC_next.destroy()
@@ -655,11 +655,11 @@ def _solve_adjoint_grad(ctx, states):
         psiH_hist.append(psiH.x.array.copy())
         psiC_hist.append(psiC.x.array.copy())
 
-        # ---- gradiente: dJ/dθ = ∂J/∂θ − ψ_h·∂R^h/∂θ − ψ_C·∂R^C/∂θ ----
+        # ---- gradiente: dJ/dθ = ∂J/∂θ + ψ_h·∂R^h/∂θ + ψ_C·∂R^C/∂θ ----
         # Q_n:  J3 + flujo (Q·gauss_flow) + transporte (χ'(Q)·gauss_C·C)
         gQ = 2.0 * w3 * abs(zp - z0) * float(Q[n]) * dt
         dRh_dQ = arr(G, inner(gauss_flow, gtest) * dx)
-        gQ -= psiH.x.petsc_vec.dot(dRh_dQ)
+        gQ += psiH.x.petsc_vec.dot(dRh_dQ)
         dRh_dQ.destroy()
         dchi = float(dchi_eps(np.array(Q[n])))
 
@@ -668,7 +668,7 @@ def _solve_adjoint_grad(ctx, states):
             fem.assemble_scalar(fem.form(ddelta_p * C_cur * C_cur * dx)), op=MPI.SUM
         )
         dRh_dzp = arr(G, Qc * inner(dgauss_flow, gtest) * dx)
-        grad_zp -= psiH.x.petsc_vec.dot(dRh_dzp)
+        grad_zp += psiH.x.petsc_vec.dot(dRh_dzp)
         dRh_dzp.destroy()
 
         # dRc/dchi y dRc/dzp usan C_t^n (pre-MRMT para mrmt_semi; igual a C^n para ADR/block).
@@ -679,7 +679,7 @@ def _solve_adjoint_grad(ctx, states):
             theta * inner(gauss_C * C_cur, TestFunction(Qs))
             + (1 - theta) * inner(gauss_C * C_prev, TestFunction(Qs))
         ) * dx)
-        gQ -= psiC.x.petsc_vec.dot(dRc_dchi) * dchi
+        gQ += psiC.x.petsc_vec.dot(dRc_dchi) * dchi
         dRc_dchi.destroy()
         grad_Q[n] = gQ
 
@@ -687,10 +687,8 @@ def _solve_adjoint_grad(ctx, states):
         dRc_dzp = arr(Qs, (
             theta * chi_c * inner(dgauss_C * C_cur, ztest)
             + (1 - theta) * chi_c * inner(dgauss_C * C_prev, ztest)
-            - theta * inner(src_c * dsrc_shape, ztest)
-            - (1 - theta) * inner(src_prev_c * dsrc_shape, ztest)
         ) * dx)
-        grad_zp -= psiC.x.petsc_vec.dot(dRc_dzp)
+        grad_zp += psiC.x.petsc_vec.dot(dRc_dzp)
         dRc_dzp.destroy()
 
         C_cur.x.array[:] = _C_cur_saved   # restaurar para Acc_prev / Acc_h a continuación
@@ -739,8 +737,9 @@ def _solve_adjoint_grad(ctx, states):
 
     # Invertir al orden forward (psiH_hist[0] = paso 0, ..., [Nt-1] = paso Nt-1)
     adj_states = {
-        "psiH": np.asarray(psiH_hist[::-1]),   # (Nt, N_G)
-        "psiC": np.asarray(psiC_hist[::-1]),   # (Nt, N_Q)
+        # ψ del documento: L = J + ∫⟨R,ψ⟩dt; el multiplicador discreto de un paso lleva el factor Δt de la regla de cuadratura
+        "psiH": np.asarray(psiH_hist[::-1]) / dt,   # (Nt, N_G)
+        "psiC": np.asarray(psiC_hist[::-1]) / dt,   # (Nt, N_Q)
     }
     return np.concatenate([grad_Q, [grad_zp]]), adj_states
 

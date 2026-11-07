@@ -236,7 +236,7 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
         beta = np.asarray(p.beta, float)
     if p.model == "mrmt_block":
         coef_r = p.dt * np.asarray(p.alpha_r, float) / beta
-        Qr = [4.0 * p.R * p.alpha_r[r] * pho * E for r in range(Nr)]
+        Qr = [2.0 * p.R * p.alpha_r[r] * pho * E for r in range(Nr)]
         y = [np.asarray(d.C_im[0][r], float) for r in range(Nr)]
         ylev = [[np.asarray(d.C_im[0][r], float) for r in range(Nr)]] + \
                [[np.asarray(Ci[r, s, 0], float) for r in range(Nr)] for s in range(Nt)]

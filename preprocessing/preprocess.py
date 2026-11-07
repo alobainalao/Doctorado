@@ -32,9 +32,11 @@ def run_preprocess():
             _m = pickle.load(f)
         nodes, groups, normals = _m["nodes"], _m["groups"], _m["normals"]
         simplices, pozo_cor = _m["simplices"], _m["pozo_cor"]
+        triangulos = _m.get("triangles")
         print(f">>> Malla congelada: {mesh_pkl} ({len(nodes)} nodos)")
     else:
         nodes, groups, normals, simplices, pozo_cor = build_nodes_var()
+        triangulos = None
 
     hU = local_lengthscale(nodes, k=p.n_stencil-1)
     eps_arr_ = eps_from_h(hU, scale=1.0)
@@ -62,8 +64,8 @@ def run_preprocess():
     # valor uniforme [1/m] (exp/sumidero-W, cuadrado con S_s realista).
     S_s = np.full(len(nodes), float(p.S_s_const)) if getattr(p, "S_s_const", None) else pho
 
-    A_left = build_H_matrix(nodes, groups, normals, p.theta, S_s, K, div_K, eps_M, -1)
-    A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, S_s, K, div_K, eps_M, 1)
+    A_left = build_H_matrix(nodes, groups, normals, p.theta, S_s, K, div_K, eps_M, -1, triangulos=triangulos)
+    A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, S_s, K, div_K, eps_M, 1, triangulos=triangulos)
     
 
     delta_p = discrete_delta(nodes, np.array(p.pozo), p.radio_delta_pozo)

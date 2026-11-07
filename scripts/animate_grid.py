@@ -4,8 +4,11 @@ animate_grid.py  <field>  [run_type]
 
 field ∈ {H, C, V, adj_H, adj_C}
 
-Genera grid_<field>.mp4: grilla 3 × 2  (ADR / MRMT Semi / MRMT Bloque) × (BFR / FEniCS)
-con colorbar global etiquetada, timer y dominio pentagonal clipado.
+Genera grid_<field>.mp4: grilla 3 × 3  (ADR / MRMT Semi / MRMT Bloque) × (BFR / FEniCS / BFR − FEniCS)
+con colorbar global etiquetada, colorbar propia (simétrica) para la diferencia, timer y dominio pentagonal clipado.
+Adjuntos: ψ del documento (L = J + ⟨ψ,R⟩); escala = máx |ψ| de FEniCS; BFR satura donde la supera.
+  ψ_H es bipolar (lóbulos de ambos signos): RdBu_r simétrica centrada en 0, signo·|x|^0.35.
+  ψ_C es casi siempre ≤ 0: se muestra −ψ_C en viridis con escala logarítmica de 3 décadas (valores menores saturan al color mínimo).
 Sin título en el video — el título viene del SlideLayout de React.
 
 Salida: ./data/output/grid/grid_<field>.mp4
@@ -63,7 +66,9 @@ _XI, _ZI = np.meshgrid(np.linspace(_XMIN, _XMAX, _NX_G),
 # ── Colormaps ───────────────────────────────────────────────────────────────
 from view.plot import get_colormaps
 cmap_main, cmap_h = get_colormaps()
-_cmap_adj = matplotlib.colormaps["YlOrRd"]
+_cmap_adjC = matplotlib.colormaps["viridis"]     # −ψ_C ≥ 0: mayor magnitud = más brillante
+_cmap_adjH = matplotlib.colormaps["RdBu_r"]      # ψ_H con ambos signos, centrada en 0
+_cmap_diff = matplotlib.colormaps["RdBu_r"]
 
 _FIELD_INFO = {
     "H":     dict(vmin=305.0, vmax=309.0,   cmap=cmap_main,  cb_label="H  (m)",
@@ -72,15 +77,26 @@ _FIELD_INFO = {
                   cb_fmt="%.1e",     timer_pfx="t"),
     "V":     dict(vmin=4e-12, vmax=4.5e-4,  cmap=cmap_main,  cb_label="|U|  (m/s)",
                   cb_fmt="%.1e",     timer_pfx="t"),
-    "adj_H": dict(vmin=0.0,   vmax=None,    cmap=_cmap_adj,  cb_label="ψ_H",
-                  cb_fmt="%.2e",     timer_pfx="τ",  norm_gamma=0.35),
-    "adj_C": dict(vmin=0.0,   vmax=None,    cmap=_cmap_adj,  cb_label="ψ_C",
-                  cb_fmt="%.2e",     timer_pfx="τ",  norm_gamma=0.35),
+    "adj_H": dict(vmin=0.0,   vmax=None,    cmap=_cmap_adjH, cb_label="ψ_H",
+                  cb_fmt="%.2e",     timer_pfx="τ",  sym_power=0.35),
+    "adj_C": dict(vmin=0.0,   vmax=None,    cmap=_cmap_adjC, cb_label="−ψ_C  (escala log)",
+                  cb_fmt="%.2e",     timer_pfx="τ",  use_log=True),
 }
 _fi = _FIELD_INFO[field]
 
 # ── Cargar datos ────────────────────────────────────────────────────────────
 _exp_root = os.environ.get("EXP_ROOT")   # experimentos/: <EXP_ROOT>/<model>/<backend>/
+
+def _interior(nodes, margen=3.0):
+    """Nodos dentro del pentágono y a más de `margen` metros de su borde."""
+    inside = _DOMAIN_PATH.contains_points(nodes)
+    a, b = _DOMAIN_VERTS, np.roll(_DOMAIN_VERTS, -1, axis=0)
+    dmin = np.full(len(nodes), np.inf)
+    for p0, p1 in zip(a, b):
+        e = p1 - p0
+        t = np.clip(((nodes - p0) @ e) / (e @ e), 0.0, 1.0)
+        dmin = np.minimum(dmin, np.linalg.norm(nodes - (p0 + t[:, None] * e), axis=1))
+    return inside & (dmin > margen)
 
 def _load_case(model, backend):
     root_data = (f"{_exp_root}/{model}/{backend}" if _exp_root
@@ -99,6 +115,11 @@ def _load_case(model, backend):
             frames = d[f_key]
             nodes  = d["nodes_G"] if field == "adj_H" else d["nodes_Q"]
         dt = float(d["dt"])
+        if _ibfr:
+            # BFR: los nodos de frontera guardan multiplicadores de las ecuaciones de contorno (y los fantasma quedan fuera del
+            # dominio): no son valores de la EDP adjunta y ensucian el borde. Se dibujan solo los nodos interiores.
+            interior = _interior(nodes)
+            frames, nodes = frames[:, interior], nodes[interior]
         return {"frames": frames, "nodes": nodes, "dt": dt, "Nt": frames.shape[0]}
     else:
         path = f"{root_data}/simulation_results.npz"
@@ -137,16 +158,23 @@ if not cases:
 vmin = _fi["vmin"]
 vmax = _fi["vmax"]
 if vmax is None:
-    vmax_vals = [float(np.nanmax(np.abs(c["frames"]))) for c in cases.values()]
-    vmax = max(vmax_vals)
-    print(f"[grid] vmax adjunto global = {vmax:.3e}", flush=True)
+    # adjunto: escala de FEniCS (referencia); la parte de BFR que la supera satura
+    ref = [c for (m, b), c in cases.items() if b == "fenicsx"] or list(cases.values())
+    vmax_abs = max(float(np.nanmax(np.abs(c["frames"]))) for c in ref)
+    vmin, vmax = (-vmax_abs, vmax_abs) if field == "adj_H" else (vmax_abs * 1e-3, vmax_abs)   # adj_C: −ψ_C en 3 décadas
+    print(f"[grid] escala adjunto = [{vmin:.3e}, {vmax:.3e}] (máx |ψ| de FEniCS)", flush=True)
 
 cmap_used = _copy.copy(_fi["cmap"])
 cmap_used.set_bad("white")
 
 _gamma   = _fi.get("norm_gamma")
 _use_log = _fi.get("use_log", False)
-if _gamma:
+_sym = _fi.get("sym_power")
+if _sym:   # signo · |x|^γ: simétrica respecto de 0, con colorbar coherente
+    from matplotlib.colors import FuncNorm
+    norm_obj = FuncNorm((lambda x: np.sign(x) * np.abs(x) ** _sym,
+                         lambda y: np.sign(y) * np.abs(y) ** (1.0 / _sym)), vmin=vmin, vmax=vmax)
+elif _gamma:
     norm_obj = PowerNorm(_gamma, vmin=vmin, vmax=vmax)
 elif _use_log:
     norm_obj = LogNorm(vmin=max(vmin, 1e-30), vmax=vmax)
@@ -164,14 +192,15 @@ BOT_MGN   = 0.008   # la colorbar/timer flotan en posición fija CB_BOTTOM=0.840
 HGAP      = 0.015
 VGAP      = 0.012
 
-AVAIL_W = 1.0 - LEFT_LBL - RIGHT_MGN - HGAP
+COLS    = BACKENDS + ["diff"]
+AVAIL_W = 1.0 - LEFT_LBL - RIGHT_MGN - HGAP * (len(COLS) - 1)
 AVAIL_H = 1.0 - TOP_HDR  - BOT_MGN   - VGAP * 2
-COL_W   = AVAIL_W / 2
+COL_W   = AVAIL_W / len(COLS)
 ROW_H   = AVAIL_H / 3
 
 FIG_H = 13.0
 FIG_W = _DA * (ROW_H * FIG_H) / COL_W
-DPI   = 180   # mayor resolución
+DPI   = int(min(180, 4400 / FIG_W))   # ancho del video ≤ ~4400 px
 
 print(f"[grid] figsize=({FIG_W:.2f}, {FIG_H:.2f}) DPI={DPI} → "
       f"{int(FIG_W*DPI)}×{int(FIG_H*DPI)} px", flush=True)
@@ -184,7 +213,7 @@ fig.patch.set_facecolor("white")
 axes = {}
 for ri, model in enumerate(MODELS):
     y0 = 1.0 - TOP_HDR - (ri + 1) * ROW_H - ri * VGAP
-    for ci, backend in enumerate(BACKENDS):
+    for ci, backend in enumerate(COLS):
         x0 = LEFT_LBL + ci * (COL_W + HGAP)
         ax = fig.add_axes([x0, y0, COL_W, ROW_H])
         ax.set_xlim(_XMIN, _XMAX)
@@ -224,9 +253,12 @@ cb.ax.tick_params(labelsize=18, top=True, bottom=False, labelcolor="#cc0000")
 if _fi.get("use_log"):
     cb.ax.xaxis.set_major_locator(ticker.LogLocator(base=10, numticks=6))
     cb.ax.xaxis.set_major_formatter(ticker.LogFormatterSciNotation(base=10))
-elif field in ("adj_H", "adj_C"):
-    cb.set_ticks(np.linspace(0.0, vmax, 5))
-    cb.ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.2e"))
+elif field == "adj_H":
+    cb.set_ticks([vmin, 0.1 * vmin, 0.0, 0.1 * vmax, vmax])
+    cb.ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1e"))
+elif field == "adj_C":
+    cb.set_ticks(np.linspace(vmin, 0.0, 5))
+    cb.ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1e"))
 elif field == "H":
     cb.set_ticks([305, 306, 307, 308, 309])
     cb.ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
@@ -238,7 +270,7 @@ else:
 
 # ── Timer (encima de la colorbar, esquina superior derecha) ────────────────
 timer_txt = fig.text(
-    cbar_x1, 0.992,
+    axes[(MODELS[0], "diff")].get_position().x1, 0.992,
     f"{_fi['timer_pfx']} = 0.0 h",
     ha="right", va="top",
     fontsize=22, fontweight="bold", fontfamily="monospace",
@@ -261,6 +293,10 @@ for ri, model in enumerate(MODELS):
              fontsize=17, fontweight="bold", color="#cc0000",
              rotation=90)
 
+def _disp(a):
+    """Valor que se dibuja: −ψ_C (≥ 0, con piso) en adj_C; el resto, tal cual. La diferencia usa siempre el campo sin transformar."""
+    return np.maximum(-a, 0.5 * vmin) if field == "adj_C" else a
+
 # ── Inicializar imshow + clip por panel ─────────────────────────────────────
 imgs = {}
 for m in MODELS:
@@ -278,7 +314,7 @@ for m in MODELS:
         if c.get("is_velocity"):
             F0 = LinearNDInterpolator(_dl, np.linalg.norm(c["frames"][0], axis=-1))(_XI, _ZI)
         elif is_adj:
-            F0 = LinearNDInterpolator(_dl, c["frames"][Nt - 1])(_XI, _ZI)
+            F0 = LinearNDInterpolator(_dl, _disp(c["frames"][Nt - 1]))(_XI, _ZI)
         else:
             F0 = LinearNDInterpolator(_dl, c["frames"][0])(_XI, _ZI)
 
@@ -315,6 +351,68 @@ if field == "V":
             )
 
 
+# ── Columna de diferencia BFR − FEniCS ──────────────────────────────────────
+# La diferencia se calcula en los nodos comunes (BFR y FEniCS no comparten triangulación) y se interpola
+# una sola vez sobre la triangulación de esos nodos.
+from scipy.spatial import cKDTree
+
+def _nodal(info, k):
+    f = info["frames"][k]
+    return np.linalg.norm(f, axis=-1) if info["is_vel"] else f
+
+_pares = [m for m in MODELS if (m, "bfr") in imgs and (m, "fenicsx") in imgs]
+_comun = {}
+for m in _pares:
+    pb, pf = imgs[(m, "bfr")]["dl"].points, imgs[(m, "fenicsx")]["dl"].points
+    dist, ib = cKDTree(pb).query(pf)
+    ok = dist < 1e-6
+    _comun[m] = (ib[ok], np.flatnonzero(ok), Delaunay(pf[ok]))
+
+def _diff_nodal(m, k):
+    ib, jf, _ = _comun[m]
+    return _nodal(imgs[(m, "bfr")], k)[ib] - _nodal(imgs[(m, "fenicsx")], k)[jf]
+
+def _diff_grid(m, k):
+    return LinearNDInterpolator(_comun[m][2], _diff_nodal(m, k))(_XI, _ZI)
+
+_muestra = np.unique(np.linspace(0, Nt - 1, 8).astype(int))
+dmax = max((float(np.percentile(np.abs(_diff_nodal(m, k)), 99.5)) for m in _pares for k in _muestra), default=1.0) or 1.0
+if os.environ.get("GRID_DMAX"):   # escala de la diferencia fija (para comparar dos corridas con la misma escala)
+    dmax = float(os.environ["GRID_DMAX"])
+print(f"[grid] escala diferencia = ±{dmax:.3e} (percentil 99.5 de |BFR − FEniCS| en los nodos comunes, 8 instantes)", flush=True)
+if is_adj and not os.environ.get("GRID_DIFF_LINEAL"):   # adjuntos: signo·|x|^0.35, para que se vean las diferencias del interior y no solo la franja de borde de BFR
+    from matplotlib.colors import FuncNorm
+    norm_diff = FuncNorm((lambda x: np.sign(x) * np.abs(x) ** 0.35,
+                          lambda y: np.sign(y) * np.abs(y) ** (1.0 / 0.35)), vmin=-dmax, vmax=dmax)
+else:
+    norm_diff = Normalize(vmin=-dmax, vmax=dmax)
+cmap_d = _copy.copy(_cmap_diff); cmap_d.set_bad("white")
+
+pos_d = axes[(MODELS[0], "diff")].get_position()
+cax_d = fig.add_axes([pos_d.x0 + 0.03, CB_BOTTOM, pos_d.width - 0.06, CB_HEIGHT])
+cb_d = fig.colorbar(plt.cm.ScalarMappable(cmap=cmap_d, norm=norm_diff), cax=cax_d, orientation="horizontal")
+cb_d.ax.xaxis.set_ticks_position("top")
+cb_d.ax.xaxis.set_label_position("top")
+cb_d.set_label("BFR − FEniCS" + ("  (potencia 0.35)" if is_adj and not os.environ.get("GRID_DIFF_LINEAL") else ""), fontsize=19, labelpad=8, color="#cc0000", fontweight="bold")
+cb_d.ax.tick_params(labelsize=15, top=True, bottom=False, labelcolor="#cc0000")
+cb_d.set_ticks([-dmax, -0.1 * dmax, 0.0, 0.1 * dmax, dmax] if (is_adj and not os.environ.get("GRID_DIFF_LINEAL")) else [-dmax, 0.0, dmax])
+cb_d.ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1e"))
+
+fig.text(pos_d.x0 + pos_d.width / 2, pos_d.y1 + 0.006, "Diferencia (BFR − FEniCS)",
+         ha="center", va="bottom", fontsize=20, fontweight="bold", color="#cc0000")
+
+diff_imgs = {}
+for m in _pares:
+    ax = axes[(m, "diff")]
+    clip = _MplPolygon(_DOMAIN_VERTS, transform=ax.transData, fc="none", ec="none", zorder=0)
+    ax.add_patch(clip)
+    k0 = Nt - 1 if is_adj else 0
+    im = ax.imshow(_diff_grid(m, k0),
+                   origin="lower", extent=[_XMIN, _XMAX, _ZMIN, _ZMAX], norm=norm_diff,
+                   cmap=cmap_d, aspect="auto", interpolation="antialiased")
+    im.set_clip_path(clip)
+    diff_imgs[m] = im
+
 # ── Animación ───────────────────────────────────────────────────────────────
 out_dir  = f"{_exp_root}/grid" if _exp_root else "./data/output/grid"
 os.makedirs(out_dir, exist_ok=True)
@@ -348,8 +446,11 @@ with writer.saving(fig, out_path, dpi=DPI):
                         qvrs[(m, b)].set_UVC(ux / mag, uz / mag)
                 else:
                     info["im"].set_data(
-                        LinearNDInterpolator(info["dl"], info["frames"][k])(_XI, _ZI)
+                        LinearNDInterpolator(info["dl"], _disp(info["frames"][k]))(_XI, _ZI)
                     )
+
+        for m, im in diff_imgs.items():
+            im.set_data(_diff_grid(m, k))
 
         writer.grab_frame()
 
