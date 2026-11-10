@@ -4,8 +4,8 @@ docs/reanalisis_adr_mrmt.tex?  Se evalúa, con los estados guardados del código
 
   −φR ∂ₜψ_C − ∇·(D∇ψ_C) − ∇·(uψ_C) + λφR ψ_C − S_s ∂ₜh ψ_C = −2γ δ_p C      (con (D∇ψ_C+uψ_C)·n = 0)
 
-escrito aquí de forma independiente (Euler implícito, θ_C = 1, S_s = φ) para cada paso n, con ψ_doc = −ψ_código/Δt
-(el código usa L = J − ψ·R con R en forma de tasa y J = γΔt Σ∫δC²; el documento L = J + ∫⟨R,ψ⟩dt).
+escrito aquí de forma independiente (Euler implícito, θ_C = 1, S_s = φ) para cada paso n, con el ψ que guarda el código (ψ_doc = λ_discreto/Δt;
+ambos usan L = J + ⟨ψ,R⟩, R en forma de tasa y J = γΔt Σ∫δC²).
 El residuo se mide en la norma dual (rᵀ M⁻¹ r)^½ relativa a la del término mayor. Un residuo ~1e-8 o menos
 significa que la ecuación escrita en el documento ES la que resuelve el código (términos, signos, frontera).
 Como contraste se repite omitiendo el término de almacenamiento y el de advección (deben empeorar mucho).
@@ -54,7 +54,7 @@ def main():
     zp = float(p.pozo[1])
     st = A._solve_forward(ctx, Q, zp)
     _, ad = A._solve_adjoint_grad(ctx, st)
-    psiC = -np.asarray(ad["psiC"]) / p.dt          # convención del documento
+    psiC = np.asarray(ad["psiC"])          # ya en la convención del documento
     dt, phys = float(p.dt), ctx.phys
     R, lam, gamma = phys["R"], phys["landa"], float(p.gamma)
 
@@ -101,15 +101,15 @@ def main():
                                fem.Constant(ctx.domain, A.PETSc.ScalarType(0.0)))
     dC = ufl.TrialFunction(Qs)
     AccT = assemble_matrix(fem.form(ufl.adjoint(ufl.derivative(Rc, C_n, dC))), bcs=[]); AccT.assemble()
-    psi_c = fem.Function(Qs); psi_c.x.array[:] = np.asarray(ad["psiC"])[nL]
+    psi_c = fem.Function(Qs); psi_c.x.array[:] = np.asarray(ad["psiC"])[nL] * dt   # multiplicador discreto = Δt ψ_doc
     w = AccT.createVecLeft(); AccT.mult(psi_c.x.petsc_vec, w)
-    rhs_code = vec(2.0 * gamma * dt * inner(delta_p * C_n, v) * dx)
+    rhs_code = vec(-2.0 * gamma * dt * inner(delta_p * C_n, v) * dx)
     print("sanidad: ||AccT psi_codigo - rhs||/||rhs|| =", dual(w - rhs_code) / dual(rhs_code), flush=True)
-    # mis términos en convención del código: psi_c = -dt psi_doc  =>  AccT psi_c = -dt (suma de términos con psi_doc)
+    # mis términos en convención del código: psi_c = dt psi_doc  =>  AccT psi_c = dt (suma de términos con psi_doc)
     cols = {k: vec(f) for k, f in dict(tiempo=t_tiempo, difusion=t_difusion, adveccion=t_adveccion,
                                        reaccion=t_reaccion, almacenamiento=t_almac).items()}
     for k, b in cols.items():
-        b.scale(-dt)
+        b.scale(dt)
     resto = w.duplicate(); resto.set(0.0)
     names = list(cols)
     # el término temporal con psi_next=0

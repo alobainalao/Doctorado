@@ -59,7 +59,7 @@ def main():
     h_n, h_prev = fem.Function(G), fem.Function(G)
     C_n.x.array[:] = st["C"][nL]; C_prev.x.array[:] = st["C"][nL - 1]
     h_n.x.array[:] = st["h"][nL]; h_prev.x.array[:] = st["h"][nL - 1]
-    psi.x.array[:] = np.asarray(ad["psiC"])[nL]
+    psi.x.array[:] = np.asarray(ad["psiC"])[nL] * dt   # multiplicador discreto = Δt ψ_doc
     Rc = A._transport_residual(ctx, C_n, C_prev, h_n, h_prev, zero(), zp_c, zero(), zero())
     dh = ufl.TrialFunction(G)
     Ach = assemble_matrix(fem.form(ufl.derivative(Rc, h_n, dh)), bcs=[]); Ach.assemble()

@@ -1,7 +1,7 @@
 """
 Optimización adjunta (FEniCSx) con config/nitrato.json: nitrato, J1/J2/J3 normalizados (normalizar_J).
 
-    python -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block>
+    python -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block> [variante c_limite]
 
 La fuente se escala por f tal que el pico de C sin bombeo (ADR) sea 42 mg/L como N = 0.1859 kg/m³ de
 nitrato. El modelo es lineal en C, así que equivale a expresar C_ref = 0.05 kg/m³ (valor guía OMS)
@@ -29,18 +29,26 @@ C_LIMITE = 0.05                    # kg/m³ (50 mg/L como nitrato, OMS)
 DIR_OUT = os.path.join(CODIGO, "data", "output", "optimizacion_nitrato")
 
 
-def main(modelo):
-    cfg = json.load(open(os.path.join(CODIGO, "config", "nitrato.json")))
+def main(modelo, variante=None, c_limite=None):
+    """variante: nombre de config/<variante>.json (p.ej. nitrato_estricto) y c_limite [kg/m³]; salida
+    aparte en data/output/optimizacion_<variante>/ para no pisar los resultados estándar."""
+    global DIR_OUT, C_LIMITE
+    if variante:
+        DIR_OUT = os.path.join(CODIGO, "data", "output", f"optimizacion_{variante}")
+    if c_limite:
+        C_LIMITE = float(c_limite)
+    cfg = json.load(open(os.path.join(CODIGO, "config", f"{variante or 'nitrato'}.json")))
     cfg.update({"metodo": "fenicsx", "run_type": "optimization", "model": modelo, "pre": True,
                 "save_dat": False, "opt_maxiter": 100, "animate": False, "postproc": False,
                 "extract_C": False})
     RUNTIME.params = Parameters(config=cfg)
     p = RUNTIME.get()
 
-    from fenicsx.mesh import get_mesh
+    from fenicsx.mesh import get_mesh, build_mesh_from_bfr_pkl
     from fenicsx.adjoint import build_context, _solve_forward, optimize_fenicsx, _pesos_J
 
-    mc = get_mesh(p.pozo, p.spacing, regenerate=True)
+    # Igual que main.py: con `mesh_pkl` se usa la malla compartida congelada; si no, la malla gmsh gruesa.
+    mc = build_mesh_from_bfr_pkl(p.mesh_pkl) if getattr(p, "mesh_pkl", None) else get_mesh(p.pozo, p.spacing, regenerate=True)
     ctx = build_context(list(p.pozo), p, mc)
     nQ = len(np.asarray(p.Qout[0]))
     zp0 = float(p.pozo[1])
@@ -85,4 +93,4 @@ def main(modelo):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:4])
