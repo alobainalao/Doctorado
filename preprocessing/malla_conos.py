@@ -9,12 +9,11 @@ Corre en bfr_env.  No sustituye a data/input/malla_compartida/malla.pkl: para us
 con "mesh_pkl": "data/input/malla_conos/malla.pkl".
 
 Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
-  * min_sp (4 m)            dos elipses:
-        - pozo: eje mayor vertical, con focos en la posición actual del pozo y en la cota superior de la
-          optimización (x_p, zp_max): cubre la zona que recorre z_p al optimizar;
-        - fuente: la misma construcción, horizontal y más chica: focos en la fuente y DX_FUENTE aguas
-          abajo (hacia la salida);
-        en ambas cada vértice está a MARGEN_VERTICE del foco más cercano (a − c), lo que fija b;
+  * min_sp (4 m)            dos cápsulas (rectángulo entre dos centros más un círculo de radio R_CAPSULA
+          en cada uno, es decir, los puntos a menos de R_CAPSULA del segmento que los une):
+        - pozo: vertical, entre la posición actual del pozo y la cota superior de la optimización
+          (x_p, zp_max): cubre la zona que recorre z_p al optimizar;
+        - fuente: horizontal y más chica, entre la fuente y DX_FUENTE aguas abajo (hacia la salida);
   * s_cone (16 m)           dentro de los dos conos:
         - pluma: alrededor de la línea de corriente de Darcy desde la fuente hasta la salida (RK4 con la
           velocidad inicial del preproceso actual), semiancho de PLUME_W0 en la fuente a PLUME_W1 en la
@@ -46,8 +45,8 @@ SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
 GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
-DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente (la del pozo: |z_p − zp_max|)
-MARGEN_VERTICE = 50.0  # [m] a − c: distancia de cada foco a su vértice (pozo ≈ 600 × 332 m, fuente ≈ 350 × 245 m)
+DX_FUENTE = 250.0    # [m] longitud del segmento de la cápsula de la fuente (la del pozo: |z_p − zp_max|)
+R_CAPSULA = 50.0     # [m] radio de los círculos y semiancho del rectángulo (pozo 600 × 100 m, fuente 350 × 100 m)
 PASO_REJILLA = 10.0  # [m] rejilla en la que se precalcula h (el generador lo evalúa millones de veces)
 
 
@@ -79,27 +78,20 @@ def exceso_pozo(xy, pozo, z_eje, r0, r1):
                     np.maximum(0.0, z - z_eje))
 
 
-def exceso_elipse(xy, f1, f2, b):
-    """Distancia aproximada a la elipse de focos f1, f2 y semieje menor b (0 dentro):
-    (|x − f1| + |x − f2|)/2 − a, con a = √(c² + b²); exacta sobre el eje mayor."""
-    a = np.hypot(0.5 * np.linalg.norm(np.subtract(f2, f1)), b)
-    s = np.linalg.norm(xy - f1, axis=1) + np.linalg.norm(xy - f2, axis=1)
-    return np.maximum(0.0, 0.5 * s - a)
+def exceso_capsula(xy, f1, f2, r):
+    """Distancia a la cápsula de centros f1, f2 y radio r (0 dentro): distancia al segmento f1–f2 menos r."""
+    d = np.subtract(f2, f1)
+    t = np.clip(((xy - f1) @ d) / max(d @ d, 1e-12), 0.0, 1.0)
+    return np.maximum(0.0, np.linalg.norm(xy - (f1 + t[:, None] * d), axis=1) - r)
 
 
-def _b(f1, f2):
-    """Semieje menor para que el vértice quede a MARGEN_VERTICE del foco: b = √((c + m)² − c²)."""
-    c = 0.5 * np.linalg.norm(np.subtract(f2, f1))
-    return float(np.sqrt((c + MARGEN_VERTICE) ** 2 - c ** 2))
-
-
-def elipses(p, eje):
-    """(f1, f2, b) de las elipses del pozo y de la fuente."""
+def capsulas(p, eje):
+    """(f1, f2, r) de las cápsulas del pozo y de la fuente."""
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
     zp_max = float(getattr(p, "zp_max", -200.0))
     sentido = np.sign(eje[min(5, len(eje) - 1), 0] - eje[0, 0]) or -1.0   # hacia la salida
-    f_pozo, f_fnte = np.array([pozo[0], zp_max]), fnte + np.array([sentido * DX_FUENTE, 0.0])
-    return {"pozo": (pozo, f_pozo, _b(pozo, f_pozo)), "fuente": (fnte, f_fnte, _b(fnte, f_fnte))}
+    return {"pozo": (pozo, np.array([pozo[0], zp_max]), R_CAPSULA),
+            "fuente": (fnte, fnte + np.array([sentido * DX_FUENTE, 0.0]), R_CAPSULA)}
 
 
 def espaciado(p, eje, vert):
@@ -110,16 +102,16 @@ def espaciado(p, eje, vert):
     s_bnd, s_max = float(p.min_sp_boundary), float(p.spacing)
     z_eje = float(np.interp(pozo[0], eje[::-1, 0], eje[::-1, 1]))   # eje de la pluma sobre el pozo
 
-    elip = elipses(p, eje)
+    caps = capsulas(p, eje)
     z_techo = float(vert[:, 1].max())
 
     def h_exacto(xy):
         xy = np.atleast_2d(np.asarray(xy, float))
-        e_elip = np.minimum.reduce([exceso_elipse(xy, *elip[k]) for k in elip])
+        e_caps = np.minimum.reduce([exceso_capsula(xy, *caps[k]) for k in caps])
         e_cono = np.minimum(exceso_pluma(xy, eje, PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW),
                             exceso_pozo(xy, pozo, z_eje, WELL_R0, WELL_R1))
         return np.minimum.reduce([
-            s_min + GRADO * e_elip,
+            s_min + GRADO * e_caps,
             s_cono + GRADO * e_cono,
             s_bnd + GRADO * mc._dist_borde(xy, vert),
             np.full(len(xy), s_max),
@@ -181,8 +173,8 @@ def main():
     eje = compute_plume_streamline(args.preproceso, ruta=EJE)
     if eje is None:
         raise SystemExit(f"[malla] no existe {args.preproceso}")
-    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en las elipses de pozo (vertical, focos z_p y zp_max) y fuente "
-            f"(horizontal), {p.s_cone:g} m en los conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera "
+    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en las cápsulas (radio {R_CAPSULA:g} m) de pozo (vertical, de z_p "
+            f"a zp_max) y fuente (horizontal), {p.s_cone:g} m en los conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera "
             f"(cota inferior en el techo), {p.spacing:g} m lejos (eje {EJE})")
     m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert), refino_k=None, nota_extra=nota)   # K ya va en h
     m["meta"]["origen"] = (f"preprocessing/malla_conos.py (min_sp={p.min_sp}, s_cone={p.s_cone} en los conos, "

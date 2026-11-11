@@ -116,14 +116,14 @@ def main():
         ancho = lambda z: WELL_R0 + (WELL_R1 - WELL_R0) * np.clip((z - zp) / (z_eje - zp), 0, 1)
         zs = np.array([zp - WELL_R0, zp, z_eje])
         cont = np.r_[np.c_[xp - ancho(zs), zs], np.c_[xp + ancho(zs), zs][::-1]]
-        # Elipses de 4 m (preprocessing/malla_conos.py:elipses), como polígonos de 72 lados.
-        from preprocessing.malla_conos import elipses
+        # Cápsulas de 4 m (preprocessing/malla_conos.py:capsulas): semicírculo en cada centro unidos por rectas.
+        from preprocessing.malla_conos import capsulas
         elip, focos = [], []
-        for f1, f2, sb in elipses(RUNTIME.params, eje).values():
-            c = 0.5 * np.linalg.norm(f2 - f1)
-            sa, u = np.hypot(c, sb), (f2 - f1) / max(2 * c, 1e-12)
-            ang = np.linspace(0, 2 * np.pi, 73)[:-1]
-            q = 0.5 * (f1 + f2) + np.outer(sa * np.cos(ang), u) + np.outer(sb * np.sin(ang), [-u[1], u[0]])
+        for f1, f2, r in capsulas(RUNTIME.params, eje).values():
+            u = (f2 - f1) / max(np.linalg.norm(f2 - f1), 1e-12)
+            phi = np.arctan2(u[1], u[0])
+            arco = lambda c, a0: c + r * np.c_[np.cos(a0 + np.linspace(0, np.pi, 37)), np.sin(a0 + np.linspace(0, np.pi, 37))]
+            q = np.r_[arco(f2, phi - np.pi / 2), arco(f1, phi + np.pi / 2)]
             elip.append(np.round(np.c_[px(q[:, 0]), pz(q[:, 1])], 1).ravel().tolist())
             focos += [[round(float(px(f[0])), 1), round(float(pz(f[1])), 1)] for f in (f1, f2)]
         extra = (f"export const EJE = {json.dumps(np.round(np.c_[px(eje[:, 0]), pz(eje[:, 1])], 1).ravel().tolist())};\n"
