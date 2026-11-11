@@ -62,10 +62,11 @@ class ErrorCaso(Exception):
 
 # ── Malla común ──────────────────────────────────────────────────────────────
 
-def malla_comun():
+def malla_comun(ruta=MALLA_PKL):
     """Nodos sin fantasmas, triángulos (los mismos que usa FEniCS, ver
-    fenicsx.mesh.build_mesh_from_bfr_pkl), pesos de área nodal y nodo del pozo."""
-    with open(MALLA_PKL, "rb") as f:
+    fenicsx.mesh.build_mesh_from_bfr_pkl), pesos de área nodal y nodo del pozo.
+    `ruta`: pkl de la malla (por defecto la compartida; los casos con otra `mesh_pkl` pasan la suya)."""
+    with open(ruta, "rb") as f:
         m = pickle.load(f)
     todos, groups = np.asarray(m["nodes"], float), m["groups"]
     fant = np.zeros(len(todos), bool)
@@ -142,7 +143,7 @@ def cargar_caso(g, c, spec, M, dirs=None):
 
     bfr, fem = _leer(os.path.join(d_bfr, "simulation_results.npz")), _leer(os.path.join(d_fem, "simulation_results.npz"))
     if bfr["nodes"].shape != M["todos"].shape or not np.allclose(bfr["nodes"], M["todos"], atol=TOL_NODO):
-        raise ErrorCaso(f"BFR con {len(bfr['nodes'])} nodos ≠ malla congelada ({len(M['todos'])}): resultado de otra malla")
+        raise ErrorCaso(f"BFR con {len(bfr['nodes'])} nodos ≠ malla del caso ({len(M['todos'])}): resultado de otra malla")
     dist, idx = cKDTree(fem["nodes"]).query(M["nodes"])
     if len(fem["nodes"]) != len(M["nodes"]) or dist.max() > TOL_NODO or len(set(idx)) != len(idx):
         raise ErrorCaso(f"FEM con {len(fem['nodes'])} nodos no coincide con los {len(M['nodes'])} de la malla")
@@ -399,13 +400,14 @@ def _dir(B, U):
 
 # ── Orquestación ─────────────────────────────────────────────────────────────
 
-_M = None
+_MALLAS = {}
 
 
 def comparar_caso(g, c, spec, con_video=True, dirs=None, out=None):
-    global _M
-    if _M is None:
-        _M = malla_comun()
+    ruta = os.path.join(CODIGO_DIR, spec.get("cfg", {}).get("mesh_pkl", os.path.relpath(MALLA_PKL, CODIGO_DIR)))
+    if ruta not in _MALLAS:
+        _MALLAS[ruta] = malla_comun(ruta)
+    _M = _MALLAS[ruta]
     out = out or os.path.join(OUT_ROOT, g, c, "comparacion")
     datos, dt, cfg, ref = cargar_caso(g, c, spec, _M, dirs)
     s, r = metricas(datos, dt, cfg, _M)
