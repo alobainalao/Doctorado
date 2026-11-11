@@ -13,16 +13,12 @@
 # | D | `D_caudal_pozo` | ¿Cómo cambian el cono y las velocidades con $Q$? | BFR + FEM | 4 casos |
 # | E | `E_paso_tiempo` | ¿Es temporal o espacial el error? | BFR + FEM | 2 casos |
 # | F | `F_upwind_bfr` | ¿Mejora el upwind de BFR? | BFR (FEM = A) | 2 casos |
-# | S | `S_sumidero` | ¿Cuánto cambia la solución de referencia al anular $W_-$? | BFR + FEM | S0/S1 30 d; S2/S3 limpieza (sólo FEM) |
-# | W | `W_sumidero` | ¿Sale el soluto sin $W_-$? (dominio real, 1 año) | FEM | 2 casos (modelo previo a `factor_sumidero_C`) |
-# | Z | `Z_cuadrado` | ¿Sale el soluto sin $W_-$? (cuadrado con pozo central) | BFR | 2 casos + 3 BC de flujo |
 #
 # **Importante — qué modelo se usó.** A–F se corrieron el 24-oct-2026 con el **modelo anterior**: el sumidero
 # $W_-$ estaba siempre activo (factor 1). Desde la decisión 1 (28-oct) el valor por defecto es 0. Las conclusiones
-# de flujo (A, B, D, E) no dependen de $W_-$; las de **C en el pozo sí** (ver §3). S0 es la referencia actual
-# sin el término.
+# de flujo (A, B, D, E) no dependen de $W_-$; las de **C en el pozo sí** (ver §3).
 #
-# Los grupos W, S y Z (el sumidero) se analizan a fondo en `../3_cuadrado_pozo/`. Aquí sólo va su resumen.
+# El sumidero $W_-$ está anulado (`factor_sumidero_C = 0`): sobra en la forma no conservativa y los grupos S, W y Z se eliminaron.
 
 # %%
 import sys
@@ -36,7 +32,7 @@ import rutas
 
 pd.set_option("display.width", 160, "display.max_columns", 30, "display.precision", 3)
 for g in ("A_terminos", "B_bc_salida_fem", "C_soporte_fuente", "D_caudal_pozo", "E_paso_tiempo",
-          "F_upwind_bfr", "S_sumidero", "W_sumidero", "Z_cuadrado"):
+          "F_upwind_bfr"):
     print(f"{g:18s} {rutas.grupo(g) or '— no hay resultados en ningún worktree'}")
 R = pd.read_csv(rutas.archivo("resumen.csv"))
 R["caso_corto"] = R["caso"].str.split("_").str[0]
@@ -90,8 +86,6 @@ display(tabla(["A_terminos", "B_bc_salida_fem"]))
 #   ($\phi\approx0.03$): BFR evalúa $K\nabla^2H+\nabla K\cdot\nabla H$ con un $\nabla K$ de un campo con quiebres.
 # * Con `pfs`, BFR tiene además un transitorio inicial fuerte ($\lvert\mathbf u\rvert$ L2 hasta 0.8–1.0 en los
 #   primeros 5 días) porque la CI viene del FEM de la maestría.
-# * Relacionado (grupo Z, §4): en el cuadrado, `pfs` deriva sin cota; la condición «libre» (ecuación de borde
-#   $S_s\partial_tH=\partial_\tau(K_\tau\partial_\tau H)$) es estable.
 #
 # **H y |U| a 30 d, A0 (pfs) — columnas BFR / FEM / diferencia:**
 
@@ -126,61 +120,29 @@ d = rutas.grupo("A_terminos") / "A3_fuente_pozo" / "comparacion"
 display(Image(filename=str(d / "comparacion_C_final.png"), width=950))
 
 # %% [markdown]
-# ## 3. El pozo: caudal y C extraída (grupos D y S)
+# ## 3. El pozo: caudal y C extraída (grupo D)
 
 # %%
-display(tabla(["A_terminos", "D_caudal_pozo", "S_sumidero"]).loc[
-    lambda t: t.index.str.contains("pozo|D_Q|S0|S1")])
+display(tabla(["A_terminos", "D_caudal_pozo"]).loc[
+    lambda t: t.index.str.contains("pozo|D_Q")])
 
 # %% [markdown]
 # * El 24-oct, con $W_-$ activo, **BFR extraía unas 4 veces menos C que FEM** (A3: 0.24). Con el pozo
 #   apagado, en el mismo punto la razón es 0.47–0.83: la pluma llega casi igual, así que la brecha estaba en el
 #   término del pozo.
-# * **El grupo S lo confirma**: con el término anulado (S0) la razón BFR/FEM sube de 0.24 a 0.48, porque
-#   $W_-$ cava un agujero de profundidad distinta en cada discretización. La otra mitad de la brecha queda abierta: en BFR
-#   el nodo del pozo oscila sin el término (notebook 3, §8.1).
 # * D: con $Q$ grande (0.7) ambos backends **crean masa sin fuente** (FEM 1.039, BFR 1.016). La causa está
-#   explicada (notebook 3, §2): $\phi$ fijo en el transporte con $S_s=\phi$ en el flujo hace que el
-#   abatimiento cree masa aparente (lo muestra el balance del grupo W). No es culpa de $W_-$.
-#
-# **Grilla 2×2 del grupo S (backend × con/sin $W_-$), C a 30 d:**
-
-# %%
-g = rutas.grupo("S_sumidero")
-if g is not None and (g / "grilla_C_final.png").exists():
-    display(Image(filename=str(g / "grilla_C_final.png"), width=900))
-    print((g / "resumen.txt").read_text())
+#   explicada: $\phi$ fijo en el transporte con $S_s=\phi$ en el flujo hace que el
+#   abatimiento cree masa aparente. No es culpa de $W_-$.
 
 # %% [markdown]
-# ## 4. ¿Sale el contaminante sin $W_-$? (grupos W, Z y S2/S3)
-#
-# Resumen; las figuras, la teoría y un modelo mínimo independiente están en
-# `../3_cuadrado_pozo/3_cuadrado_pozo_sumidero.ipynb`.
-
-# %%
-for g, txt in (("W_sumidero", "resumen.txt"), ("Z_cuadrado", "resumen.txt")):
-    p = rutas.grupo(g)
-    if p is not None and (p / txt).exists():
-        print(f"===== {g} =====\n{(p / txt).read_text()}")
-
-# %% [markdown]
-# * **Sí sale.** En la forma no conservativa que usan los dos backends, el pozo extrae el soluto mediante
-#   $\mathbf q\cdot\nabla C$, porque $\nabla\cdot\mathbf q=-Q\delta_p$. La masa final es la misma con y sin el término:
-#   W 25.64 % / 25.64 % (1 año), Z 25.6 % / 25.4 % (90 d), S2/S3 0.7185 / 0.7184 (120 d).
-# * El término sólo cambia la C del agua extraída: 4× menor en FEM con $Q_{std}=0.3$ y ~100–300× en el cuadrado con
-#   $Q=0.01$, porque el término implementado **no lleva $Q$**.
-# * Las columnas «salida con el agua» y «cierre» de los resúmenes no cierran porque las discretizaciones
-#   NC no conservan masa exactamente y por la masa aparente del almacenamiento (notebook 3, §8.2). No
-#   indican que el soluto se acumule.
-#
 # ## 5. Qué es fiable hoy y qué no
 #
 # | | fiable | no fiable todavía |
 # |---|---|---|
-# | flujo | BFR + salida tipo FEM: ΔH ≈ 1 cm, $\lvert\mathbf u\rvert$ 10 %, nivel del pozo idéntico | salida `pfs` (transitorio, deriva en el cuadrado); franja de K baja (±13 cm) |
+# | flujo | BFR + salida tipo FEM: ΔH ≈ 1 cm, $\lvert\mathbf u\rvert$ 10 %, nivel del pozo idéntico | salida `pfs` (transitorio); franja de K baja (±13 cm) |
 # | transporte | masa total (1.5–3 %), forma de la pluma, independencia de dt | pico de la fuente (20–27 % L2); upwind BFR |
-# | pozo | masa extraída (igual con y sin $W_-$) | C captada BFR/FEM (0.48 sin $W_-$); oscilación del nodo del pozo en BFR |
+# | pozo | masa extraída | C captada BFR/FEM (0.48 sin $W_-$) |
 # | balance | — | masa aparente por $S_s\partial_th$ con $\phi$ fijo y $S_s=\phi$ |
 #
 # **Pendientes de corridas:** repetir A–F con `factor_sumidero_C = 0` (las cifras de C en el pozo de este
-# notebook son del modelo anterior); S2/S3 en BFR (se detuvieron por memoria).
+# notebook son del modelo anterior).

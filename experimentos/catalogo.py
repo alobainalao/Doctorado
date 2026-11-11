@@ -25,9 +25,6 @@ SIN_POZO = {"activate_ext": False}
 # Grupo M: configuración de main.py (default.json + malla_sp60: dt 18000 s, 30 d, n_stencil 25, Q_std 0.3) salvo la malla compartida
 # (necesaria para que BFR y FEniCSx usen los mismos nodos). La fuente es más estrecha en z y menos intensa, igual en todas las variantes.
 MAIN_FUENTE = {"n_stencil": 25, "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}
-T_W = 365 * 86400      # horizonte del grupo W (fuente apagada desde t = 30 d)
-T_Z = 90 * 86400       # horizonte del grupo Z (limpieza completa del cuadrado)
-C_Z = 5.94e-11         # C inicial del grupo Z: máximo de la CI del dominio real
 
 GRUPOS = {
     # ── A. Términos fuente: aislar la contribución de fuente y pozo ──────────
@@ -179,99 +176,6 @@ GRUPOS = {
                 "backends": ["bfr"],
                 "ref_fem": "A_terminos/A3_fuente_pozo",
             },
-        },
-    },
-
-    # ── W. Sumidero de transporte W- = χ(Q) g_ε C (decisión 1 de la tesis) ──
-    # Fuente activa sólo los primeros 30 días; después no entra contaminante y
-    # se sigue hasta T. Si la advección basta para sacar el soluto por el pozo,
-    # el dominio se limpia también sin W-; balance_masa guarda cada término.
-    "W_sumidero": {
-        "desc": "Con y sin sumidero W- en el transporte; fuente apagada tras 30 días",
-        "pregunta": "¿Hace falta W- para que el contaminante salga por el pozo?",
-        "comparar": False,
-        "casos": {
-            f"W{int(con)}_{'con' if con else 'sin'}_sumidero": {
-                "desc": f"{'Con' if con else 'Sin'} W-, fuente 30 d, T={T_W // 86400} d",
-                "cfg": {"extract_C": con, "factor_sumidero_C": 1.0 if con else 0.0, "t_fuente_off": 2592000, "T": T_W,
-                        "dt": 36000, "balance_masa": True},
-                "backends": ("fenicsx",),
-            }
-            for con in (True, False)
-        },
-    },
-
-    # ── Z. Cuadrado contaminado, sólo pozo (decisión 1, dinámica en el pozo) ─
-    # Dominio cuadrado de 600 m, pozo en el centro, condición libre ∂_n(u·n) = 0
-    # en todo el borde (modo "libre": el nodo de borde sigue la ecuación de
-    # borde S_s ∂_t H = ∂_τ(K_τ ∂_τ H)), transporte con flujo dispersivo nulo en el borde,
-    # C = 1 y u = 0 al inicio, sin fuente. Con C uniforme la forma no
-    # conservativa sin W- debe conservar C = 1: el soluto sale con el agua.
-    "Z_cuadrado": {
-        "desc": "Cuadrado con C=1 inicial y pozo central; con y sin W-",
-        "pregunta": "¿Sin W- el soluto sale por el pozo o se acumula?",
-        "comparar": False,
-        "casos": {
-            f"Z{int(con)}_{'con' if con else 'sin'}_sumidero": {
-                "desc": f"{'Con' if con else 'Sin'} W-, cuadrado, condición libre en todo el borde",
-                "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                        "extract_C": con, "factor_sumidero_C": 1.0 if con else 0.0, "bc_outlet_mode": "libre", "phi_const": 0.1,
-                        "C_init_const": C_Z, "h_init_const": 300.0,
-                        "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": T_Z,
-                        "S_s_const": 1e-5, "Q_std": 0.01,
-                        "spacing": 30, "min_sp": 4},
-                "backends": ("bfr",),
-            }
-            for con in (True, False)
-        },
-    },
-
-    # ── Zo. Oscilación del nodo del pozo en BFR sin W- (cuadrado del grupo Z) ──
-    # Z0 (sin W-) muestra C(x_p) alternando 0 ↔ 0.65 C0 entre pasos. Hipótesis:
-    # recorte C ≥ 0 + esquema centrado donde convergen las líneas de corriente.
-    # Cada caso cambia UNA cosa respecto a Z0 (sin W-, θ_C = 1, centrado, recorte).
-    "Zo_oscilacion": {
-        "desc": "Cuadrado sin W-: ¿qué produce la oscilación de C en el nodo del pozo?",
-        "pregunta": "¿Es el recorte C≥0, el esquema centrado o el paso de tiempo?",
-        "comparar": False,
-        "casos": {
-            nombre: {"desc": desc,
-                     "cfg": {"domain": "cuadrado", "mesh_pkl": None, "activate_fuente": False,
-                             "extract_C": False, "factor_sumidero_C": 0.0, "bc_outlet_mode": "libre", "phi_const": 0.1,
-                             "C_init_const": C_Z, "h_init_const": 300.0,
-                             "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "T": 30 * 86400,
-                             "S_s_const": 1e-5, "Q_std": 0.01, "spacing": 30, "min_sp": 4, **extra},
-                     "backends": ("bfr",)}
-            for nombre, desc, extra in (
-                ("Zo0_base", "Z0 a 30 d (referencia de este grupo)", {}),
-                ("Zo1_sin_recorte", "sin recorte C ≥ 0", {"clip_C": False}),
-                ("Zo2_upwind", "upwind en el transporte", {"upwind_transport": True}),
-                ("Zo3_dt_mitad", "dt = 9000 s", {"dt": 9000}),
-                ("Zo4_cn", "Crank–Nicolson (θ_C = 0.5)", {"theta_C": 0.5}),
-            )
-        },
-    },
-
-    # ── S. Sumidero W- del pozo (decisión 1) ─────────────────────────────────
-    # W- = χ(Q) g_ε C escalado por factor_sumidero_C (0 por defecto desde la
-    # comparativa del cuadrado, rama exp/sumidero-W). Configuración de
-    # referencia ADR con el término (1) y sin él (0), en ambos backends.
-    # Grilla 2×2 (backend × término): python -m experimentos.grilla_sumidero
-    "S_sumidero": {
-        "desc": "ADR de referencia con y sin el sumidero W- del pozo, BFR y FEniCS",
-        "pregunta": "¿Cuánto cambia la solución (C, masa, C captada) al anular W-?",
-        "casos": {
-            "S1_con_termino": {"desc": "factor_sumidero_C = 1 (modelo anterior)",
-                               "cfg": {"factor_sumidero_C": 1.0}},
-            "S0_sin_termino": {"desc": "factor_sumidero_C = 0 (W- anulado)",
-                               "cfg": {"factor_sumidero_C": 0.0}},
-            # Limpieza: la misma fuente 30 d (T_fuente = 30 d) y después apagada,
-            # 120 d en total; FEniCS guarda el balance de soluto por paso.
-            **{f"S{2 + int(con)}_limpieza_{'con' if con else 'sin'}": {
-                "desc": f"Fuente 30 d y 90 d de limpieza, factor_sumidero_C = {int(con)}",
-                "cfg": {"factor_sumidero_C": float(con), "t_fuente_off": 30 * 86400,
-                        "T_fuente": 30 * 86400, "T": 120 * 86400, "balance_masa": True},
-            } for con in (True, False)},
         },
     },
 

@@ -56,7 +56,7 @@
 # Dos escenarios: **libre** ($u_{\max}=5$, no se activa) y **con cotas** ($u_{\max}=0.3$, por debajo del pico del
 # óptimo libre ⇒ conjunto activo que cambia en el tiempo).
 #
-# > **Nota (revisión del 28-oct-2026, ver `../notebooks/3_cuadrado_pozo`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
+# > **Nota (revisión del 28-oct-2026, ver `docs/adjunto_sin_sumidero.tex`).** Aquí el pozo es un sumidero $u_i\psi_i\,y$ en el
 # > transporte, y eso es correcto **porque la velocidad de Graetz no siente el pozo** ($\nabla\cdot\mathbf b=0$). En el
 # > acuífero de la tesis el pozo sí cambia el flujo ($\nabla\cdot\mathbf q=-Q\delta_p$), y entonces la extracción ya
 # > está dentro de $\mathbf q\cdot\nabla C$ en la forma no conservativa. Añadir además el sumidero ($W_-$ del

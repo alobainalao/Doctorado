@@ -7,9 +7,8 @@ una única barra de color. Exige el mismo `dt` en todos los paneles; si el núme
 menor y lo avisa. Sale una tabla con los rangos y los pasos mostrados para poder comprobar la correspondencia.
 
     python -m experimentos.grilla --campo C --cols 2 \
-        S_sumidero/S1_con_termino:bfr S_sumidero/S1_con_termino:fenicsx \
-        S_sumidero/S0_sin_termino:bfr S_sumidero/S0_sin_termino:fenicsx \
-        --salida data/output/experimentos/grids/S_C.mp4
+        N_modelo_nuevo/N_adr:bfr N_modelo_nuevo/N_adr:fenicsx \
+        --salida data/output/experimentos/grids/N_C.mp4
 
 Cada panel es `grupo/caso:backend` (backend = bfr | fenicsx). Campos: H, C, V.
 """

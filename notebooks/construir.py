@@ -2,7 +2,7 @@
 Convierte un notebook escrito como script (celdas `# %%` y `# %% [markdown]`,
 formato «percent» de jupytext) en .ipynb y, opcionalmente, lo ejecuta.
 
-    python notebooks/construir.py notebooks/3_cuadrado_pozo/3_cuadrado_pozo_sumidero.py --ejecutar
+    python notebooks/construir.py notebooks/1_resultados/1_resultados_experimentos.py --ejecutar
     python notebooks/construir.py <archivo.py> [...]          # sólo convierte (sin salidas)
 
 La fuente de verdad es el .py (se revisa bien en git); el .ipynb se regenera.
