@@ -13,7 +13,8 @@ Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
           en cada uno, es decir, los puntos a menos de R_CAPSULA del segmento que los une):
         - pozo: vertical, entre la posición actual del pozo y la cota superior de la optimización
           (x_p, zp_max): cubre la zona que recorre z_p al optimizar;
-        - fuente: horizontal y más chica, entre la fuente y DX_FUENTE aguas abajo (hacia la salida);
+        - fuente: horizontal, entre la fuente y DX_FUENTE aguas abajo (hacia la salida); con
+          DX_FUENTE = 2·R_CAPSULA la parte central es un cuadrado;
   * s_cone (16 m)           dentro de los dos conos:
         - pluma: alrededor de la línea de corriente de Darcy desde la fuente hasta la salida (RK4 con la
           velocidad inicial del preproceso actual), semiancho de PLUME_W0 en la fuente a PLUME_W1 en la
@@ -45,8 +46,8 @@ SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
 GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
-DX_FUENTE = 250.0    # [m] longitud del segmento de la cápsula de la fuente (la del pozo: |z_p − zp_max|)
-R_CAPSULA = 50.0     # [m] radio de los círculos y semiancho del rectángulo (pozo 600 × 100 m, fuente 350 × 100 m)
+DX_FUENTE = 100.0    # [m] longitud del segmento de la cápsula de la fuente (la del pozo: |z_p − zp_max|)
+R_CAPSULA = 50.0     # [m] radio de los círculos y semiancho del rectángulo (pozo 600 × 100 m, fuente 200 × 100 m)
 PASO_REJILLA = 10.0  # [m] rejilla en la que se precalcula h (el generador lo evalúa millones de veces)
 
 
