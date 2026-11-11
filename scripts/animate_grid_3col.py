@@ -114,8 +114,14 @@ mx = max(float(np.nanmax(np.abs(c["f"][:Nt]))) for c in datos.values())
 mn = min(float(np.nanmin(c["f"][:Nt])) for c in datos.values())
 lo, hi = INFO["lo"], INFO["hi"] if INFO["hi"] is not None else mx
 if INFO["hi"] is not None and campo != "dH" and (mx > hi or mn < lo):
-    # rango de la presentación sin ampliar: lo que lo excede satura (como en los videos de la presentación)
-    print(f"[grid3] datos [{mn:.3e}, {mx:.3e}] exceden [{lo:.3e}, {hi:.3e}]: se satura, rango de la presentación", flush=True)
+    if os.environ.get("GRID3_RANGO_DATOS") and campo != "V":
+        # GRID3_RANGO_DATOS=1: escala con el rango de los datos (otra malla o configuración). En V no: |u| es
+        # singular en el pozo y con su máximo el resto del dominio sale uniforme; se satura solo alrededor del pozo.
+        print(f"[grid3] datos [{mn:.3e}, {mx:.3e}] exceden [{lo:.3e}, {hi:.3e}]: se usa el rango de los datos", flush=True)
+        lo, hi = mn, mx
+    else:
+        # rango de la presentación sin ampliar: lo que lo excede satura (como en los videos de la presentación)
+        print(f"[grid3] datos [{mn:.3e}, {mx:.3e}] exceden [{lo:.3e}, {hi:.3e}]: se satura, rango de la presentación", flush=True)
 if campo == "dH":
     lo, hi = mn, max(mx, 0.0)
     print(f"[grid3] dH rango propio [{lo:.3f}, {hi:.3f}] m", flush=True)
