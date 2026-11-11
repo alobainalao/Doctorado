@@ -2,7 +2,7 @@
 
 | Aspecto | Legacy (`main`, carpeta `codigo/`) | `sin-sumidero` (esta carpeta) |
 |---|---|---|
-| Término de sumidero $W_-$ | desactivado por defecto (`factor_sumidero_C=0` en el código) | desactivado; el análisis no lo considera (Prop. 2.1 de `adjunto_sin_sumidero`: el término $fC$ se cancela) |
+| Término de sumidero $W_-$ | eliminado del código | desactivado; el análisis no lo considera (Prop. 2.1 de `adjunto_sin_sumidero`: el término $fC$ se cancela) |
 | Almacenamiento $-S_s\partial_t h\,C$ | no (`factor_almacenamiento_C=0`) | sí (`factor_almacenamiento_C=1`) |
 | Adjunto | forma anterior | $-\varphi R\partial_t\psi-\nabla\!\cdot(D\nabla\psi)-\nabla\!\cdot(u\psi)+c_0\psi-S_s\partial_t h\,\psi-\sum\lambda\psi_{im}=-2\gamma gC$; fuente del adjunto de flujo $-S_s\partial_t(C\psi)$ |
 | Adjunto BFR | aproximado | discreto exacto (`funtions/adjunto_exacto.py`; ADR, MRMT bloque y semi) |
@@ -17,7 +17,7 @@
 
 - `Parameters(env=...)` filtra por `VALID_KEYS` y cae a los valores por defecto del código; `Parameters(config=dict)` toma el diccionario completo (lo usa `experimentos/`).
 - `main.py` carga por defecto `config/malla_sp60.json` (spacing 60, dt 18000, T 30 d, n_stencil 25, sin `Q_std` ⇒ 1e-3 del código). `default.json` tiene `Q_std=0.3` (desde 2026-10-28) y dt 36000.
-- `config/nitrato.json` = `default.json` + `landa=0.02/86400`, `C_ref=0.05`, `normalizar_J=true`, `factor_sumidero_C=0`, `factor_almacenamiento_C=1`, `Q_std=1e-3`.
+- `config/nitrato.json` = `default.json` + `landa=0.02/86400`, `C_ref=0.05`, `normalizar_J=true`, `factor_almacenamiento_C=1`, `Q_std=1e-3`.
 
 ## Cómo reproducir
 

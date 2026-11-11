@@ -25,7 +25,7 @@ from config.parameters import Parameters
 NT = 3
 ENV = {"metodo": "fenicsx", "run_type": "optimization", "domain": "real", "spacing": 120, "dt": 36000,
        "T": NT * 36000, "save_dat": False, "animate": False, "postproc": False, "pre": True, "model": "adr",
-       "extract_C": False, "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0, "theta_C": 1.0}
+       "extract_C": False, "factor_almacenamiento_C": 1.0, "theta_C": 1.0}
 
 
 def main():

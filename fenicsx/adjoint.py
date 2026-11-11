@@ -61,7 +61,7 @@ from ufl import (
 _QD = 8
 dx = ufl.dx(metadata={"quadrature_degree": _QD})
 
-from funtions.utils import chi_eps, dchi_eps, get_init_values
+from funtions.utils import get_init_values
 from fenicsx.salida_libre import BordeLibre, es_libre
 from fenicsx.forward import (
     _config_phys, _boundaries_elements, _K_ope, _D_ope, _fuente_C,
@@ -140,7 +140,6 @@ def build_context(pozo, p, mesh_cache):
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
     _r = getattr(p, "r_pozo", None)
     ctx.ef = float(p.epsilon_pozo if _r else p.spacing)   # sumidero de flujo
-    ctx.es = float(phys["epsilon_sink"])           # sumidero de transporte
     ctx.ex = float(phys.get("epsilon_x", 0.5 * p.spacing))   # fuente de contaminante
     ctx.ey = float(phys.get("epsilon_y", p.spacing))
     ctx.ep = float(p.epsilon_pozo if _r else phys.get("epsilon_p", p.spacing))  # observación en el pozo (J1)
@@ -205,9 +204,9 @@ def _flow_residual(ctx, h_cur, h_prev, Qc, zp_c):
     )
 
 
-def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
+def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, zp_c,
                         src_amp_c, src_amp_prev_c, C_im_sum=None, alpha_sum=0.0):
-    """R^C_n(C_cur; C_prev, h_cur, h_prev, χ(Q_n), z_p) = 0. La velocidad y la
+    """R^C_n(C_cur; C_prev, h_cur, h_prev, z_p) = 0. La velocidad y la
     dispersión son simbólicas en h (acople h→C exacto).
     Para mrmt_block: C_im_sum (fem.Function en Q) = Σ_r α_r·C_im_r y alpha_sum = Σ_r α_r."""
     p, phys = ctx.p, ctx.phys
@@ -221,11 +220,6 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
     D_new = ctx.D_stat + _Dm(u_new, a_l, a_t, eps)
     D_old = ctx.D_stat + _Dm(u_old, a_l, a_t, eps)
 
-    # Sumidero W- escalado por factor_sumidero_C (0 por defecto: anulado). Como
-    # Constant: un 0.0 de Python reduce el término a Zero y la integral pierde
-    # su dominio.
-    f_W = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_sumidero_C", 0.0))))
-    gauss_C = f_W * _gauss(x, ctx.xp, zp_c, ctx.es)
     f_A = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(p, "factor_almacenamiento_C", 0.0))))
     src_shape = _gauss_aniso(x, p.fnte[0], p.fnte[1], ctx.ex, ctx.ey)   # fuente de contaminante fija en p.fnte (no sigue al pozo)
 
@@ -239,8 +233,6 @@ def _transport_residual(ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c,
         + (1 - theta) * landa * R * inner(ctx.phi * C_prev, z) * dx
         - theta * inner(src_amp_c * src_shape, z) * dx
         - (1 - theta) * inner(src_amp_prev_c * src_shape, z) * dx
-        + theta * inner(chi_c * gauss_C * C_cur, z) * dx
-        + (1 - theta) * inner(chi_c * gauss_C * C_prev, z) * dx
         # Almacenamiento -S_s ∂ₜh·C: UFL lo deriva respecto a h_cur/h_prev (fuente del adjunto del flujo)
         - f_A * inner(ctx.phi * (h_cur - h_prev) / p.dt * (theta * C_cur + (1 - theta) * C_prev), z) * dx
     )
@@ -287,7 +279,6 @@ def _solve_forward(ctx, Q, zp):
     # Constants controlables.
     zp_c = fem.Constant(ctx.domain, PETSc.ScalarType(zp))
     Qc = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
-    chi_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
     src_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
     src_prev_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
 
@@ -314,7 +305,6 @@ def _solve_forward(ctx, Q, zp):
     delta_p = _gauss(x, ctx.xp, zp_c, ctx.ep)
 
     h_hist, C_hist = [], []
-    chi_hist = np.zeros(Nt)
     src_hist = np.zeros(Nt)
     J1 = 0.0
     obs2_dt = 0.0   # Σ_n (∫δ_p C_n)² dt, sin ponderar por γ (para auto-escalar tests)
@@ -342,8 +332,6 @@ def _solve_forward(ctx, Q, zp):
     for n in range(Nt):
         t += dt
         Qc.value = float(Q[n]) if ext_on else 0.0
-        chi_hist[n] = float(chi_eps(np.array(Q[n]))) if ext_on else 0.0
-        chi_c.value = chi_hist[n]
         src_hist[n] = _fuente_C(t, T_total) if fuente_on else 0.0
         src_c.value = src_hist[n]
         src_prev_c.value = src_prev_amp
@@ -363,7 +351,7 @@ def _solve_forward(ctx, Q, zp):
         # --- transporte ---
         dC = TrialFunction(Qs)
         Rc_trial = _transport_residual(
-            ctx, dC, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c,
+            ctx, dC, C_prev, h_cur, h_prev, zp_c, src_c, src_prev_c,
             C_im_sum=C_im_sum_func, alpha_sum=_mrmt_alpha_sum,
         )
         a_C = fem.form(ufl.lhs(Rc_trial))
@@ -440,7 +428,7 @@ def _solve_forward(ctx, Q, zp):
     J3 = w3 * float(np.sum(np.asarray(Q) ** 2)) * dt * abs(zp - z0)
     J = J1 + J2 + J3
 
-    return dict(h=h_hist, C=C_hist, chi=chi_hist, src=src_hist, J=J, J1=J1,
+    return dict(h=h_hist, C=C_hist, src=src_hist, J=J, J1=J1,
                 obs2_dt=obs2_dt, zp=zp, Q=np.asarray(Q, float),
                 C_im=C_im_hist if is_mrmt else None,
                 C_pre_mrmt=C_pre_mrmt_hist if C_pre_mrmt_hist else None)
@@ -464,7 +452,6 @@ def _solve_adjoint_grad(ctx, states):
 
     zp_c = fem.Constant(ctx.domain, PETSc.ScalarType(zp))
     Qc = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
-    chi_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
     src_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
     src_prev_c = fem.Constant(ctx.domain, PETSc.ScalarType(0.0))
 
@@ -489,10 +476,6 @@ def _solve_adjoint_grad(ctx, states):
     ddelta_p = delta_p * (x[1] - zp_c) / ctx.ep ** 2
     gauss_flow = _gauss(x, ctx.xp, zp_c, ctx.ef)
     dgauss_flow = gauss_flow * (x[1] - zp_c) / ctx.ef ** 2
-    # Sumidero W- escalado por factor_sumidero_C: entra en dRc/dχ y dRc/dz_p
-    gauss_C = fem.Constant(ctx.domain, PETSc.ScalarType(float(getattr(ctx.p, "factor_sumidero_C", 0.0)))) \
-        * _gauss(x, ctx.xp, zp_c, ctx.es)
-    dgauss_C = gauss_C * (x[1] - zp_c) / ctx.es ** 2
     src_shape = _gauss_aniso(x, p.fnte[0], p.fnte[1], ctx.ex, ctx.ey)   # fuente de contaminante fija en p.fnte (no sigue al pozo)
 
     grad_Q = np.zeros(Nt)
@@ -540,13 +523,12 @@ def _solve_adjoint_grad(ctx, states):
         h_prev.x.array[:] = states["h"][n - 1] if n > 0 else ctx.h0
         C_cur.x.array[:] = states["C"][n]
         C_prev.x.array[:] = states["C"][n - 1] if n > 0 else ctx.c0
-        # Para mrmt_semi: cargar C_t^n (pre-MRMT) para usar en dRc_dchi / dRc_dzp
+        # Para mrmt_semi: cargar C_t^n (pre-MRMT) para el acople ∂R^C/∂h_{n-1}
         if C_pre_mrmt_list:
             C_cur_transport = C_pre_mrmt_list[n]   # array numpy pre-MRMT
         else:
             C_cur_transport = states["C"][n]        # ADR / mrmt_block: igual que C^n
         Qc.value = float(Q[n]) * bool(getattr(p, "activate_ext", True))
-        chi_c.value = float(states["chi"][n])
         src_c.value = float(states["src"][n])
         src_prev_c.value = float(src_prev[n])
 
@@ -558,7 +540,7 @@ def _solve_adjoint_grad(ctx, states):
             C_im_sum_func_bwd.x.array[:] = acc
 
         Rc = _transport_residual(
-            ctx, C_cur, C_prev, h_cur, h_prev, chi_c, zp_c, src_c, src_prev_c,
+            ctx, C_cur, C_prev, h_cur, h_prev, zp_c, src_c, src_prev_c,
             C_im_sum=C_im_sum_func_bwd, alpha_sum=_bwd_alpha_sum,
         )
         Rh = _flow_residual(ctx, h_cur, h_prev, Qc, zp_c)
@@ -656,12 +638,11 @@ def _solve_adjoint_grad(ctx, states):
         psiC_hist.append(psiC.x.array.copy())
 
         # ---- gradiente: dJ/dθ = ∂J/∂θ + ψ_h·∂R^h/∂θ + ψ_C·∂R^C/∂θ ----
-        # Q_n:  J3 + flujo (Q·gauss_flow) + transporte (χ'(Q)·gauss_C·C)
+        # Q_n:  J3 + flujo (Q·gauss_flow)
         gQ = 2.0 * w3 * abs(zp - z0) * float(Q[n]) * dt
         dRh_dQ = arr(G, inner(gauss_flow, gtest) * dx)
         gQ += psiH.x.petsc_vec.dot(dRh_dQ)
         dRh_dQ.destroy()
-        dchi = float(dchi_eps(np.array(Q[n])))
 
         # ∂J₁/∂zp = γ ∫(∂δₚ/∂zp) C² dΩ  (J₁ = γ∫δₚC²dΩ, C fijo respecto a zp aquí)
         grad_zp += gamma * dt * ctx.comm.allreduce(
@@ -671,27 +652,7 @@ def _solve_adjoint_grad(ctx, states):
         grad_zp += psiH.x.petsc_vec.dot(dRh_dzp)
         dRh_dzp.destroy()
 
-        # dRc/dchi y dRc/dzp usan C_t^n (pre-MRMT para mrmt_semi; igual a C^n para ADR/block).
-        _C_cur_saved = C_cur.x.array.copy()
-        C_cur.x.array[:] = C_cur_transport
-
-        dRc_dchi = arr(Qs, (
-            theta * inner(gauss_C * C_cur, TestFunction(Qs))
-            + (1 - theta) * inner(gauss_C * C_prev, TestFunction(Qs))
-        ) * dx)
-        gQ += psiC.x.petsc_vec.dot(dRc_dchi) * dchi
-        dRc_dchi.destroy()
         grad_Q[n] = gQ
-
-        ztest = TestFunction(Qs)
-        dRc_dzp = arr(Qs, (
-            theta * chi_c * inner(dgauss_C * C_cur, ztest)
-            + (1 - theta) * chi_c * inner(dgauss_C * C_prev, ztest)
-        ) * dx)
-        grad_zp += psiC.x.petsc_vec.dot(dRc_dzp)
-        dRc_dzp.destroy()
-
-        C_cur.x.array[:] = _C_cur_saved   # restaurar para Acc_prev / Acc_h a continuación
 
         # ---- couplings hacia el paso n−1 ----
         Acc_prev = assemble_matrix(
@@ -712,6 +673,7 @@ def _solve_adjoint_grad(ctx, states):
 
         # ∂R^C_n/∂h_{n-1} contiene C_cur (almacenamiento -S_s ∂ₜh·C): se evalúa en C_t^n (el C del
         # solve de transporte, pre-MRMT en mrmt_semi), igual que Ach para h_n.
+        _C_cur_saved = C_cur.x.array.copy()
         C_cur.x.array[:] = C_cur_transport
         Ach_prev = assemble_matrix(
             fem.form(ufl.derivative(Rc, h_prev, dh)), bcs=[]

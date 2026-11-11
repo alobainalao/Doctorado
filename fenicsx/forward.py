@@ -336,13 +336,12 @@ def _flow_forms(G, S_s, h, h_n, dt, theta, K_z, alpha,
 def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, alpha,
                            h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
                            delta, delta_C, phi, C, C_n, D, D_n, u, u_n,
-                           alpha_sum=0.0, C_im_sum=None, f_W=1.0, f_A=0.0, h_new=None, h_old=None):
+                           alpha_sum=0.0, C_im_sum=None, f_A=0.0, h_new=None, h_old=None):
     """Formas variaciones de flujo y transporte. Para mrmt_block: pasar
     alpha_sum (escalar) y C_im_sum (fem.Function con Σ_r alpha_r*phi*C_im_r)."""
     landa = fem.Constant(G.mesh, PETSc.ScalarType(landa))   # Constant: un 0.0 de Python anularía el término (MRMT)
     z_t = TestFunction(Q)
     theta_C = fem.Constant(Q.mesh, PETSc.ScalarType(theta_C))   # ver _flow_forms
-    f_W = fem.Constant(Q.mesh, PETSc.ScalarType(f_W))           # ídem (0 → Zero)
     f_A = fem.Constant(Q.mesh, PETSc.ScalarType(f_A))           # almacenamiento -S_s ∂ₜh·C
     if h_new is None:
         h_new = h_old = fem.Function(G)    # sin ∂ₜh (el término sólo se usa con f_A ≠ 0 y h_new/h_old dados)
@@ -360,10 +359,6 @@ def _variational_form_h_C(Q, G, R, landa, S_s, h, h_n, dt, theta, theta_C, K_z, 
         + (1 - theta_C) * landa * R * inner(phi * C_n, z_t) * dx
         - theta_C * inner(Src, z_t) * dx
         - (1 - theta_C) * inner(Src_n, z_t) * dx
-        # Sumidero W- escalado por f_W = factor_sumidero_C (delta_C sigue
-        # midiendo la C captada aunque el término esté anulado)
-        + f_W * theta_C * inner(delta_C * C, z_t) * dx
-        + f_W * (1 - theta_C) * inner(delta_C * C_n, z_t) * dx
         # Almacenamiento -S_s ∂ₜh·C (S_s = phi como en el flujo); ver docs/adjunto_sin_sumidero.tex
         # ∂ₜh sale de las Functions h_new (resuelta en este paso) y h_old (paso anterior): `h` es la
         # TrialFunction del flujo y h_n ya vale h_new cuando se resuelve el transporte.
@@ -507,7 +502,6 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         K_z, phys["alpha"], h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
         delta, delta_C, phi, C, C_n, D + D_m, D + Dm_n, u, u_n,
         alpha_sum=mrmt_alpha_sum, C_im_sum=C_im_sum,
-        f_W=float(getattr(p, "factor_sumidero_C", 0.0)),
         f_A=float(getattr(p, "factor_almacenamiento_C", 0.0)),
         h_new=h_, h_old=h_old,
     )
@@ -531,15 +525,13 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     # activate_fuente gatea la fuente de contaminante.
     ext_on = bool(getattr(p, "activate_ext", True))
     fuente_on = bool(getattr(p, "activate_fuente", True))
-    # extract_C gatea sólo el sumidero de transporte W- = χ(Q) g_ε C (como en
-    # bfr, funtions/operators.py).
+    # extract_C gatea sólo la medida de la C captada (delta_C); el transporte no lleva sumidero W-.
     sink_on = ext_on and bool(getattr(p, "extract_C", True))
     # t_fuente_off apaga la fuente desde ese instante; T_fuente es la escala de
     # tiempo de su forma (por defecto T), para que con un T mayor los primeros
     # días sigan siendo los del caso de referencia.
     t_fuente_off = getattr(p, "t_fuente_off", None)
     T_fuente = float(getattr(p, "T_fuente", None) or T_total)
-    f_W = float(getattr(p, "factor_sumidero_C", 0.0))
 
     # Balance de soluto por paso (opt-in): masa ∫φRC, salida con el agua del
     # pozo Q∫δC, sumidero W- (con su factor), flujo advectivo por la frontera
@@ -556,7 +548,6 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
         f_bal = {
             "masa": fem.form(phys["R"] * phi * C_n * dx),
             "pozo_agua": fem.form(delta * C_n * dx),
-            "sumidero_W": fem.form(fem.Constant(domain, PETSc.ScalarType(f_W)) * delta_C * C_n * dx),
             "frontera_sale": fem.form(conditional(gt(un, 0), un, 0) * C_n * ds_all),
             "frontera_entra": fem.form(conditional(gt(un, 0), 0, un) * C_n * ds_all),
             "C_div_u": fem.form(C_n * div(u) * dx),

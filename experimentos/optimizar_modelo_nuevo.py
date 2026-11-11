@@ -38,8 +38,7 @@ def main(modelo):
     maxiter = _arg("--iter=", 8)
     env = {"metodo": "fenicsx", "run_type": "optimization", "domain": "real", "spacing": 120,
            "dt": 36000, "T": nt * 36000, "save_dat": False, "animate": False, "postproc": False,
-           "pre": True, "model": modelo, "extract_C": False, "factor_sumidero_C": 0.0,
-           "factor_almacenamiento_C": 1.0, "opt_maxiter": maxiter}
+           "pre": True, "model": modelo, "extract_C": False, "factor_almacenamiento_C": 1.0, "opt_maxiter": maxiter}
     if modelo.startswith("mrmt"):
         env.update(MRMT)
     RUNTIME.params = Parameters(env=env)
@@ -50,7 +49,6 @@ def main(modelo):
     p.gamma = _arg("--gamma=", 1.0)
     p.koppa = _arg("--koppa=", 0.0)
     p.factor_almacenamiento_C = 1.0
-    p.factor_sumidero_C = 0.0
     p.extract_C = False
 
     from fenicsx.mesh import get_mesh

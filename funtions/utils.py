@@ -215,20 +215,7 @@ def grad_Q(
 
     for n in range(Nt):
 
-        dchi_n = dchi_eps(Q[n])
-
-        # El término en ψ_C viene del sumidero W- (escalado por factor_sumidero_C)
-        integrand = (
-            psi_h[n].squeeze()
-            +
-            p.factor_sumidero_C
-            *
-            psi_C[n].squeeze()
-            *
-            C[n].squeeze()
-            *
-            dchi_n
-        )
+        integrand = psi_h[n].squeeze()
 
         integral = np.sum(g * integrand* d.wi)
 
@@ -300,23 +287,7 @@ def grad_zp(
 
     for n in range(Nt):
 
-        chi_n = chi_eps(Q[n])
-
-        integrand = (
-
-            Q[n]
-            *
-            psi_h[n].squeeze()
-            +
-            p.factor_sumidero_C      # sumidero W-
-            *
-            chi_n
-            *
-            psi_C[n].squeeze()
-            *
-            C[n].squeeze()
-
-        )
+        integrand = Q[n] * psi_h[n].squeeze()
 
         term4 += np.sum(
             dgdzp * integrand * d.wi

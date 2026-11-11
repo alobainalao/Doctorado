@@ -34,8 +34,7 @@ GRUPOS = {
         "pregunta": "¿El directo del modelo nuevo es consistente entre BFR y FEniCS en los tres modelos?",
         "casos": {
             f"M{i}_{modelo}": {"desc": f"{modelo} sin W-, con almacenamiento, Q_std = 0.3",
-                               "cfg": {"model": modelo, "Q_std": 0.3, "factor_sumidero_C": 0.0,
-                                       "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre", **MAIN_FUENTE}}
+                               "cfg": {"model": modelo, "Q_std": 0.3, "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
         },
     },
@@ -65,15 +64,14 @@ GRUPOS = {
 
     # ── N. Modelo sin W- con almacenamiento (docs/adjunto_sin_sumidero.tex) ──
     # Ecuación de transporte de la forma no conservativa: sin el sumidero
-    # explícito (factor_sumidero_C = 0) y con -S_s ∂ₜh·C (factor_almacenamiento_C = 1).
+    # explícito y con -S_s ∂ₜh·C (factor_almacenamiento_C = 1).
     # Las 6 variantes: {adr, mrmt_semi, mrmt_block} × {BFR, FEniCS}.
     "N_modelo_nuevo": {
         "desc": "ADR / MRMT Semi / MRMT Bloque sin W- y con almacenamiento, BFR y FEniCS",
         "pregunta": "¿Las 6 variantes del modelo sin W- corren y concuerdan entre backends?",
         "casos": {
             f"N_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C",
-                       "cfg": {"model": m, "extract_C": False, "factor_sumidero_C": 0.0,
-                               "factor_almacenamiento_C": 1.0}}
+                       "cfg": {"model": m, "extract_C": False, "factor_almacenamiento_C": 1.0}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
     },
@@ -87,7 +85,7 @@ GRUPOS = {
         "casos": {
             f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, run_type=comparison",
                         "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0}}
+                                "factor_almacenamiento_C": 1.0}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
     },
@@ -100,7 +98,7 @@ GRUPOS = {
         "casos": {
             f"MA_{m}": {"desc": f"{m}, modelo nuevo, salida libre, run_type=comparison",
                         "cfg": {"model": m, "run_type": "comparison", "extract_C": False, "Q_std": 0.3,
-                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "factor_almacenamiento_C": 1.0,
                                 "bc_outlet_mode": "libre", **MAIN_FUENTE}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
@@ -116,7 +114,7 @@ GRUPOS = {
         "casos": {
             f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12",
                         "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "factor_almacenamiento_C": 1.0,
                                 "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
@@ -130,7 +128,7 @@ GRUPOS = {
         "casos": {
             f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12, Q_std=1e-3",
                         "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                                "factor_almacenamiento_C": 1.0,
                                 "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12, "Q_std": 1e-3}}
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },

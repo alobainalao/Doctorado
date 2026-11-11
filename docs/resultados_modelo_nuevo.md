@@ -1,6 +1,6 @@
 # Resultados del problema directo (grupo `M_modelo_nuevo`)
 
-Configuración tipo `main`: spacing 60, dt 18000 s, T = 30 d (144 pasos), `Q_std=1e-3`, `factor_sumidero_C=0`, `factor_almacenamiento_C=1`.
+Configuración tipo `main`: spacing 60, dt 18000 s, T = 30 d (144 pasos), `Q_std=1e-3`, `factor_almacenamiento_C=1`.
 Métricas BFR vs FEniCSx al tiempo final (`data/output/experimentos/M_modelo_nuevo/<caso>/comparacion/metricas.json`).
 
 | Caso | ΔH rms (m) | C L2 rel | C L∞ rel | \|U\| L2 rel | masa BFR/FEM |

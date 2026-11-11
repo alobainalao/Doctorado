@@ -21,7 +21,7 @@ Convención: se resuelven Λ (signo del documento docs/adjunto_sin_sumidero.tex:
     ∂J/∂Q_k = θ Λ_h^{k+1}·Eδ + (1-θ) Λ_h^{ℓ'}·Eδ + 2|z_p−z_0| Q_k Δt,     ℓ' = (k+1) mod N_t + 1
 
 Alcance: ADR, MRMT por bloque y MRMT semi-analítico; transporte centrado (sin upwind) y sin el sumidero W₋
-(factor_sumidero_C = 0).
+(el modelo no lo incluye).
 """
 import numpy as np
 from scipy.sparse import csr_matrix, diags
@@ -200,8 +200,6 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
         raise ValueError("MRMT por bloque: se necesita la historia C_im ('Ci' del npz)")
     if getattr(p, "upwind_transport", False):
         raise NotImplementedError("adjunto exacto: transporte upwind no implementado")
-    if getattr(p, "factor_sumidero_C", 0.0) != 0.0:
-        raise NotImplementedError("adjunto exacto: sin el sumidero W- (factor_sumidero_C = 0)")
 
     Nt = len(Q)
     N = len(d.nodes)

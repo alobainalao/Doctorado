@@ -31,8 +31,7 @@ from config.parameters import Parameters
 BASE = {
     "run_type": "optimization", "domain": "real", "dt": 36000, "T": 3 * 36000,
     "save_dat": False, "animate": False, "pre": True,
-    "extract_C": False, "factor_sumidero_C": 0.0,
-}
+    "extract_C": False, }
 BASE_BFR = {**BASE, "metodo": "bfr", "spacing": 30, "save_dat": True}
 BASE_FEM = {**BASE, "metodo": "fenicsx", "spacing": 120, "postproc": False}
 MRMT = {"Nr": 2, "Deff": [1e-9, 5e-10], "beta": [0.15, 0.10], "phi_im": [0.1, 0.05]}
@@ -70,7 +69,6 @@ def main(backend, model, factor_alm):
     if "--modulada" in sys.argv:        # C no uniforme: ∇C ≠ 0 y el término advectivo del adjunto trabaja
         p.C_init_modulacion = (0.5, 2000.0, 800.0)
     p.factor_almacenamiento_C = factor_alm
-    p.factor_sumidero_C = 0.0
     p.extract_C = False
 
     Q0 = np.asarray(p.Qout[0], float)

@@ -4,7 +4,7 @@ from funtions.runtime import RUNTIME
 from view.plot import update_supertitles, update_optimization_frame, create_optimization_figures
 from postprocessing.create_btc  import create_btc
 from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots, initialize_optimization_plots
-from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp, chi_eps, compute_functional
+from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp, compute_functional
 import os
 import numpy as np
 import time
@@ -40,8 +40,7 @@ def solve_adjoint(h, U, C, Qout, d, animate=False, save_data=False):
     # =====================================================
     # ψ guardado/animado = variables del adjunto discreto EXACTO (el del gradiente), no las de step_adjoint
     exacto = None
-    if (getattr(p, "adjoint_exact", True) and not getattr(p, "upwind_transport", False)
-            and getattr(p, "factor_sumidero_C", 0.0) == 0.0):
+    if getattr(p, "adjoint_exact", True) and not getattr(p, "upwind_transport", False):
         from funtions.adjunto_exacto import gradiente_exacto
         Ci = get_solucion(["Ci"], f"{p.save_data}/simulation_results.npz")[0] if "mrmt" in p.model else None
         exacto = {}
@@ -358,9 +357,9 @@ def gradient(
     # -----------------------------------------------------
     # ADJUNTO DISCRETO EXACTO (funtions/adjunto_exacto.py): derivada exacta del esquema programado
     # -----------------------------------------------------
-    _exacto_ok = (not getattr(p, "upwind_transport", False)) and getattr(p, "factor_sumidero_C", 0.0) == 0.0
+    _exacto_ok = not getattr(p, "upwind_transport", False)
     if getattr(p, "adjoint_exact", True) and not _exacto_ok:
-        print("[gradient] AVISO: adjunto exacto no disponible con upwind o con W-; se usa el adjunto heredado "
+        print("[gradient] AVISO: adjunto exacto no disponible con upwind; se usa el adjunto heredado "
               "(sin verificar contra diferencias finitas)", flush=True)
     if getattr(p, "adjoint_exact", True) and _exacto_ok:
         from funtions.adjunto_exacto import gradiente_exacto
@@ -869,9 +868,6 @@ class Simulation:
             # if p.activate_ext and self.Qout[k][step] and p.run_type == "optimization":
             #     self.C[k] -= d.gauss_p*self.C[k]
 
-            if p.activate_ext:   # sumidero W- escalado por factor_sumidero_C
-                self.C[k] -= p.factor_sumidero_C*d.gauss_p*self.C[k]*chi_eps(self.Qout[k][step])
-
         if visuals is not None:
             update_supertitles(figs, self.t)
 
@@ -971,9 +967,6 @@ class SimulationAdjoint:
                 SC[~d.mask] = np.nan
                 SC = SC.reshape(d.xy_grid.shape[1:]).T
                 im_C[i][j].set_data(SC)
-
-            if p.activate_ext:   # adjunto del sumidero W- (factor_sumidero_C)
-                self.psi_C[k] -= p.factor_sumidero_C*d.gauss_p*self.psi_C[k]*chi_eps(Qout[k][step])
 
         # if visuals is not None:
         #     update_supertitles(figs, self.t)

@@ -31,7 +31,7 @@ def _arg(nombre, defecto):
 def entorno():
     nt = _arg("nt", 4)
     return {"metodo": "bfr", "run_type": "optimization", "domain": _arg("domain", "cuadrado"), "mesh_pkl": None,
-            "activate_fuente": False, "extract_C": False, "factor_sumidero_C": 0.0, "bc_outlet_mode": "libre",
+            "activate_fuente": False, "extract_C": False, "bc_outlet_mode": "libre",
             "lado_cuadrado": 600.0, "C_banda_limpia": 60.0, "Q_std": _arg("q", 0.01), "spacing": _arg("spacing", 30), "min_sp": 4,
             "dt": 36000, "T": nt * 36000, "pre": True, "save_dat": True, "animate": False,
             "theta": _arg("theta", 1.0), "theta_C": _arg("theta-c", 1.0), "model": _arg("model", "adr"),

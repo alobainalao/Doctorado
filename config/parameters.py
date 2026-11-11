@@ -52,8 +52,7 @@ class Parameters:
                 # y carpeta de salida propia por caso.
                 "bc_outlet_mode", "mesh_pkl", "exp_dir", "r_pozo",
                 "norm_delta_pozo", "theta_C",
-                # Sumidero W- del pozo (0 = anulado, 1 = modelo anterior)
-                "factor_sumidero_C", "factor_almacenamiento_C",
+                "factor_almacenamiento_C",
                 # Recorte de positividad C >= 0 en BFR (diagnóstico de la oscilación del pozo)
                 "clip_C",
                 # Franja Galerkin P1 bajo la superficie (m) en las filas del flujo; 0 = RBF-FD puro
@@ -131,11 +130,6 @@ class Parameters:
 
         self.activate_fuente = getattr(self, "activate_fuente", True)
         self.activate_ext = getattr(self, "activate_ext", True)
-        # Factor del sumidero de soluto en el pozo W- = χ(Q) g_ε C (transporte,
-        # adjunto y gradientes, BFR y FEniCS). 0 lo anula: en la forma no
-        # conservativa el soluto ya sale con el agua (exp/sumidero-W, grupo Z);
-        # 1 recupera el modelo anterior.
-        self.factor_sumidero_C = float(getattr(self, "factor_sumidero_C", 0.0))
         # Condición de salida del flujo. En esta rama el defecto es «libre»: derivada normal de u nula (componente normal,
         # docs/adjunto_sin_sumidero.tex §2.2, cierre D). Otros: "fem" (Neumann u·n=f_out, el de FEniCSx anterior), "pfs",
         # "dirichlet". default.json no se modifica: solo cambia el valor por defecto del código.

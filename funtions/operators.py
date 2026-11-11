@@ -558,12 +558,6 @@ def make_transport_operator(V, nodes, groups, pho, D, Div_D, Qout, p, eps_M, sig
 
     coefs = coeficientes_transporte(p, pho, V, D, Div_D, sig, h_t)
 
-    # Sumidero de contaminante en el pozo: el agua bombeada arrastra C disuelto.
-    # Análogo al término `delta_C * C` de FEniCS. Default True en default.json.
-    # Escalado por factor_sumidero_C (0 por defecto: término anulado).
-    if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coefs[0] = coefs[0] - w * sig * p.factor_sumidero_C * gauss_p
-
     return dict(
         idx=idx_dom,
         eps=eps_M,

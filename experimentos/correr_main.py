@@ -27,7 +27,7 @@ def config(modelo, backend, run_type):
     with open(os.path.join(CODIGO_DIR, "experimentos", "base.json")) as f:
         cfg = json.load(f)
     cfg.update({"model": modelo, "metodo": backend, "run_type": run_type, "extract_C": False,
-                "Q_std": 0.3, "factor_sumidero_C": 0.0, "factor_almacenamiento_C": 1.0,
+                "Q_std": 0.3, "factor_almacenamiento_C": 1.0,
                 "bc_outlet_mode": "libre", **MAIN_FUENTE})
     return cfg
 

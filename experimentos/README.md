@@ -1,7 +1,7 @@
 # Experimentos BFR (RBF-FD) vs FEniCS (FEM)
 
 > **Lectura ordenada de los resultados:** `notebooks/README.md`. Allí están (1) los resultados de los grupos
-> por pregunta y (2) los benchmarks del libro. El sumidero $W_-$ está anulado (`factor_sumidero_C = 0`): en la
+> por pregunta y (2) los benchmarks del libro. El sumidero $W_-$ ya no existe en el código: en la
 > forma no conservativa el término sobra, y los grupos que lo comparaban se eliminaron.
 
 Estructura única para definir, correr y comparar casos de estudio. Sustituye a

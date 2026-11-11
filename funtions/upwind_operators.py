@@ -168,10 +168,6 @@ def build_upwind_transport_matrix(V, nodes, groups, normals,
     base = pho * p.R
     coef_identity = base * (1.0 / p.dt)
 
-    # Sumidero W- escalado por factor_sumidero_C (0 por defecto: anulado).
-    if getattr(p, "extract_C", True) and p.activate_ext and Qout and p.run_type != "optimization":
-        coef_identity -= w * sig * p.factor_sumidero_C * gauss_p
-
     from funtions.operators import almacenamiento_coef
     coef_identity += w * sig * almacenamiento_coef(p, pho, h_t)
 

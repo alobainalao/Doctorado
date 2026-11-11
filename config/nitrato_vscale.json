@@ -76,6 +76,5 @@
   "L": 0.01,
   "C_ref": 0.05,
   "normalizar_J": true,
-  "factor_sumidero_C": 0.0,
   "factor_almacenamiento_C": 1.0
 }
