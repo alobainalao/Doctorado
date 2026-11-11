@@ -3,12 +3,12 @@ Lanzador único de experimentos BFR vs FEniCS (ver experimentos/README.md).
 
     python -m experimentos.correr --list
     python -m experimentos.correr --todos --comparar          # grupos A–F completos
-    python -m experimentos.correr --grupo A_terminos
-    python -m experimentos.correr --caso A0_sin_fuente_sin_pozo --backend bfr
-    python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
+    python -m experimentos.correr --grupo M_modelo_nuevo
+    python -m experimentos.correr --caso M0_adr --backend bfr
+    python -m experimentos.correr --grupo M_modelo_nuevo D_caudal_pozo --comparar
     python -m experimentos.correr --todos --comparar --animar   # + videos y grillas
     python -m experimentos.correr --grupo P_presentacion --animar --publicar
-    python -m experimentos.correr --caso A3_fuente_pozo --smoke   # prueba rápida (2 pasos)
+    python -m experimentos.correr --caso M0_adr --smoke   # prueba rápida (2 pasos)
 
 Cada backend corre en su entorno conda (bfr_env / fenics_env) vía
 `conda run`, así que este script puede lanzarse desde cualquier entorno.

@@ -511,7 +511,7 @@ def factor_avance():
     El operador del documento es L(C) = D:∂² C + (∇·D − u)·∇C, con los mismos pesos θ_C / (1−θ_C) que la
     difusión. Antes se usaba (u − ∇·D)/2: ese 1/2 dejaba la advección a la mitad (con θ_C = 1 y con θ_C = 0.5),
     de modo que BFR transportaba el soluto a la mitad de velocidad que FEniCS (error L2 de C del 79 % frente
-    a 11 % tras el cambio; pico de C idéntico a FEM). Ver docs/diferencias_bfr_fem.md."""
+    a 11 % tras el cambio; pico de C idéntico a FEM)."""
     return 1.0
 
 

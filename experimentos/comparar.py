@@ -24,8 +24,8 @@ Sesgos que se evitan
 * Dibujo: tripcolor Gouraud sobre la misma triangulación = el campo P1
   exacto en ambos backends, sin remuestreo a una rejilla.
 
-    python -m experimentos.comparar --caso A_terminos/A3_fuente_pozo
-    python -m experimentos.comparar --grupo A_terminos D_caudal_pozo
+    python -m experimentos.comparar --caso M_modelo_nuevo/M0_adr
+    python -m experimentos.comparar --grupo M_modelo_nuevo D_caudal_pozo
     python -m experimentos.comparar --todos [--jobs 4] [--sin-video]
 
 Salidas: <caso>/comparacion/{metricas.json, comparacion_{H,C,V}.{mp4,webm},

@@ -1,13 +1,8 @@
 # Experimentos numéricos — notebooks
 
-Dos bloques, en el orden en que conviene leerlos:
+Los notebooks viven en `../benchmarks_libro/`: casos de Manzoni–Quarteroni–Salsa (2021) resueltos con RBF-FD + FEM propio + adjunto discreto. Cada uno abre con una **ficha** (el problema en palabras, cómo lo resuelve el libro, cómo lo implementamos, cómo comparamos y resultados).
 
-| # | Carpeta | Qué contiene | Corre simulaciones | Tiempo |
-|---|---|---|---|---|
-| 1 | `1_resultados/` | `1_resultados_experimentos`: los resultados de los grupos A–F de `experimentos/` (BFR vs FEniCS), ordenados por pregunta, con tablas, figuras finales y qué es fiable hoy | no (lee `data/output/experimentos/`) | ~10 s |
-| 2 | `../benchmarks_libro/` (fuera de `notebooks/`) | Casos de Manzoni–Quarteroni–Salsa (2021) resueltos con RBF-FD + FEM propio + adjunto discreto. Cada uno abre con una **ficha** (el problema en palabras, cómo lo resuelve el libro, cómo lo implementamos, cómo comparamos y resultados) | sí (casos pequeños) | 1–4 min |
-
-## Bloque 2: benchmarks del libro
+## Benchmarks del libro
 
 | notebook | problema | referencia | benchmark rápido |
 |---|---|---|---|
@@ -24,7 +19,7 @@ La fuente de cada notebook es el `.py` (celdas `# %%`, formato «percent»). El 
 
 ```bash
 conda activate doctorado            # nbformat + nbclient + ipykernel
-python notebooks/construir.py notebooks/1_resultados/1_resultados_experimentos.py --ejecutar
+python notebooks/construir.py benchmarks_libro/2a_graetz_manzoni_6_5_1.py --ejecutar
 ```
 
 Los resultados de `data/output/experimentos/` no están en git y cada checkout tiene los suyos.

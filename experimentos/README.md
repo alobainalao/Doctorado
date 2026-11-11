@@ -61,11 +61,11 @@ data/output/experimentos/informe.html  informe general con videos
 ```bash
 cd codigo
 python -m experimentos.correr --list                       # catálogo
-python -m experimentos.correr --grupo A_terminos --dry-run # qué se correría
+python -m experimentos.correr --grupo M_modelo_nuevo --dry-run # qué se correría
 python -m experimentos.correr --todos --comparar           # todo A–F (38 corridas) + comparación
-python -m experimentos.correr --grupo A_terminos B_bc_salida_fem --comparar
-python -m experimentos.correr --caso A3_fuente_pozo --backend bfr --force
-python -m experimentos.correr --caso A3_fuente_pozo --smoke --comparar  # 2 pasos, prueba
+python -m experimentos.correr --grupo M_modelo_nuevo D_caudal_pozo --comparar
+python -m experimentos.correr --caso M0_adr --backend bfr --force
+python -m experimentos.correr --caso M0_adr --smoke --comparar  # 2 pasos, prueba
 python -m experimentos.comparar --todos [--jobs 3]         # métricas + videos de lo que haya
 python -m experimentos.informe                             # informe.html
 python -m experimentos.correr --todos --comparar --animar  # + videos y grillas
@@ -96,16 +96,12 @@ terminar salvo `--keep-pre`.
 
 Referencia común: fuente y pozo activos, `Q_std=0.3`, `sigma_fuente=1`,
 `r_pozo=20 m` (soporte de los kernels del pozo, independiente de la malla),
-`dt=18000 s`, `T=30 días`, `bc_outlet_mode=pfs`, sin upwind.
+`dt=18000 s`, `T=30 días`, `bc_outlet_mode=libre`, sin upwind.
 
 | Grupo | Casos | Qué aísla |
 |---|---|---|
-| **A_terminos** | A0 sin fuente ni pozo · A1 sólo fuente · A2 sólo pozo · A3 ambos | Contribución de cada término; A0 = CI transportada |
-| **B_bc_salida_fem** | B0–B3 = A0–A3 con BFR `bc_outlet_mode=fem` (sólo BFR; FEM de referencia = A) | Peso de la BC de salida en la diferencia BFR↔FEM |
-| **C_soporte_fuente** | `sigma_fuente` ∈ {0.5, 2, 4} × {sin pozo, con pozo} (σ=1 está en A1/A3) | Sensibilidad a lo localizada que está la fuente |
-| **D_caudal_pozo** | `Q_std` ∈ {0.01, 0.03, 0.1, 0.7}, sin fuente (0.3 está en A2) | Cono de depresión y velocidades cerca del pozo |
-| **E_paso_tiempo** | `dt` ∈ {36000, 7200} s (18000 está en A3) | Error temporal frente a espacial |
-| **F_upwind_bfr** | A1 y A3 con BFR `upwind_transport` (sólo BFR) | Efecto de la estabilización upwind |
+| **D_caudal_pozo** | `Q_std` ∈ {0.01, 0.03, 0.1, 0.7}, sin fuente | Cono de depresión y velocidades cerca del pozo |
+| **E_paso_tiempo** | `dt` ∈ {36000, 7200} s (18000 es el de la base) | Error temporal frente a espacial |
 | **P_presentacion** | adr / mrmt_semi / mrmt_block, `run_type=comparison` | Videos de la presentación (forward + adjunto) |
 
 Para añadir un caso basta una entrada en `catalogo.py`; para un grupo con
@@ -115,11 +111,10 @@ MRMT, poner `"model": "mrmt_semi"` en su `cfg`.
 
 - `bc_outlet_mode=fem` divergía en una esquina con las mallas anteriores
   (nodos de frontera desplazados hacia dentro); con la malla saneada es
-  estable y es la variante BFR que más se parece a FEM (grupo B).
-- `upwind_transport` sólo existe en BFR.
+  estable y es la variante BFR que más se parece a FEM.
 - Videos: rangos de color fijos por caso y comunes a BFR y FEM (H y C en
   [mín, máx], |U| lineal hasta el percentil 99); los nodos fantasma BFR se
-  excluyen. En B y F el FEM es el de `ref_fem`.
+  excluyen.
 - El recorte C ≥ 0 se aplica en cada paso en ambos backends
   (`docs/clip_positividad_C.md`).
 

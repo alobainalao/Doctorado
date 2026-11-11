@@ -23,6 +23,5 @@
 
 ```
 python3 -m experimentos.correr --grupo M_modelo_nuevo --comparar      # directo, BFR vs FEniCSx
-python3 -m experimentos.correr --caso M3_adr_bc_fem --comparar       # BFR con salida tipo FEM
 python3 -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block>  # optimización (fenics_env)
 ```
