@@ -9,18 +9,24 @@ Corre en bfr_env.  No sustituye a data/input/malla_compartida/malla.pkl: para us
 con "mesh_pkl": "data/input/malla_conos/malla.pkl".
 
 Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
-  * min_sp (4 m)            círculo de radio r_circle (100 m) alrededor del pozo y de la fuente;
+  * min_sp (4 m)            dos elipses:
+        - pozo: eje mayor vertical, con focos en la posición actual del pozo y en la cota superior de la
+          optimización (x_p, zp_max), y semieje menor r_circle: cubre la zona que recorre z_p al optimizar;
+        - fuente: la misma construcción, horizontal y más chica: focos en la fuente y DX_FUENTE aguas
+          abajo (hacia la salida), semieje menor B_FUENTE;
   * s_cone (16 m)           dentro de los dos conos:
         - pluma: alrededor de la línea de corriente de Darcy desde la fuente hasta la salida (RK4 con la
           velocidad inicial del preproceso actual), semiancho de PLUME_W0 en la fuente a PLUME_W1 en la
           salida, y como mucho PLUME_DEPTH_BELOW por debajo del eje;
         - pozo: columna vertical desde WELL_R0 bajo el pozo hasta el eje de la pluma, semiancho de
           WELL_R0 en el pozo a WELL_R1 en el eje;
-  * min_sp_boundary (30 m)  sobre la frontera;
+  * min_sp_boundary (30 m)  sobre la frontera; en la frontera superior es además una cota inferior:
+          ninguna zona (en particular el cono de la pluma, que llega al techo) la baja de 30 m allí;
   * spacing (60 m)          en el resto.
 Fuera de cada zona el espaciado crece linealmente con la distancia, GRADO metros por metro, hasta
 `spacing`; el espaciado final es el mínimo de las cuatro zonas y del refinamiento por K de la malla
-compartida (preprocessing/malla_compartida.py:_espaciado_K).
+compartida (preprocessing/malla_compartida.py:_espaciado_K), acotado por debajo cerca del techo por
+min_sp_boundary − GRADO·d_techo.  Se precalcula en una rejilla de PASO_REJILLA m.
 """
 import argparse
 import json
@@ -39,6 +45,9 @@ SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
 GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
+DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente (la del pozo: |z_p − zp_max|)
+B_FUENTE = 50.0      # [m] semieje menor de la elipse de la fuente
+PASO_REJILLA = 10.0  # [m] rejilla en la que se precalcula h (el generador lo evalúa millones de veces)
 
 
 def exceso_pluma(xy, eje, w0, w1, abajo):
@@ -69,26 +78,56 @@ def exceso_pozo(xy, pozo, z_eje, r0, r1):
                     np.maximum(0.0, z - z_eje))
 
 
+def exceso_elipse(xy, f1, f2, b):
+    """Distancia aproximada a la elipse de focos f1, f2 y semieje menor b (0 dentro):
+    (|x − f1| + |x − f2|)/2 − a, con a = √(c² + b²); exacta sobre el eje mayor."""
+    a = np.hypot(0.5 * np.linalg.norm(np.subtract(f2, f1)), b)
+    s = np.linalg.norm(xy - f1, axis=1) + np.linalg.norm(xy - f2, axis=1)
+    return np.maximum(0.0, 0.5 * s - a)
+
+
+def elipses(p, eje):
+    """(f1, f2, b) de las elipses del pozo y de la fuente."""
+    pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
+    zp_max = float(getattr(p, "zp_max", -200.0))
+    sentido = np.sign(eje[min(5, len(eje) - 1), 0] - eje[0, 0]) or -1.0   # hacia la salida
+    return {"pozo": (pozo, np.array([pozo[0], zp_max]), float(p.r_circle)),
+            "fuente": (fnte, fnte + np.array([sentido * DX_FUENTE, 0.0]), B_FUENTE)}
+
+
 def espaciado(p, eje, vert):
     """h(xy) de 4 niveles con los conos como nivel intermedio."""
     from funtions.mesh_test import PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW, WELL_R0, WELL_R1
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
     s_min, s_cono = float(p.min_sp), float(p.s_cone)
-    s_bnd, s_max, r_c = float(p.min_sp_boundary), float(p.spacing), float(p.r_circle)
+    s_bnd, s_max = float(p.min_sp_boundary), float(p.spacing)
     z_eje = float(np.interp(pozo[0], eje[::-1, 0], eje[::-1, 1]))   # eje de la pluma sobre el pozo
 
-    def h(xy):
+    elip = elipses(p, eje)
+    z_techo = float(vert[:, 1].max())
+
+    def h_exacto(xy):
         xy = np.atleast_2d(np.asarray(xy, float))
-        d_c = np.minimum(np.linalg.norm(xy - pozo, axis=1), np.linalg.norm(xy - fnte, axis=1))
+        e_elip = np.minimum.reduce([exceso_elipse(xy, *elip[k]) for k in elip])
         e_cono = np.minimum(exceso_pluma(xy, eje, PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW),
                             exceso_pozo(xy, pozo, z_eje, WELL_R0, WELL_R1))
         return np.minimum.reduce([
-            s_min + GRADO * np.maximum(0.0, d_c - r_c),
+            s_min + GRADO * e_elip,
             s_cono + GRADO * e_cono,
             s_bnd + GRADO * mc._dist_borde(xy, vert),
             np.full(len(xy), s_max),
         ])
-    return h
+
+    from scipy.interpolate import RegularGridInterpolator
+    h_k = mc._espaciado_K(h_exacto, vert, mc.REFINO_K, mc.H_MIN_K) if mc.REFINO_K else h_exacto
+    x = np.arange(vert[:, 0].min() - PASO_REJILLA, vert[:, 0].max() + 2 * PASO_REJILLA, PASO_REJILLA)
+    z = np.arange(vert[:, 1].min() - PASO_REJILLA, vert[:, 1].max() + 2 * PASO_REJILLA, PASO_REJILLA)
+    X, Z = np.meshgrid(x, z, indexing="ij")
+    P = np.c_[X.ravel(), Z.ravel()]
+    techo = s_bnd - GRADO * (z_techo - P[:, 1])               # 30 m en el techo, sin efecto a 70 m de él
+    tabla = np.maximum(h_k(P), techo).reshape(X.shape)
+    f = RegularGridInterpolator((x, z), tabla, bounds_error=False, fill_value=None)
+    return lambda xy: f(np.atleast_2d(np.asarray(xy, float)))
 
 
 def figura_espaciado(m, eje, ruta):
@@ -135,9 +174,10 @@ def main():
     eje = compute_plume_streamline(args.preproceso, ruta=EJE)
     if eje is None:
         raise SystemExit(f"[malla] no existe {args.preproceso}")
-    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en r < {p.r_circle:g} m de pozo y fuente, {p.s_cone:g} m en los "
-            f"conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera, {p.spacing:g} m lejos (eje {EJE})")
-    m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert), nota_extra=nota)
+    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en las elipses de pozo (vertical, focos z_p y zp_max) y fuente "
+            f"(horizontal), {p.s_cone:g} m en los conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera "
+            f"(cota inferior en el techo), {p.spacing:g} m lejos (eje {EJE})")
+    m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert), refino_k=None, nota_extra=nota)   # K ya va en h
     m["meta"]["origen"] = (f"preprocessing/malla_conos.py (min_sp={p.min_sp}, s_cone={p.s_cone} en los conos, "
                            f"min_sp_boundary={p.min_sp_boundary}, spacing={p.spacing}, r_circle={p.r_circle}, "
                            f"grado={GRADO})")
