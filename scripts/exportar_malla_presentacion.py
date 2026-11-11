@@ -118,16 +118,18 @@ def main():
         cont = np.r_[np.c_[xp - ancho(zs), zs], np.c_[xp + ancho(zs), zs][::-1]]
         # Elipses de 4 m (preprocessing/malla_conos.py:elipses), como polígonos de 72 lados.
         from preprocessing.malla_conos import elipses
-        elip = []
+        elip, focos = [], []
         for f1, f2, sb in elipses(RUNTIME.params, eje).values():
             c = 0.5 * np.linalg.norm(f2 - f1)
             sa, u = np.hypot(c, sb), (f2 - f1) / max(2 * c, 1e-12)
             ang = np.linspace(0, 2 * np.pi, 73)[:-1]
             q = 0.5 * (f1 + f2) + np.outer(sa * np.cos(ang), u) + np.outer(sb * np.sin(ang), [-u[1], u[0]])
             elip.append(np.round(np.c_[px(q[:, 0]), pz(q[:, 1])], 1).ravel().tolist())
+            focos += [[round(float(px(f[0])), 1), round(float(pz(f[1])), 1)] for f in (f1, f2)]
         extra = (f"export const EJE = {json.dumps(np.round(np.c_[px(eje[:, 0]), pz(eje[:, 1])], 1).ravel().tolist())};\n"
                  f"export const CONO_POZO = {json.dumps(np.round(np.c_[px(cont[:, 0]), pz(cont[:, 1])], 1).ravel().tolist())};\n"
-                 f"export const ELIPSES = {json.dumps(elip)};\n")
+                 f"export const ELIPSES = {json.dumps(elip)};\n"
+                 f"export const FOCOS = {json.dumps(focos)};\n")
         for v, (_, _, x0, x1, z0, z1) in zip(ventanas, VENTANAS):
             e = S_ZOOM / max(x1 - x0, z1 - z0)
             v["eje"] = np.round(np.c_[(eje[:, 0] - x0) * e, (z1 - eje[:, 1]) * e], 1).ravel().tolist()

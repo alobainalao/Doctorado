@@ -11,7 +11,7 @@ con "mesh_pkl": "data/input/malla_conos/malla.pkl".
 Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
   * min_sp (4 m)            dos elipses:
         - pozo: eje mayor vertical, con focos en la posición actual del pozo y en la cota superior de la
-          optimización (x_p, zp_max), y semieje menor r_circle: cubre la zona que recorre z_p al optimizar;
+          optimización (x_p, zp_max), y semieje menor B_POZO: cubre la zona que recorre z_p al optimizar;
         - fuente: la misma construcción, horizontal y más chica: focos en la fuente y DX_FUENTE aguas
           abajo (hacia la salida), semieje menor B_FUENTE;
   * s_cone (16 m)           dentro de los dos conos:
@@ -45,8 +45,9 @@ SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
 GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
-DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente (la del pozo: |z_p − zp_max|)
-B_FUENTE = 50.0      # [m] semieje menor de la elipse de la fuente
+B_POZO = 50.0        # [m] semieje menor de la elipse del pozo (focos a |z_p − zp_max| = 500 m: unos 510 × 100 m)
+DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente
+B_FUENTE = 25.0      # [m] semieje menor de la elipse de la fuente (unos 255 × 50 m)
 PASO_REJILLA = 10.0  # [m] rejilla en la que se precalcula h (el generador lo evalúa millones de veces)
 
 
@@ -91,7 +92,7 @@ def elipses(p, eje):
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
     zp_max = float(getattr(p, "zp_max", -200.0))
     sentido = np.sign(eje[min(5, len(eje) - 1), 0] - eje[0, 0]) or -1.0   # hacia la salida
-    return {"pozo": (pozo, np.array([pozo[0], zp_max]), float(p.r_circle)),
+    return {"pozo": (pozo, np.array([pozo[0], zp_max]), B_POZO),
             "fuente": (fnte, fnte + np.array([sentido * DX_FUENTE, 0.0]), B_FUENTE)}
 
 
