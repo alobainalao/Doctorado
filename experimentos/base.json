@@ -14,7 +14,7 @@
   "sigma_fuente": 1.0,
   "r_pozo": 20.0,
   "norm_delta_pozo": "area",
-  "bc_outlet_mode": "pfs",
+  "bc_outlet_mode": "libre",
   "upwind_transport": false,
   "spacing": 60,
   "min_sp": 4,
