@@ -39,6 +39,18 @@ GRUPOS = {
         },
     },
 
+    # ── MC. Modelo nuevo en la malla con conos (preprocessing/malla_conos.py): misma configuración que M ──
+    "MC_malla_conos": {
+        "desc": "Modelo nuevo ADR / MRMT semi / MRMT bloque en la malla con conos, Q_std = 0.3, 30 días",
+        "pregunta": "¿Cambia el directo al refinar la pluma, la columna del pozo y la zona de la optimización?",
+        "casos": {
+            f"MC{i}_{modelo}": {"desc": f"{modelo} como M{i}_{modelo}, malla data/input/malla_conos/malla.pkl",
+                                "cfg": {"model": modelo, "Q_std": 0.3, "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre",
+                                        **MAIN_FUENTE, "mesh_pkl": "data/input/malla_conos/malla.pkl"}}
+            for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
+        },
+    },
+
     # ── D. Caudal del pozo, sin fuente  ──────────────
     "D_caudal_pozo": {
         "desc": "Caudal de extracción Q_std (cono de depresión), sin fuente",
