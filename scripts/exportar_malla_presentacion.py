@@ -4,7 +4,7 @@ módulo JS para la diapositiva de malla de la presentación (avance3, A3N32): ar
 al panorama, frontera por grupos y tres ventanas (pozo y dos esquinas, como en malla.png) con sus fantasmas.
 
     python3 scripts/exportar_malla_presentacion.py [ruta_de_la_presentacion]      # bfr_env
-    python3 scripts/exportar_malla_presentacion.py --conos [ruta]                 # variante con conos
+    python3 scripts/exportar_malla_presentacion.py --conos [--malla=<pkl>] [ruta] # variante con conos
 
 Escribe <presentacion>/src/slides-avance3/mallaCompartida.js; con --conos exporta la variante
 data/input/malla_conos/malla.pkl (preprocessing/malla_conos.py) a mallaConos.js, con el eje de la pluma, el
@@ -20,11 +20,13 @@ import numpy as np
 
 CODIGO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONOS = "--conos" in sys.argv[1:]
-_ARGS = [a for a in sys.argv[1:] if a != "--conos"]
+_MALLA = [a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--malla=")]
+_ARGS = [a for a in sys.argv[1:] if a != "--conos" and not a.startswith("--malla=")]
 PRES = _ARGS[0] if _ARGS else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc-sin-sumidero")
 if CODIGO not in sys.path:
     sys.path.insert(0, CODIGO)
-MALLA = os.path.join(CODIGO, "data", "input", "malla_conos" if CONOS else "malla_compartida", "malla.pkl")
+MALLA = (os.path.join(CODIGO, _MALLA[0]) if _MALLA else
+         os.path.join(CODIGO, "data", "input", "malla_conos" if CONOS else "malla_compartida", "malla.pkl"))
 
 XMIN, XMAX, ZMIN, ZMAX = 816.0, 10755.0, -2690.5, 250.5
 W_PAN = 1000                                        # ancho del panorama en unidades SVG
@@ -106,7 +108,9 @@ def main():
         # Eje de la pluma y contorno del cono vertical (funtions/mesh_test.py:_well_vertical_cone: semiancho
         # WELL_R0 desde WELL_R0 bajo el pozo, crece hasta WELL_R1 en z_top y sólo actúa hasta z = −150 m).
         from funtions.mesh_test import WELL_R0, WELL_R1, WELL_Z_OFFSET
-        eje = np.asarray(d["eje_pluma"], float)
+        # Malla recuperada de oct 2026: su eje es el que se usó entonces (data/input/plume_streamline.npy).
+        eje = np.asarray(d["eje_pluma"] if "eje_pluma" in d else
+                         np.load(os.path.join(CODIGO, "data", "input", "plume_streamline.npy")), float)
         xp, zp = (float(v) for v in d["pozo_cor"])
         z_top = float(fnte[1]) + WELL_Z_OFFSET
         ancho = lambda z: WELL_R0 + (WELL_R1 - WELL_R0) * np.clip((z - zp) / (z_top - zp), 0, 1)
