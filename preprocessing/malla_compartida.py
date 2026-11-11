@@ -185,7 +185,9 @@ def _suavizar(nodos, tris, n_bnd, fijos, vert, h, n_iter, omega):
 
 # ── generación ───────────────────────────────────────────────────────────────
 
-def generar(cfg, ang_min=ANG_MIN, n_suave=N_SUAVE, refino_k=REFINO_K):
+def generar(cfg, ang_min=ANG_MIN, n_suave=N_SUAVE, refino_k=REFINO_K, h_extra=None, nota_extra=""):
+    """h_extra(xy): espaciado adicional; si se da, se usa min(h, h_extra)
+    (variante con conos, preprocessing/malla_conos.py)."""
     from funtions.runtime import RUNTIME
     from config.parameters import Parameters
     from funtions.mesh_test import _boundary_config, prepare_spacing_cache, spacing_func_cached
@@ -202,6 +204,9 @@ def generar(cfg, ang_min=ANG_MIN, n_suave=N_SUAVE, refino_k=REFINO_K):
     h = spacing_func_cached
     if refino_k:
         h = _espaciado_K(h, vert, refino_k, H_MIN_K)
+    if h_extra is not None:
+        h_base = h
+        h = lambda xy: np.minimum(h_base(xy), h_extra(np.atleast_2d(xy)))
 
     # 1. Nodos interiores del generador de BFR (sin fantasmas: se rehacen al final).
     nodes0, groups0, _ = poisson_disc_nodes(h, (vert, smp), boundary_groups=grupos_lado)
@@ -272,6 +277,7 @@ def generar(cfg, ang_min=ANG_MIN, n_suave=N_SUAVE, refino_k=REFINO_K):
               f"CDT con ángulo mínimo ≥ {ang_min}°"
               + (f", refinada donde log10 K cambia > {refino_k} décadas por espaciado (h ≥ {H_MIN_K:g} m)"
                  if refino_k else "")
+              + nota_extra
               + "; BFR y FEniCS usan estos nodos y triángulos tal cual."),
     )
     return dict(nodes=todos, groups=groups, normals=normals, simplices=smp,

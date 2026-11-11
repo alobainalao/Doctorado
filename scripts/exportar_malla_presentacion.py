@@ -4,8 +4,11 @@ módulo JS para la diapositiva de malla de la presentación (avance3, A3N32): ar
 al panorama, frontera por grupos y tres ventanas (pozo y dos esquinas, como en malla.png) con sus fantasmas.
 
     python3 scripts/exportar_malla_presentacion.py [ruta_de_la_presentacion]      # bfr_env
+    python3 scripts/exportar_malla_presentacion.py --conos [ruta]                 # variante con conos
 
-Escribe <presentacion>/src/slides-avance3/mallaCompartida.js
+Escribe <presentacion>/src/slides-avance3/mallaCompartida.js; con --conos exporta la variante
+data/input/malla_conos/malla.pkl (preprocessing/malla_conos.py) a mallaConos.js, con el eje de la pluma, el
+contorno del cono vertical del pozo y ventanas sobre el pozo y la pluma (diapositiva A3N34).
 """
 import hashlib
 import json
@@ -16,10 +19,12 @@ import sys
 import numpy as np
 
 CODIGO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRES = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc-sin-sumidero")
+CONOS = "--conos" in sys.argv[1:]
+_ARGS = [a for a in sys.argv[1:] if a != "--conos"]
+PRES = _ARGS[0] if _ARGS else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc-sin-sumidero")
 if CODIGO not in sys.path:
     sys.path.insert(0, CODIGO)
-MALLA = os.path.join(CODIGO, "data", "input", "malla_compartida", "malla.pkl")
+MALLA = os.path.join(CODIGO, "data", "input", "malla_conos" if CONOS else "malla_compartida", "malla.pkl")
 
 XMIN, XMAX, ZMIN, ZMAX = 816.0, 10755.0, -2690.5, 250.5
 W_PAN = 1000                                        # ancho del panorama en unidades SVG
@@ -30,6 +35,12 @@ VENTANAS = [                                        # (clave, título, x0, x1, z
     ("salida", "Esquina salida/pared (816, −2690)", 700.0, 1150.0, -2750.0, -2410.0),
     ("entrada", "Esquina pared/entrada (10755, −768)", 10450.0, 10800.0, -900.0, -600.0),
 ]
+if CONOS:
+    VENTANAS = [
+        ("pozo", "Pozo (3700, −700)", 3550.0, 3850.0, -800.0, -600.0),
+        ("columna", "Del pozo a la pluma", 3150.0, 4250.0, -850.0, 250.0),
+        ("pluma", "Pluma (x ≈ 6000)", 5400.0, 6600.0, -650.0, 250.0),
+    ]
 
 
 def _aristas(t):
@@ -90,18 +101,36 @@ def main():
                   r_circulo=round(100.0 * esc, 2), r_cono=round(500.0 * esc, 2))
              for n, c in (("pozo", np.asarray(d["pozo_cor"], float)), ("fuente", fnte))]
 
+    extra = ""
+    if CONOS:
+        # Eje de la pluma y contorno del cono vertical (funtions/mesh_test.py:_well_vertical_cone: semiancho
+        # WELL_R0 desde WELL_R0 bajo el pozo, crece hasta WELL_R1 en z_top y sólo actúa hasta z = −150 m).
+        from funtions.mesh_test import WELL_R0, WELL_R1, WELL_Z_OFFSET
+        eje = np.asarray(d["eje_pluma"], float)
+        xp, zp = (float(v) for v in d["pozo_cor"])
+        z_top = float(fnte[1]) + WELL_Z_OFFSET
+        ancho = lambda z: WELL_R0 + (WELL_R1 - WELL_R0) * np.clip((z - zp) / (z_top - zp), 0, 1)
+        zs = np.array([zp - WELL_R0, zp, -150.0])
+        cont = np.r_[np.c_[xp - ancho(zs), zs], np.c_[xp + ancho(zs), zs][::-1]]
+        extra = (f"export const EJE = {json.dumps(np.round(np.c_[px(eje[:, 0]), pz(eje[:, 1])], 1).ravel().tolist())};\n"
+                 f"export const CONO_POZO = {json.dumps(np.round(np.c_[px(cont[:, 0]), pz(cont[:, 1])], 1).ravel().tolist())};\n")
+        for v, (_, _, x0, x1, z0, z1) in zip(ventanas, VENTANAS):
+            e = S_ZOOM / max(x1 - x0, z1 - z0)
+            v["eje"] = np.round(np.c_[(eje[:, 0] - x0) * e, (z1 - eje[:, 1]) * e], 1).ravel().tolist()
+
     meta = d["meta"]
     info = dict(sha=hashlib.sha256(nodos.tobytes()).hexdigest()[:12], fecha=meta.get("fecha"), n_dominio=int(nd),
                 n_fantasmas=int(len(nodos) - nd), n_triangulos=int(len(t)), ang_min=round(meta["calidad"]["ang_min"], 1),
                 ang_max=round(meta["calidad"]["ang_max"], 0), W=W_PAN, H=H_PAN)
-    js = ("// Generado por codigo/scripts/exportar_malla_presentacion.py desde data/input/malla_compartida/malla.pkl\n"
-          "// (la malla de la comparación BFR vs FEniCSx). No editar a mano.\n"
+    js = (f"// Generado por codigo/scripts/exportar_malla_presentacion.py desde {os.path.relpath(MALLA, CODIGO)}\n"
+          + ("// (variante con conos de pluma y pozo). No editar a mano.\n" if CONOS else
+             "// (la malla de la comparación BFR vs FEniCSx). No editar a mano.\n") +
           f"export const INFO = {json.dumps(info)};\n"
           f"export const PANORAMA = {json.dumps(pan)};\n"
           f"export const FRONTERA = {json.dumps(frontera)};\n"
           f"export const VENTANAS = {json.dumps(ventanas, ensure_ascii=False)};\n"
-          f"export const CONOS = {json.dumps(conos)};\n")
-    ruta = os.path.join(PRES, "src", "slides-avance3", "mallaCompartida.js")
+          f"export const CONOS = {json.dumps(conos)};\n" + extra)
+    ruta = os.path.join(PRES, "src", "slides-avance3", "mallaConos.js" if CONOS else "mallaCompartida.js")
     with open(ruta, "w") as f:
         f.write(js)
     print("escrito", ruta, f"{len(js) // 1024} KB", info)

@@ -39,13 +39,16 @@ def _rk4_step(pt, ds, interp_u, interp_v):
     return pt + (ds / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
 
-def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000):
+def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000, ruta=_CACHE_PATH):
     """
     Integra la streamline desde fnte hasta la frontera izquierda (outlet)
     con RK4 sobre el campo de velocidades Darcy U[0] del pkl.
 
     La trayectoria pasa a través de la vecindad del pozo y continúa hasta
     que sale por la frontera izquierda del dominio.
+
+    Sólo se interpola con los nodos del dominio (los fantasmas quedan fuera y
+    su velocidad es extrapolada).  `ruta` es el archivo de caché.
 
     Devuelve array (M, 2) o None si el pkl no existe.
     """
@@ -64,8 +67,11 @@ def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000):
     with open(pkl_path, "rb") as f:
         data = pickle.load(f)
 
-    nodes = data["nodes"]
-    U0 = data["U"][0]
+    fantasmas = np.concatenate([np.asarray(v, int) for k, v in data["groups"].items()
+                                if k.startswith("ghosts")] or [np.zeros(0, int)])
+    dominio = np.setdiff1d(np.arange(len(data["nodes"])), fantasmas)
+    nodes = data["nodes"][dominio]
+    U0 = data["U"][0][dominio]
 
     interp_u = LinearNDInterpolator(nodes, U0[:, 0], fill_value=0.0)
     interp_v = LinearNDInterpolator(nodes, U0[:, 1], fill_value=0.0)
@@ -85,10 +91,10 @@ def compute_plume_streamline(pkl_path, ds=30.0, n_steps=5000):
 
     streamline = np.array(pts)
 
-    os.makedirs(os.path.dirname(_CACHE_PATH) or ".", exist_ok=True)
-    np.save(_CACHE_PATH, streamline)
+    os.makedirs(os.path.dirname(ruta) or ".", exist_ok=True)
+    np.save(ruta, streamline)
     print(f"[plume] streamline calculada: {len(streamline)} puntos "
-          f"({streamline[0]} → {streamline[-1]}) → {_CACHE_PATH}")
+          f"({streamline[0]} → {streamline[-1]}) → {ruta}")
     return streamline
 
 
