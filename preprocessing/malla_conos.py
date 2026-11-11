@@ -11,9 +11,10 @@ con "mesh_pkl": "data/input/malla_conos/malla.pkl".
 Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
   * min_sp (4 m)            dos elipses:
         - pozo: eje mayor vertical, con focos en la posición actual del pozo y en la cota superior de la
-          optimización (x_p, zp_max), y semieje menor B_POZO: cubre la zona que recorre z_p al optimizar;
+          optimización (x_p, zp_max): cubre la zona que recorre z_p al optimizar;
         - fuente: la misma construcción, horizontal y más chica: focos en la fuente y DX_FUENTE aguas
-          abajo (hacia la salida), semieje menor B_FUENTE;
+          abajo (hacia la salida);
+        en ambas cada vértice está a MARGEN_VERTICE del foco más cercano (a − c), lo que fija b;
   * s_cone (16 m)           dentro de los dos conos:
         - pluma: alrededor de la línea de corriente de Darcy desde la fuente hasta la salida (RK4 con la
           velocidad inicial del preproceso actual), semiancho de PLUME_W0 en la fuente a PLUME_W1 en la
@@ -45,9 +46,8 @@ SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
 GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
-B_POZO = 50.0        # [m] semieje menor de la elipse del pozo (focos a |z_p − zp_max| = 500 m: unos 510 × 100 m)
-DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente
-B_FUENTE = 25.0      # [m] semieje menor de la elipse de la fuente (unos 255 × 50 m)
+DX_FUENTE = 250.0    # [m] distancia entre los focos de la elipse de la fuente (la del pozo: |z_p − zp_max|)
+MARGEN_VERTICE = 50.0  # [m] a − c: distancia de cada foco a su vértice (pozo ≈ 600 × 332 m, fuente ≈ 350 × 245 m)
 PASO_REJILLA = 10.0  # [m] rejilla en la que se precalcula h (el generador lo evalúa millones de veces)
 
 
@@ -87,13 +87,19 @@ def exceso_elipse(xy, f1, f2, b):
     return np.maximum(0.0, 0.5 * s - a)
 
 
+def _b(f1, f2):
+    """Semieje menor para que el vértice quede a MARGEN_VERTICE del foco: b = √((c + m)² − c²)."""
+    c = 0.5 * np.linalg.norm(np.subtract(f2, f1))
+    return float(np.sqrt((c + MARGEN_VERTICE) ** 2 - c ** 2))
+
+
 def elipses(p, eje):
     """(f1, f2, b) de las elipses del pozo y de la fuente."""
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
     zp_max = float(getattr(p, "zp_max", -200.0))
     sentido = np.sign(eje[min(5, len(eje) - 1), 0] - eje[0, 0]) or -1.0   # hacia la salida
-    return {"pozo": (pozo, np.array([pozo[0], zp_max]), B_POZO),
-            "fuente": (fnte, fnte + np.array([sentido * DX_FUENTE, 0.0]), B_FUENTE)}
+    f_pozo, f_fnte = np.array([pozo[0], zp_max]), fnte + np.array([sentido * DX_FUENTE, 0.0])
+    return {"pozo": (pozo, f_pozo, _b(pozo, f_pozo)), "fuente": (fnte, f_fnte, _b(fnte, f_fnte))}
 
 
 def espaciado(p, eje, vert):
