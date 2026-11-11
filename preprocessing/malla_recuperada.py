@@ -61,7 +61,7 @@ def main():
     from config.parameters import Parameters
     vert = np.asarray(Parameters(config={**cfg, "metodo": "bfr"}).vert, float)
     xi, h = recuperar(np.load(args.npz)["nodes"], vert)
-    m = mc.generar(cfg, interiores=xi, h_fijo=h, n_suave=0,
+    m = mc.generar(cfg, interiores=xi, h_fijo=h, n_suave=0, refino_k=None,
                    nota_extra=f"; nodos interiores recuperados de {args.npz}")
     m["meta"]["origen"] = f"preprocessing/malla_recuperada.py desde {args.npz}"
 

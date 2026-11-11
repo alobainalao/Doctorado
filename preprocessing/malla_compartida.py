@@ -204,7 +204,7 @@ def generar(cfg, ang_min=ANG_MIN, n_suave=N_SUAVE, refino_k=REFINO_K, h_extra=No
     lado_grupo = {i: g for g, lados in grupos_lado.items() for i in lados}
 
     if h_fijo is not None:
-        h, refino_k = h_fijo, None
+        h = h_fijo
     else:
         prepare_spacing_cache()
         h = spacing_func_cached

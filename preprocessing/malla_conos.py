@@ -1,26 +1,26 @@
 """
-Variante de la malla compartida con los conos de refinamiento de oct 2026
-(commits 87f4654 y 5c2d9a8, retirados en ed9151a): un cono horizontal que
-sigue la pluma y un cono vertical de succión sobre el pozo, superpuestos a
-los 4 niveles de la malla compartida.
+Malla compartida con conos: 4 niveles de espaciado en los que el nivel intermedio son los dos conos de
+oct 2026 (commits 87f4654 y 5c2d9a8) en lugar del anillo radial de la malla compartida.
 
     python -m preprocessing.malla_conos                       # → data/input/malla_conos/malla.pkl
-    python -m preprocessing.malla_conos --s-cono 20 --figura malla.png
+    python -m preprocessing.malla_conos --figura <prefijo>    # + PNG de la malla y del espaciado
 
-Corre en bfr_env.  No sustituye a data/input/malla_compartida/malla.pkl: para
-usarla, un config aparte con "mesh_pkl": "data/input/malla_conos/malla.pkl".
+Corre en bfr_env.  No sustituye a data/input/malla_compartida/malla.pkl: para usarla, un config aparte
+con "mesh_pkl": "data/input/malla_conos/malla.pkl".
 
-Conos (mismas funciones y constantes que entonces, funtions/plume.py y
-funtions/mesh_test.py):
-  * Pluma: eje = línea de corriente de la velocidad de Darcy inicial desde
-    la fuente hasta la salida (RK4, recalculada con el preproceso actual);
-    semiancho de PLUME_W0 en la fuente a PLUME_W1 en la salida; hacia abajo
-    del eje sólo se extiende PLUME_DEPTH_BELOW.
-  * Pozo: eje vertical x = x_pozo desde WELL_R0 por debajo del pozo hasta
-    la cota de la fuente + WELL_Z_OFFSET; semiancho de WELL_R0 a WELL_R1.
-Dentro de cada cono el espaciado parte de s_cono y crece como √d hasta
-`spacing`; el espaciado final es el mínimo con el de la malla compartida
-(círculos de min_sp en pozo y fuente, frontera, refinamiento por K).
+Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
+  * min_sp (4 m)            círculo de radio r_circle (100 m) alrededor del pozo y de la fuente;
+  * s_cone (16 m)           dentro de los dos conos:
+        - pluma: alrededor de la línea de corriente de Darcy desde la fuente hasta la salida (RK4 con la
+          velocidad inicial del preproceso actual), semiancho de PLUME_W0 en la fuente a PLUME_W1 en la
+          salida, y como mucho PLUME_DEPTH_BELOW por debajo del eje;
+        - pozo: columna vertical desde WELL_R0 bajo el pozo hasta el eje de la pluma, semiancho de
+          WELL_R0 en el pozo a WELL_R1 en el eje;
+  * min_sp_boundary (30 m)  sobre la frontera;
+  * spacing (60 m)          en el resto.
+Fuera de cada zona el espaciado crece linealmente con la distancia, GRADO metros por metro, hasta
+`spacing`; el espaciado final es el mínimo de las cuatro zonas y del refinamiento por K de la malla
+compartida (preprocessing/malla_compartida.py:_espaciado_K).
 """
 import argparse
 import json
@@ -38,22 +38,56 @@ from preprocessing import malla_compartida as mc   # noqa: E402
 SALIDA = os.path.join("data", "input", "malla_conos", "malla.pkl")
 EJE = os.path.join("data", "input", "malla_conos", "eje_pluma.npy")
 PREPROCESO = os.path.join("data", "input", "bfr", "real", "adr", "preproceso.pkl")
+GRADO = 0.2          # [m/m] crecimiento del espaciado fuera de cada zona (vecinos con razón ≈ 1.2)
 
 
-def espaciado_conos(p, eje, s_cono):
-    """h(xy) de los dos conos, con s_min = s_cono y s_max = spacing."""
-    from funtions.plume import plume_cone_dist
-    from funtions.mesh_test import (PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW, PLUME_D_FAR,
-                                    WELL_R0, WELL_R1, WELL_Z_OFFSET, _s, _well_vertical_cone)
-    pozo, fnte, s_max = np.asarray(p.pozo, float), np.asarray(p.fnte, float), float(p.spacing)
+def exceso_pluma(xy, eje, w0, w1, abajo):
+    """Distancia de cada punto al cono de la pluma (0 dentro): lateral más allá del semiancho local
+    w(s) = w0 + (w1 − w0)·s/L y vertical más allá de `abajo` por debajo del eje."""
+    seg = np.diff(eje, axis=0)
+    l2 = np.einsum("ij,ij->i", seg, seg)
+    arco = np.r_[0.0, np.cumsum(np.sqrt(l2))]
+    e = np.full(len(xy), np.inf)
+    for k in range(len(seg)):
+        if l2[k] < 1e-20:
+            continue
+        t = np.clip(((xy - eje[k]) @ seg[k]) / l2[k], 0.0, 1.0)
+        proy = eje[k] + t[:, None] * seg[k]
+        w = w0 + (w1 - w0) * (arco[k] + t * np.sqrt(l2[k])) / arco[-1]
+        lat = np.linalg.norm(xy - proy, axis=1)
+        bajo = np.maximum(0.0, proy[:, 1] - abajo - xy[:, 1])
+        e = np.minimum(e, np.hypot(np.maximum(0.0, lat - w), bajo))
+    return e
+
+
+def exceso_pozo(xy, pozo, z_eje, r0, r1):
+    """Distancia al cono vertical del pozo (0 dentro): de z_p − r0 a z_eje, semiancho r0 → r1."""
+    xp, zp = pozo
+    z = xy[:, 1]
+    w = r0 + (r1 - r0) * np.clip((z - zp) / (z_eje - zp), 0.0, 1.0)
+    return np.hypot(np.hypot(np.maximum(0.0, np.abs(xy[:, 0] - xp) - w), np.maximum(0.0, zp - r0 - z)),
+                    np.maximum(0.0, z - z_eje))
+
+
+def espaciado(p, eje, vert):
+    """h(xy) de 4 niveles con los conos como nivel intermedio."""
+    from funtions.mesh_test import PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW, WELL_R0, WELL_R1
+    pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
+    s_min, s_cono = float(p.min_sp), float(p.s_cone)
+    s_bnd, s_max, r_c = float(p.min_sp_boundary), float(p.spacing), float(p.r_circle)
+    z_eje = float(np.interp(pozo[0], eje[::-1, 0], eje[::-1, 1]))   # eje de la pluma sobre el pozo
 
     def h(xy):
-        xy = np.atleast_2d(xy)
-        d = plume_cone_dist(xy, eje, w0=PLUME_W0, w1=PLUME_W1, depth_below=PLUME_DEPTH_BELOW)
-        s_pluma = _s(d, s_cono, s_max, PLUME_D_FAR)
-        s_pozo = _well_vertical_cone(xy, pozo, s_cono, s_max, r0=WELL_R0, r1=WELL_R1,
-                                     z_top=float(fnte[1]) + WELL_Z_OFFSET)
-        return np.minimum(s_pluma, s_pozo)
+        xy = np.atleast_2d(np.asarray(xy, float))
+        d_c = np.minimum(np.linalg.norm(xy - pozo, axis=1), np.linalg.norm(xy - fnte, axis=1))
+        e_cono = np.minimum(exceso_pluma(xy, eje, PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW),
+                            exceso_pozo(xy, pozo, z_eje, WELL_R0, WELL_R1))
+        return np.minimum.reduce([
+            s_min + GRADO * np.maximum(0.0, d_c - r_c),
+            s_cono + GRADO * e_cono,
+            s_bnd + GRADO * mc._dist_borde(xy, vert),
+            np.full(len(xy), s_max),
+        ])
     return h
 
 
@@ -83,7 +117,6 @@ def main():
     ap.add_argument("--config", default=mc.BASE_JSON)
     ap.add_argument("--salida", default=SALIDA)
     ap.add_argument("--preproceso", default=PREPROCESO, help="pkl con la velocidad inicial U[0]")
-    ap.add_argument("--s-cono", type=float, help="espaciado en el eje de los conos (por defecto s_cone)")
     ap.add_argument("--figura", help="prefijo de los PNG (malla y espaciado)")
     args = ap.parse_args()
     os.chdir(CODIGO_DIR)
@@ -97,21 +130,23 @@ def main():
         cfg = json.load(f)
     RUNTIME.params = Parameters(config={**cfg, "metodo": "bfr"})
     p = RUNTIME.params
-    s_cono = float(args.s_cono or p.s_cone)
+    vert = np.asarray(p.vert, float)
 
     eje = compute_plume_streamline(args.preproceso, ruta=EJE)
     if eje is None:
         raise SystemExit(f"[malla] no existe {args.preproceso}")
-    nota = (f"; conos de pluma y pozo con s_cono={s_cono:g} m (eje {EJE}, "
-            f"velocidad inicial de {args.preproceso})")
-    m = mc.generar(cfg, h_extra=espaciado_conos(p, eje, s_cono), nota_extra=nota)
-    m["meta"]["origen"] = m["meta"]["origen"].replace("malla_compartida.py", "malla_conos.py") + f", s_cono={s_cono:g}"
+    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en r < {p.r_circle:g} m de pozo y fuente, {p.s_cone:g} m en los "
+            f"conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera, {p.spacing:g} m lejos (eje {EJE})")
+    m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert), nota_extra=nota)
+    m["meta"]["origen"] = (f"preprocessing/malla_conos.py (min_sp={p.min_sp}, s_cone={p.s_cone} en los conos, "
+                           f"min_sp_boundary={p.min_sp_boundary}, spacing={p.spacing}, r_circle={p.r_circle}, "
+                           f"grado={GRADO})")
     m["eje_pluma"] = eje
 
     os.makedirs(os.path.dirname(args.salida), exist_ok=True)
     with open(args.salida, "wb") as f:
         pickle.dump(m, f)
-    print(f"[malla] {m['meta']['n_nodos']} nodos → {args.salida}")
+    print(f"[malla] {m['meta']['n_nodos']} nodos ({m['meta']['n_dominio']} del dominio) → {args.salida}")
     print(json.dumps(mc.diagnostico(m), indent=2, ensure_ascii=False))
     if args.figura:
         mc.figura(m, args.figura + "_malla.png")

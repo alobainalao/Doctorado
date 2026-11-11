@@ -105,16 +105,16 @@ def main():
 
     extra = ""
     if CONOS:
-        # Eje de la pluma y contorno del cono vertical (funtions/mesh_test.py:_well_vertical_cone: semiancho
-        # WELL_R0 desde WELL_R0 bajo el pozo, crece hasta WELL_R1 en z_top y sólo actúa hasta z = −150 m).
-        from funtions.mesh_test import WELL_R0, WELL_R1, WELL_Z_OFFSET
+        # Eje de la pluma y contorno del cono vertical (preprocessing/malla_conos.py:exceso_pozo: semiancho
+        # WELL_R0 desde WELL_R0 bajo el pozo, crece hasta WELL_R1 en el eje de la pluma sobre el pozo).
+        from funtions.mesh_test import WELL_R0, WELL_R1
         # Malla recuperada de oct 2026: su eje es el que se usó entonces (data/input/plume_streamline.npy).
         eje = np.asarray(d["eje_pluma"] if "eje_pluma" in d else
                          np.load(os.path.join(CODIGO, "data", "input", "plume_streamline.npy")), float)
         xp, zp = (float(v) for v in d["pozo_cor"])
-        z_top = float(fnte[1]) + WELL_Z_OFFSET
-        ancho = lambda z: WELL_R0 + (WELL_R1 - WELL_R0) * np.clip((z - zp) / (z_top - zp), 0, 1)
-        zs = np.array([zp - WELL_R0, zp, -150.0])
+        z_eje = float(np.interp(xp, eje[::-1, 0], eje[::-1, 1]))
+        ancho = lambda z: WELL_R0 + (WELL_R1 - WELL_R0) * np.clip((z - zp) / (z_eje - zp), 0, 1)
+        zs = np.array([zp - WELL_R0, zp, z_eje])
         cont = np.r_[np.c_[xp - ancho(zs), zs], np.c_[xp + ancho(zs), zs][::-1]]
         extra = (f"export const EJE = {json.dumps(np.round(np.c_[px(eje[:, 0]), pz(eje[:, 1])], 1).ravel().tolist())};\n"
                  f"export const CONO_POZO = {json.dumps(np.round(np.c_[px(cont[:, 0]), pz(cont[:, 1])], 1).ravel().tolist())};\n")
