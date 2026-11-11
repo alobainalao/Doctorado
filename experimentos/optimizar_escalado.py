@@ -8,7 +8,9 @@ Diferencias con fenicsx.adjoint.optimize_fenicsx (que no se modifica):
   - y = [Q/Q_max, z_p/1000]: Q (~0.1) y z_p (~300 m) quedan en la misma escala, así `gtol` mide ambos;
   - J y ∇J se calculan juntos (un directo + un adjunto por punto) y se reusan entre fun y jac;
   - reinicios desde el punto final mientras J baje más de 1e-4 relativo (hasta 4);
-  - al final se informa el gradiente proyectado sobre las restricciones activas y las cotas.
+  - al final se informa el gradiente proyectado sobre las restricciones activas y las cotas;
+  - registro por evaluación e iteración (flush) y checkpoint ckpt_escalado_<modelo>_<etiqueta>.json en cada
+    iteración; si existe al arrancar, se reanuda desde él (ronda y punto y). Se borra a mano para empezar de cero.
 Mismas cotas y restricciones (suministro, ciclo de bomba) que optimize_fenicsx. C_ref y f salen de
 data/output/optimizacion_<variante>/adr.json (misma normalización que optimizar_nitrato).
 
@@ -17,6 +19,7 @@ Entorno: fenics_env. Salida: data/output/optimizacion_<variante>/escalado_<model
 import json
 import os
 import sys
+import time
 
 import numpy as np
 
@@ -69,20 +72,43 @@ def main(modelo, variante, zp0, q0, etiqueta):
             g, _ = _solve_adjoint_grad(ctx, st)
             cache.update(k=k, J=float(st["J"]), g=np.asarray(g, float) * esc)
             hist.append(cache["J"])
+            print(f"  [eval {len(hist)}] J={cache['J']:.6e} z_p={x[-1]:.1f} |g|={np.linalg.norm(cache['g']):.2e} "
+                  f"t={time.time()-t0:.0f}s", flush=True)
         return cache["J"], cache["g"]
 
     hist = []
+    t0 = time.time()
+    ruta_ck = os.path.join(dir_out, f"ckpt_escalado_{modelo}_{etiqueta}.json")
     y0 = np.r_[np.full(nQ, q0), zp0 / ESC_Z]
     y = y0.copy()
     rondas = []
-    for r in range(4):
-        res = minimize(lambda v: evalua(v)[0], y, jac=lambda v: evalua(v)[1], method="trust-constr",
+    r0 = 0
+    if os.path.exists(ruta_ck):
+        ck = json.load(open(ruta_ck))
+        y = np.asarray(ck["y"], float)
+        rondas = ck["rondas"]
+        r0 = int(ck["ronda"])
+        print(f"[escalado] reanudando desde checkpoint: ronda {r0}, J={ck['J']:.6e} z_p={y[-1]*ESC_Z:.1f}", flush=True)
+
+    def guarda(yk, r, J):
+        tmp = ruta_ck + ".tmp"
+        json.dump(dict(y=[float(v) for v in yk], ronda=r, J=float(J), rondas=rondas), open(tmp, "w"))
+        os.replace(tmp, ruta_ck)
+
+    for r in range(r0, 4):
+        def cb(xk, state, r=r):
+            guarda(xk, r, state.fun)
+            print(f"  [ronda {r} iter {state.nit}] J={state.fun:.6e} z_p={xk[-1]*ESC_Z:.1f} "
+                  f"optimalidad={state.optimality:.2e} t={time.time()-t0:.0f}s", flush=True)
+            return False
+        res = minimize(lambda v: evalua(v)[0], y, jac=lambda v: evalua(v)[1], method="trust-constr", callback=cb,
                        bounds=bounds, constraints=cons,
                        options={"maxiter": 300, "gtol": 1e-7, "xtol": 1e-10})
         rondas.append(dict(J=float(res.fun), zp=float(res.x[-1] * ESC_Z), nit=int(res.nit), msg=str(res.message)))
         print(f"[escalado] ronda {r}: J={res.fun:.6e} z_p={res.x[-1]*ESC_Z:.1f} nit={res.nit} {res.message}", flush=True)
         mejora = (evalua(y)[0] - res.fun) / max(abs(res.fun), 1e-30)
         y = np.asarray(res.x, float)
+        guarda(y, r + 1, res.fun)
         if r > 0 and mejora < 1e-4:
             break
 
