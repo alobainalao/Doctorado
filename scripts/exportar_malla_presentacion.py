@@ -17,6 +17,8 @@ import numpy as np
 
 CODIGO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRES = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc-sin-sumidero")
+if CODIGO not in sys.path:
+    sys.path.insert(0, CODIGO)
 MALLA = os.path.join(CODIGO, "data", "input", "malla_compartida", "malla.pkl")
 
 XMIN, XMAX, ZMIN, ZMAX = 816.0, 10755.0, -2690.5, 250.5
@@ -78,6 +80,16 @@ def main():
             v["pozo"] = [round(float(lx(d["pozo_cor"][0])), 1), round(float(lz(d["pozo_cor"][1])), 1)]
         ventanas.append(v)
 
+    # Conos del campo de espaciado (funtions/mesh_test.py): círculo r_circle y cono r_cone alrededor de pozo y fuente.
+    from funtions.runtime import RUNTIME
+    from config.parameters import Parameters
+    RUNTIME.params = Parameters(json_path=os.path.join(CODIGO, "config", "malla_sp60.json"))
+    fnte = np.asarray(RUNTIME.params.fnte, float)
+    esc = W_PAN / (XMAX - XMIN)
+    conos = [dict(nombre=n, x=round(float(px(c[0])), 1), z=round(float(pz(c[1])), 1),
+                  r_circulo=round(100.0 * esc, 2), r_cono=round(500.0 * esc, 2))
+             for n, c in (("pozo", np.asarray(d["pozo_cor"], float)), ("fuente", fnte))]
+
     meta = d["meta"]
     info = dict(sha=hashlib.sha256(nodos.tobytes()).hexdigest()[:12], fecha=meta.get("fecha"), n_dominio=int(nd),
                 n_fantasmas=int(len(nodos) - nd), n_triangulos=int(len(t)), ang_min=round(meta["calidad"]["ang_min"], 1),
@@ -87,7 +99,8 @@ def main():
           f"export const INFO = {json.dumps(info)};\n"
           f"export const PANORAMA = {json.dumps(pan)};\n"
           f"export const FRONTERA = {json.dumps(frontera)};\n"
-          f"export const VENTANAS = {json.dumps(ventanas, ensure_ascii=False)};\n")
+          f"export const VENTANAS = {json.dumps(ventanas, ensure_ascii=False)};\n"
+          f"export const CONOS = {json.dumps(conos)};\n")
     ruta = os.path.join(PRES, "src", "slides-avance3", "mallaCompartida.js")
     with open(ruta, "w") as f:
         f.write(js)
