@@ -25,7 +25,7 @@ Sesgos que se evitan
   exacto en ambos backends, sin remuestreo a una rejilla.
 
     python -m experimentos.comparar --caso M_modelo_nuevo/M0_adr
-    python -m experimentos.comparar --grupo M_modelo_nuevo D_caudal_pozo
+    python -m experimentos.comparar --grupo M_modelo_nuevo MC_malla_conos
     python -m experimentos.comparar --todos [--jobs 4] [--sin-video]
 
 Salidas: <caso>/comparacion/{metricas.json, comparacion_{H,C,V}.{mp4,webm},

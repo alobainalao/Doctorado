@@ -5,7 +5,7 @@ Lanzador único de experimentos BFR vs FEniCS (ver experimentos/README.md).
     python -m experimentos.correr --todos --comparar          # grupos A–F completos
     python -m experimentos.correr --grupo M_modelo_nuevo
     python -m experimentos.correr --caso M0_adr --backend bfr
-    python -m experimentos.correr --grupo M_modelo_nuevo D_caudal_pozo --comparar
+    python -m experimentos.correr --grupo M_modelo_nuevo MC_malla_conos --comparar
     python -m experimentos.correr --todos --comparar --animar   # + videos y grillas
     python -m experimentos.correr --grupo P_presentacion --animar --publicar
     python -m experimentos.correr --caso M0_adr --smoke   # prueba rápida (2 pasos)
@@ -166,7 +166,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true", help="listar grupos y casos")
     ap.add_argument("--todos", action="store_true",
-                    help="todos los grupos de comparación (A–F); P_presentacion va aparte")
+                    help="todos los grupos de comparación; P_presentacion va aparte")
     ap.add_argument("--grupo", nargs="+", help="grupos a correr")
     ap.add_argument("--caso", nargs="+", help="casos a correr (nombre o grupo/caso)")
     ap.add_argument("--backend", nargs="+", choices=BACKENDS, help="limitar backends")

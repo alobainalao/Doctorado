@@ -1,0 +1,13 @@
+{
+ "coeficientes": {
+  "adveccion  \u222bK(\u03c8\u2207C)\u00b7\u2207v": -1.000000000000002,
+  "dispersion \u222bK d\u00b7\u2207v": -0.9999999999999319,
+  "almacenamiento \u222b\u03c6C\u03c8 v/\u0394t": -0.9999999999999993
+ },
+ "residuo_rel": 9.955458445736135e-16,
+ "normas": {
+  "adveccion  \u222bK(\u03c8\u2207C)\u00b7\u2207v": 48625759711345.61,
+  "dispersion \u222bK d\u00b7\u2207v": 2985333914785.4956,
+  "almacenamiento \u222b\u03c6C\u03c8 v/\u0394t": 236775624075277.1
+ }
+}

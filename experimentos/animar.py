@@ -12,7 +12,7 @@ videos individuales y en la grilla), para que BFR y FEM se lean igual. En los
 casos que sólo corren BFR (grupos B y F) la columna FEM es la de `ref_fem`.
 
     python -m experimentos.animar --caso M_modelo_nuevo/M0_adr
-    python -m experimentos.animar --grupo M_modelo_nuevo D_caudal_pozo
+    python -m experimentos.animar --grupo M_modelo_nuevo MC_malla_conos
     python -m experimentos.animar --todos [--jobs 4] [--force]
 """
 import argparse

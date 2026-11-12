@@ -1,0 +1,35 @@
+[
+ {
+  "backend": "bfr",
+  "model": "adr",
+  "factor_alm": 1.0,
+  "direccion": "Q uniforme",
+  "eps": 0.01,
+  "adjunto": -18450.43657262302,
+  "fd": -2661.6530406105994,
+  "err_rel": 5.9319465351465865,
+  "J0": 7559.999999999998
+ },
+ {
+  "backend": "bfr",
+  "model": "adr",
+  "factor_alm": 1.0,
+  "direccion": "Q aleatoria",
+  "eps": 0.01,
+  "adjunto": -1933.258076110426,
+  "fd": -724.4955333387679,
+  "err_rel": 1.6684195928733918,
+  "J0": 7559.999999999998
+ },
+ {
+  "backend": "bfr",
+  "model": "adr",
+  "factor_alm": 1.0,
+  "direccion": "(Q,zp) aleatoria",
+  "eps": 0.01,
+  "adjunto": 421897.4651748957,
+  "fd": 84896.01972778054,
+  "err_rel": 3.9695788627984183,
+  "J0": 7559.999999999998
+ }
+]

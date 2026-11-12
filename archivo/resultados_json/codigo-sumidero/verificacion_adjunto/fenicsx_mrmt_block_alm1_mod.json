@@ -1,0 +1,90 @@
+[
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "-grad",
+  "eps": 0.01,
+  "adjunto": -2.458604564327286,
+  "fd": -2.4586045727573946,
+  "err_rel": 3.4288184056066877e-09,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "-grad",
+  "eps": 0.003,
+  "adjunto": -2.458604564327286,
+  "fd": -2.458604553491265,
+  "err_rel": 4.407386683645237e-09,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "Q uniforme",
+  "eps": 0.01,
+  "adjunto": -2.298012724285011,
+  "fd": -2.298012722758358,
+  "err_rel": 6.643361940945438e-10,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "Q uniforme",
+  "eps": 0.003,
+  "adjunto": -2.298012724285011,
+  "fd": -2.298012661261358,
+  "err_rel": 2.7425285345675503e-08,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "Q aleatoria",
+  "eps": 0.01,
+  "adjunto": 0.19044374700998706,
+  "fd": 0.1904437785015034,
+  "err_rel": 1.6535859867340643e-07,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "Q aleatoria",
+  "eps": 0.003,
+  "adjunto": 0.19044374700998706,
+  "fd": 0.19044392805274887,
+  "err_rel": 9.50635515980917e-07,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "(Q,zp) aleatoria",
+  "eps": 0.01,
+  "adjunto": 0.19657381491918435,
+  "fd": 0.19657379275486164,
+  "err_rel": 1.1275319257921778e-07,
+  "J0": 7559.999999999999
+ },
+ {
+  "backend": "fenicsx",
+  "model": "mrmt_block",
+  "factor_alm": 1.0,
+  "direccion": "(Q,zp) aleatoria",
+  "eps": 0.003,
+  "adjunto": 0.19657381491918435,
+  "fd": 0.19657377940044776,
+  "err_rel": 1.8068908630201373e-07,
+  "J0": 7559.999999999999
+ }
+]

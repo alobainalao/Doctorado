@@ -1,0 +1,47 @@
+[
+ {
+  "paso": 0,
+  "normas": {
+   "tiempo": 5486572570.6284075,
+   "difusion": 4737289.971462992,
+   "adveccion": 49474891.30840622,
+   "reaccion": 59263.75000531602,
+   "almacenamiento": 6394926.358499886,
+   "fuente": 5494891383.878784
+  },
+  "residuo_rel": 1.3648742274734565e-15,
+  "sin_almacenamiento": 0.0011637948617624215,
+  "sin_adveccion": 0.009003797864605043,
+  "sin_fuente": 0.9999999999999998
+ },
+ {
+  "paso": 1,
+  "normas": {
+   "tiempo": 5487014573.309322,
+   "difusion": 3181728.480428504,
+   "adveccion": 33142748.823470637,
+   "reaccion": 39512.23717837285,
+   "almacenamiento": 5237945.164787505,
+   "fuente": 5493161596.417326
+  },
+  "residuo_rel": 8.422437181730554e-16,
+  "sin_almacenamiento": 0.0009535392456329363,
+  "sin_adveccion": 0.00603345600556994,
+  "sin_fuente": 1.0
+ },
+ {
+  "paso": 2,
+  "normas": {
+   "tiempo": 5488621199.092302,
+   "difusion": 1591426.6540404577,
+   "adveccion": 15853720.510660939,
+   "reaccion": 19759.03631673229,
+   "almacenamiento": 2241475.147563593,
+   "fuente": 5491685355.3786745
+  },
+  "residuo_rel": 6.073628912622762e-16,
+  "sin_almacenamiento": 0.00040815797018826336,
+  "sin_adveccion": 0.002886858857478619,
+  "sin_fuente": 1.0
+ }
+]

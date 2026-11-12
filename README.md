@@ -1,12 +1,12 @@
 # Simulador ADR / MRMT — línea «sin sumidero»
 
-> **Esta es la rama `sin-sumidero`** (worktree `codigo-sumidero/`). El modelo no considera
-> explícitamente el término de sumidero $W_-$; en su lugar lleva el término de almacenamiento
-> $-S_s\,\partial_t h\,C$ ($S_s=\varphi$). La versión legacy está en `main` (carpeta `codigo/`) y no
-> se modifica. Ver `docs/EQUIVALENCIAS_LEGACY.md` (qué cambió y cómo activarlo),
-> `docs/PENDIENTES.md`, `docs/resultados_modelo_nuevo.md`, `docs/parametros_nitrato.md`,
-> `docs/inventario_data_output.md` y `docs/adjunto_sin_sumidero.pdf` (análisis desde cero).
-> Los benchmarks del libro están en `benchmarks_libro/` (en `main`: `notebooks/2_benchmarks_libro/`).
+> Rama `main`: modelo sin término explícito de sumidero $W_-$, con almacenamiento $-S_s\,\partial_t h\,C$ y salida
+> libre en $\Gamma_{\rm out}$, en dos discretizaciones (RBF-FD «bfr» y elementos finitos «fenicsx») sobre la misma malla.
+> Ver `docs/EQUIVALENCIAS_LEGACY.md`, `docs/PENDIENTES.md`, `docs/resultados_modelo_nuevo.md`,
+> `docs/parametros_nitrato.md` y `docs/adjunto_sin_sumidero.pdf`. Benchmarks del libro en `benchmarks_libro/`.
+> El material histórico (scripts legacy, auditorías, experimentos resueltos y las métricas de las corridas borradas)
+> está en `archivo/` (ver `archivo/README.md`); el estado anterior a la limpieza del 12-nov-2026 está en el tag
+> `antes-limpieza-2026-11-12`.
 
 Simulación numérica de flujo y transporte en medios porosos (contaminación en
 acuíferos), con:
@@ -24,10 +24,8 @@ acuíferos), con:
 ## Estructura
 
 - `preprocessing/`: generación de matrices y malla
-- `pipeline/`: ejecución de la simulación
 - `funtions/`: operadores matemáticos y runtime
 - `view/`: visualización y animación
-- `io/`: carga/guardado
 - `postprocessing/`: curvas de llegada (BTCs)
 - `config/`: parámetros (`default.json`) y geometría
 - `experimentos/`: casos de estudio BFR vs FEniCS (catálogo, lanzador, comparación) — ver `experimentos/README.md`

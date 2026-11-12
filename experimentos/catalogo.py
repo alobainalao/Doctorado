@@ -50,59 +50,6 @@ GRUPOS = {
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
         },
     },
-
-    # ── D. Caudal del pozo, sin fuente  ──────────────
-    "D_caudal_pozo": {
-        "desc": "Caudal de extracción Q_std (cono de depresión), sin fuente",
-        "pregunta": "¿Cómo crece la diferencia con el caudal (cono de depresión más fuerte)?",
-        "casos": {
-            f"D_Q{q:.0e}".replace("-0", "-"): {
-                "desc": f"Q_std={q:g}, sin fuente",
-                "cfg": {"Q_std": q, **SIN_FUENTE},
-            }
-            for q in (1e-2, 3e-2, 1e-1, 7e-1)
-        },
-    },
-
-    # ── E. Paso de tiempo  ──────────────────────────
-    "E_paso_tiempo": {
-        "desc": "Paso de tiempo dt, con fuente y pozo",
-        "pregunta": "¿La diferencia es temporal (dt) o espacial/de formulación?",
-        "casos": {
-            f"E_dt{dt}": {"desc": f"dt={dt} s ({dt / 3600:g} h)", "cfg": {"dt": dt}}
-            for dt in (36000, 7200)
-        },
-    },
-
-    # ── N. Modelo sin W- con almacenamiento (docs/adjunto_sin_sumidero.tex) ──
-    # Ecuación de transporte de la forma no conservativa: sin el sumidero
-    # explícito y con -S_s ∂ₜh·C (factor_almacenamiento_C = 1).
-    # Las 6 variantes: {adr, mrmt_semi, mrmt_block} × {BFR, FEniCS}.
-    "N_modelo_nuevo": {
-        "desc": "ADR / MRMT Semi / MRMT Bloque sin W- y con almacenamiento, BFR y FEniCS",
-        "pregunta": "¿Las 6 variantes del modelo sin W- corren y concuerdan entre backends?",
-        "casos": {
-            f"N_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C",
-                       "cfg": {"model": m, "extract_C": False, "factor_almacenamiento_C": 1.0}}
-            for m in ("adr", "mrmt_semi", "mrmt_block")
-        },
-    },
-
-    # ── N_adjunto: las 6 variantes del modelo nuevo con forward + adjunto (run_type=comparison) ──
-    # Misma configuración física que N_modelo_nuevo; sólo cambia run_type para que se guarde adjoint_results.npz.
-    "N_adjunto": {
-        "desc": "ADR / MRMT Semi / MRMT Bloque sin W- y con almacenamiento, forward + adjunto",
-        "pregunta": "¿Cómo son los adjuntos ψ_h, ψ_C del modelo nuevo en BFR y FEniCS?",
-        "comparar": False,
-        "casos": {
-            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, run_type=comparison",
-                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_almacenamiento_C": 1.0}}
-            for m in ("adr", "mrmt_semi", "mrmt_block")
-        },
-    },
-
-    # ── M_adjunto: forward + adjunto del modelo nuevo con la configuración de main (grupo M) y salida libre ──
     "M_adjunto": {
         "desc": "ADR / MRMT Semi / MRMT Bloque, configuración de main + fuente común, salida libre; forward + adjunto",
         "pregunta": "¿Cómo son los adjuntos ψ_h, ψ_C del modelo nuevo con la configuración final?",
@@ -115,41 +62,6 @@ GRUPOS = {
             for m in ("adr", "mrmt_semi", "mrmt_block")
         },
     },
-
-    # ── N_fuente: como N_adjunto pero con la fuente de contaminante más estrecha en z y menos intensa ──
-    # ε_z de la fuente baja de 60 m (spacing·sigma_fuente) a 30 m y su intensidad de 1e-11 a 5e-12 (valores en
-    # la config); el resto es idéntico a N_adjunto.
-    "N_fuente": {
-        "desc": "N_adjunto con ε_z de la fuente = 30 m e intensidad = 5e-12",
-        "pregunta": "¿Cómo cambian la pluma y los adjuntos con una fuente más estrecha en z y menos intensa?",
-        "comparar": False,
-        "casos": {
-            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12",
-                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_almacenamiento_C": 1.0,
-                                "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}}
-            for m in ("adr", "mrmt_semi", "mrmt_block")
-        },
-    },
-
-    # ── N_fuente_Q: N_fuente con el caudal del pozo Q_std = 1e-3 (valor de default.json hasta el 28-oct) ──
-    "N_fuente_Q": {
-        "desc": "N_fuente con Q_std = 1e-3",
-        "pregunta": "¿Cómo cambian el cono de h, la pluma y los adjuntos con Q_std = 1e-3 en vez de 0.3?",
-        "comparar": False,
-        "casos": {
-            f"NA_{m}": {"desc": f"{m}, sin W-, con -S_s ∂ₜh·C, fuente ε_z=30 m, intensidad=5e-12, Q_std=1e-3",
-                        "cfg": {"model": m, "run_type": "comparison", "extract_C": False,
-                                "factor_almacenamiento_C": 1.0,
-                                "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12, "Q_std": 1e-3}}
-            for m in ("adr", "mrmt_semi", "mrmt_block")
-        },
-    },
-
-    # ── P. Presentación: 6 variantes con adjunto (videos de grilla 3×2) ─────
-    # Sustituye a scripts/generar_comparacion.py y run_all_6_variants.py.
-    # Los casos se llaman como el modelo para que EXP_ROOT funcione con
-    # scripts/animate_*.py (<EXP_ROOT>/<modelo>/<backend>/).
     "P_presentacion": {
         "desc": "ADR / MRMT Semi / MRMT Bloque × BFR / FEniCS, forward + adjunto",
         "comparar": False,

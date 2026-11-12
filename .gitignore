@@ -62,3 +62,7 @@ data/input/*
 *.fls
 *.out
 *.log
+
+# Salidas locales sin seguimiento
+results/
+figures/
