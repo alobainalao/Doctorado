@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.animation import FFMpegWriter
-from matplotlib.colors import Normalize, PowerNorm
+from matplotlib.colors import LogNorm, Normalize, PowerNorm
 from matplotlib.patches import Polygon as _Poly
 from scipy.interpolate import LinearNDInterpolator
 from scipy.spatial import Delaunay
@@ -34,6 +34,8 @@ from scipy.spatial import Delaunay
 from view.plot import get_colormaps
 
 campo = sys.argv[1] if len(sys.argv) > 1 else "C"
+ADJ_LOG = bool(os.environ.get("GRID3_ADJ_LOG"))           # adjuntos en escala log (ver más abajo)
+ADJ_DECADAS = float(os.environ.get("GRID3_ADJ_DECADAS", "4"))
 MODELOS = ["adr", "mrmt_semi", "mrmt_block"]
 BACK = ["bfr", "fenicsx"]
 LM = {"adr": "ADR", "mrmt_semi": "MRMT Semi", "mrmt_block": "MRMT Bloque"}
@@ -57,7 +59,7 @@ INFO = {
     "C_im": dict(lo=0.0, hi=7.6e-11, cmap=cmap_h, lab="C_im  (kg/m³)", fmt="%.1e", pfx="t"),
     "V": dict(lo=4e-12, hi=4.5e-4, cmap=cmap_main, lab="|U|  (m/s)", fmt="%.1e", pfx="t"),
     "adj_H": dict(lo=0.0, hi=None, cmap=_adj, lab="ψ_H", fmt="%.2e", pfx="τ", gamma=0.35),
-    "adj_C": dict(lo=0.0, hi=None, cmap=_adj, lab="ψ_C", fmt="%.2e", pfx="τ", gamma=0.35),
+    "adj_C": dict(lo=0.0, hi=None, cmap=_adj, lab="−ψ_C", fmt="%.2e", pfx="τ", gamma=0.35),
 }[campo]
 # H_RANGE="lo,hi": rango propio de h (el de la presentación, 305–309, apenas deja ver el cono); lo que baja de lo se pinta en gris
 _h_rango = os.environ.get("H_RANGE") if campo == "H" else None
@@ -98,6 +100,8 @@ for m in MODELOS:
             r = None
         if r is not None:
             n, f, dt = r[:3]
+            if campo == "adj_C":
+                f = -f      # ψ_C < 0 en casi todo el dominio (convención del código): se dibuja −ψ_C
             datos[(m, b)] = dict(f=f, dl=Delaunay(np.asarray(n, float)), dt=dt, U=r[3] if len(r) > 3 else None)
 if not datos:
     sys.exit("sin datos")
@@ -131,6 +135,12 @@ if is_adj:
     esc = {b: max(float(np.nanmax(c["f"][:Nt])) for (mm, bb), c in datos.items() if bb == b) for b in BACK}
     cm = copy.copy(INFO["cmap"])
     norm = {b: PowerNorm(INFO["gamma"], vmin=0.0, vmax=esc[b]) for b in BACK}
+    if ADJ_LOG:
+        # GRID3_ADJ_LOG=1: escala logarítmica de ADJ_DECADAS décadas bajo el máximo de cada backend, paleta magma_r
+        # (claro = pequeño, oscuro = grande). Con la escala lineal el pico del pozo deja el resto casi blanco.
+        cm = copy.copy(matplotlib.colormaps["magma_r"])
+        norm = {b: LogNorm(vmin=esc[b] * 10.0 ** -ADJ_DECADAS, vmax=esc[b]) for b in BACK}
+        cm.set_under(cm(0.0))
 else:
     cm = copy.copy(INFO["cmap"]); norm = Normalize(vmin=lo, vmax=hi)
 cm.set_bad("white")
@@ -216,8 +226,9 @@ def barra(x0, x1, nrm, cmp_, etq, fmt, ticks=None):
 
 p0, p1, p2 = ax[(0, 0)].get_position(), ax[(0, 1)].get_position(), ax[(0, 2)].get_position()
 if is_adj:
-    barra(p0.x0 + 0.02, p0.x1 - 0.03, norm["bfr"], cm, INFO["lab"] + " BFR", INFO["fmt"], ticks=np.linspace(0, esc["bfr"], 5))
-    barra(p1.x0 + 0.02, p1.x1 - 0.03, norm["fenicsx"], cm, INFO["lab"] + " FEniCS", INFO["fmt"], ticks=np.linspace(0, esc["fenicsx"], 5))
+    tk = (lambda b: esc[b] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1)) if ADJ_LOG else (lambda b: np.linspace(0, esc[b], 5))
+    barra(p0.x0 + 0.02, p0.x1 - 0.03, norm["bfr"], cm, INFO["lab"] + " BFR" + (" (log)" if ADJ_LOG else ""), INFO["fmt"], ticks=tk("bfr"))
+    barra(p1.x0 + 0.02, p1.x1 - 0.03, norm["fenicsx"], cm, INFO["lab"] + " FEniCS" + (" (log)" if ADJ_LOG else ""), INFO["fmt"], ticks=tk("fenicsx"))
     barra(p2.x0 + 0.03, p2.x1 - 0.03, dnorm, matplotlib.colormaps["RdBu_r"], "BFR/máx − FEniCS/máx", "%.2f")
 else:
     barra(p0.x0 + 0.02, p1.x1 - 0.03, norm, cm, INFO["lab"], INFO["fmt"])
@@ -247,7 +258,9 @@ with w.saving(fig, out, dpi=110):
             gs = {b: grilla(datos[(m, b)], k) for b in BACK if (m, b) in datos}
             for j, b in enumerate(BACK):
                 if (i, j) in im:
-                    im[(i, j)].set_data(gs[b])
+                    # escala log: lo que queda por debajo de la escala (incluidos ceros y negativos) va al color mínimo
+                    im[(i, j)].set_data(np.where(np.isnan(gs[b]), np.nan, np.maximum(gs[b], norm[b].vmin * 0.5))
+                                        if is_adj and ADJ_LOG else gs[b])
                 if (i, j) in qv:
                     qv[(i, j)].set_UVC(*flechas(datos[(m, b)], k))
             if (i, 2) in im:
