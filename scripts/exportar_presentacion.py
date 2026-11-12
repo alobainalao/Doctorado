@@ -1,16 +1,15 @@
 """
-Exporta a la presentación (presentaciones/avance1-doc-sin-sumidero) las salidas del grupo M_modelo_nuevo:
-métricas y series temporales como módulo JS y los videos de comparación BFR | FEniCSx.
+Exporta a la presentación (presentaciones/avance1-doc) las salidas del grupo M_modelo_nuevo:
+métricas y series temporales como módulo JS (los videos de la presentación son los grid3 de correr_main).
 
     python3 scripts/exportar_presentacion.py [ruta_de_la_presentacion]
 """
 import json
 import os
-import shutil
 import sys
 
 CODIGO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PRES = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc-sin-sumidero")
+PRES = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc")
 RAIZ = os.path.join(CODIGO, "data", "output", "experimentos", "M_modelo_nuevo")
 CASOS = [("M0_adr", "ADR"), ("M1_mrmt_semi", "MRMT Semi"), ("M2_mrmt_block", "MRMT Bloque")]
 PASO = 4   # submuestreo de las series (144 pasos -> 36 puntos)
@@ -37,13 +36,9 @@ def main():
         res = {k: m["resumen"][k] for k in RES}
         ser = {k: [round(float(v), 12) for v in m["series"][k][::PASO]] for k in SER}
         salida.append({"id": caso, "label": etq, "resumen": res, "series": ser})
-        dst = os.path.join(PRES, "public", "videos", "sin-sumidero", caso)
-        os.makedirs(dst, exist_ok=True)
-        for campo in ("H", "V", "C"):
-            shutil.copy(os.path.join(RAIZ, caso, "comparacion", f"comparacion_{campo}.mp4"), os.path.join(dst, f"{campo}.mp4"))
     ruta = os.path.join(PRES, "src", "slides-avance3", "modeloNuevo.js")
     with open(ruta, "w") as f:
-        f.write("// Generado por codigo-sumidero/scripts/exportar_presentacion.py (grupo M_modelo_nuevo). No editar a mano.\n")
+        f.write("// Generado por codigo/scripts/exportar_presentacion.py (grupo M_modelo_nuevo). No editar a mano.\n")
         f.write("export const MODELOS = " + json.dumps(salida, ensure_ascii=False, indent=1) + ";\n")
     print("escrito", ruta)
 
