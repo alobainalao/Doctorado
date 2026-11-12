@@ -145,9 +145,9 @@ if is_adj:
         if ADJ_LOG:
             cm = copy.copy(matplotlib.colormaps["magma_r"])
             norm = {b: LogNorm(vmin=tope * 10.0 ** -ADJ_DECADAS, vmax=tope) for b in BACK}
-        else:
-            cm = copy.copy(cmap_h if campo == "adj_C" else cmap_main)
-            norm = {b: Normalize(vmin=0.0, vmax=tope) for b in BACK}
+        else:   # paleta original de los adjuntos (YlOrRd, potencia γ), ahora con una sola escala
+            cm = copy.copy(INFO["cmap"])
+            norm = {b: PowerNorm(INFO["gamma"], vmin=0.0, vmax=tope) for b in BACK}
         cm.set_under(cm(0.0)); cm.set_over(cm(1.0))
     elif ADJ_LOG:
         # GRID3_ADJ_LOG=1: escala logarítmica de ADJ_DECADAS décadas bajo el máximo de cada backend, paleta magma_r
@@ -241,7 +241,7 @@ def barra(x0, x1, nrm, cmp_, etq, fmt, ticks=None):
 p0, p1, p2 = ax[(0, 0)].get_position(), ax[(0, 1)].get_position(), ax[(0, 2)].get_position()
 if is_adj and ADJ_UNICA:
     barra(p0.x0 + 0.02, p1.x1 - 0.03, norm["bfr"], cm, INFO["lab"] + (" (log)" if ADJ_LOG else ""), INFO["fmt"],
-          ticks=esc["bfr"] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1) if ADJ_LOG else None)
+          ticks=esc["bfr"] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1) if ADJ_LOG else np.linspace(0, esc["bfr"], 5))
     barra(p2.x0 + 0.03, p2.x1 - 0.03, dnorm, matplotlib.colormaps["RdBu_r"], "BFR − FEniCS", "%.1e")
 elif is_adj:
     tk = (lambda b: esc[b] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1)) if ADJ_LOG else (lambda b: np.linspace(0, esc[b], 5))
