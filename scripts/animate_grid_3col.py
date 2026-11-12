@@ -35,6 +35,7 @@ from view.plot import get_colormaps
 
 campo = sys.argv[1] if len(sys.argv) > 1 else "C"
 ADJ_LOG = bool(os.environ.get("GRID3_ADJ_LOG"))           # adjuntos en escala log (ver más abajo)
+ADJ_UNICA = bool(os.environ.get("GRID3_ADJ_UNICA"))       # adjuntos con una sola escala lineal para los dos códigos
 ADJ_DECADAS = float(os.environ.get("GRID3_ADJ_DECADAS", "4"))
 MODELOS = ["adr", "mrmt_semi", "mrmt_block"]
 BACK = ["bfr", "fenicsx"]
@@ -135,7 +136,20 @@ if is_adj:
     esc = {b: max(float(np.nanmax(c["f"][:Nt])) for (mm, bb), c in datos.items() if bb == b) for b in BACK}
     cm = copy.copy(INFO["cmap"])
     norm = {b: PowerNorm(INFO["gamma"], vmin=0.0, vmax=esc[b]) for b in BACK}
-    if ADJ_LOG:
+    if ADJ_UNICA:
+        # GRID3_ADJ_UNICA=1: una sola escala lineal para BFR y FEniCS, como los grids del estado, con la paleta del
+        # campo correspondiente (−ψ_C ↔ C, ψ_h ↔ H). Tope = percentil 99.9 de los dos (un pico aislado no la fija).
+        # Con GRID3_ADJ_LOG además: la misma escala log (magma_r, ADJ_DECADAS décadas bajo el tope) para los dos.
+        tope = max(float(np.nanpercentile(c["f"][:Nt], 99.9)) for c in datos.values())
+        esc = {b: tope for b in BACK}
+        if ADJ_LOG:
+            cm = copy.copy(matplotlib.colormaps["magma_r"])
+            norm = {b: LogNorm(vmin=tope * 10.0 ** -ADJ_DECADAS, vmax=tope) for b in BACK}
+        else:
+            cm = copy.copy(cmap_h if campo == "adj_C" else cmap_main)
+            norm = {b: Normalize(vmin=0.0, vmax=tope) for b in BACK}
+        cm.set_under(cm(0.0)); cm.set_over(cm(1.0))
+    elif ADJ_LOG:
         # GRID3_ADJ_LOG=1: escala logarítmica de ADJ_DECADAS décadas bajo el máximo de cada backend, paleta magma_r
         # (claro = pequeño, oscuro = grande). Con la escala lineal el pico del pozo deja el resto casi blanco.
         cm = copy.copy(matplotlib.colormaps["magma_r"])
@@ -150,7 +164,7 @@ if _h_rango:
 # Escala simétrica de la diferencia: máximo sobre una muestra de instantes.
 ks = np.unique(np.linspace(0, Nt - 1, 12).astype(int))
 dmax = 0.0
-sb, sf = (esc["bfr"], esc["fenicsx"]) if is_adj else (1.0, 1.0)   # adjuntos: diferencia de campos normalizados
+sb, sf = (esc["bfr"], esc["fenicsx"]) if is_adj and not ADJ_UNICA else (1.0, 1.0)   # adjuntos: diferencia normalizada
 for m in MODELOS:
     if (m, "bfr") in datos and (m, "fenicsx") in datos:
         for k in ks:
@@ -225,7 +239,11 @@ def barra(x0, x1, nrm, cmp_, etq, fmt, ticks=None):
 
 
 p0, p1, p2 = ax[(0, 0)].get_position(), ax[(0, 1)].get_position(), ax[(0, 2)].get_position()
-if is_adj:
+if is_adj and ADJ_UNICA:
+    barra(p0.x0 + 0.02, p1.x1 - 0.03, norm["bfr"], cm, INFO["lab"] + (" (log)" if ADJ_LOG else ""), INFO["fmt"],
+          ticks=esc["bfr"] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1) if ADJ_LOG else None)
+    barra(p2.x0 + 0.03, p2.x1 - 0.03, dnorm, matplotlib.colormaps["RdBu_r"], "BFR − FEniCS", "%.1e")
+elif is_adj:
     tk = (lambda b: esc[b] * 10.0 ** -np.arange(ADJ_DECADAS, -1, -1)) if ADJ_LOG else (lambda b: np.linspace(0, esc[b], 5))
     barra(p0.x0 + 0.02, p0.x1 - 0.03, norm["bfr"], cm, INFO["lab"] + " BFR" + (" (log)" if ADJ_LOG else ""), INFO["fmt"], ticks=tk("bfr"))
     barra(p1.x0 + 0.02, p1.x1 - 0.03, norm["fenicsx"], cm, INFO["lab"] + " FEniCS" + (" (log)" if ADJ_LOG else ""), INFO["fmt"], ticks=tk("fenicsx"))
@@ -237,7 +255,7 @@ timer = fig.text(p2.x1, 0.992, f"{INFO['pfx']} = 0.0 h", ha="right", va="top", f
                  fontweight="bold", fontfamily="monospace", color="#000080",
                  bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="#aaaacc", lw=1.5, alpha=0.92))
 for j, tt in enumerate([LB["bfr"], LB["fenicsx"],
-                        "BFR/máx − FEniCS/máx" if is_adj else "BFR − FEniCS"]):
+                        "BFR/máx − FEniCS/máx" if is_adj and not ADJ_UNICA else "BFR − FEniCS"]):
     p = ax[(0, j)].get_position()
     fig.text(p.x0 + p.width / 2, p.y1 + 0.006, tt, ha="center", va="bottom", fontsize=20,
              fontweight="bold", color="#cc0000")
