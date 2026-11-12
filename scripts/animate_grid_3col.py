@@ -11,6 +11,8 @@ Lee <EXP_ROOT>/NA_<modelo>/<backend>/{simulation,adjoint}_results.npz (EXP_ROOT 
 data/output/experimentos/N_adjunto) y escribe <EXP_ROOT>/grid3/grid3_<campo>.mp4.
 Los adjuntos de BFR no están validados. V: |u| con flechas (dirección de u). C_im: media de las regiones inmóviles.
 Adjuntos en la convención del código (L = J − ψ·R), como la presentación; el documento usa ψ = −ψ_código/Δt.
+Por defecto los adjuntos comparten una sola barra de color entre BFR y FEniCS: −ψ_C (ψ_C < 0) en escala log de
+GRID3_ADJ_DECADAS décadas con magma_r, ψ_h con YlOrRd en escala de potencia; la diferencia es BFR − FEniCS directa.
 """
 import copy
 import os
@@ -34,8 +36,10 @@ from scipy.spatial import Delaunay
 from view.plot import get_colormaps
 
 campo = sys.argv[1] if len(sys.argv) > 1 else "C"
-ADJ_LOG = bool(os.environ.get("GRID3_ADJ_LOG"))           # adjuntos en escala log (ver más abajo)
-ADJ_UNICA = bool(os.environ.get("GRID3_ADJ_UNICA"))       # adjuntos con una sola escala lineal para los dos códigos
+# Adjuntos (por defecto): una sola escala para BFR y FEniCS; −ψ_C en escala log (magma_r) y ψ_h con la paleta
+# original (YlOrRd, potencia). GRID3_ADJ_UNICA=0 vuelve a una escala por código; GRID3_ADJ_LOG=0/1 fuerza la escala.
+ADJ_LOG = os.environ.get("GRID3_ADJ_LOG", "1" if campo == "adj_C" else "0") == "1"
+ADJ_UNICA = os.environ.get("GRID3_ADJ_UNICA", "1") == "1"
 ADJ_DECADAS = float(os.environ.get("GRID3_ADJ_DECADAS", "4"))
 MODELOS = ["adr", "mrmt_semi", "mrmt_block"]
 BACK = ["bfr", "fenicsx"]

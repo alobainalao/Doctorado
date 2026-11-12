@@ -7,7 +7,7 @@ salidas donde las deja main.py: data/output/<backend>/{data,figures}/real/<model
     python -m experimentos.correr_main --grids              # + grids 3x2 (data/output/grid/grid_<campo>.mp4)
     python -m experimentos.correr_main --malla data/input/malla_conos/malla.pkl \
         --exp-root data/output/experimentos/MC_malla_conos/grid_runs [--grids]
-                                                            # otra malla: salidas <exp-root>/<modelo>/<backend>, grids en <exp-root>/grid
+                                                            # otra malla: salidas <exp-root>/<modelo>/<backend>, grids 3x3 en <exp-root>/grid3
 
 Config = experimentos/base.json (default.json de main con malla compartida) + n_stencil 25 + salida libre +
 fuente común (eps_z 30 m, 5e-12).  No se fija exp_dir, así que las rutas son las de main.
@@ -67,10 +67,17 @@ def comparar(modelos, run_type):
 
 
 def grids(run_type):
-    env = {**os.environ, "EXP_ROOT": os.path.join(CODIGO_DIR, EXP_ROOT)} if EXP_ROOT else None
+    """Con --exp-root: grids 3x3 (BFR | FEniCSx | diferencia) de scripts/animate_grid_3col.py en <exp-root>/grid3,
+    con su estilo por defecto. Sin él: los grids 3x2 de main (scripts/animate_grid.py) en data/output/grid."""
+    if EXP_ROOT:
+        env = {**os.environ, "EXP_ROOT": os.path.join(CODIGO_DIR, EXP_ROOT), "EXP_PREFIJO": ""}
+        for campo in CAMPOS:
+            subprocess.call(["conda", "run", "-n", "bfr_env", "--no-capture-output", "python",
+                             "scripts/animate_grid_3col.py", campo], cwd=CODIGO_DIR, env=env)
+        return
     for campo in CAMPOS:
         subprocess.call(["conda", "run", "-n", "bfr_env", "--no-capture-output", "python",
-                         "scripts/animate_grid.py", campo, run_type], cwd=CODIGO_DIR, env=env)
+                         "scripts/animate_grid.py", campo, run_type], cwd=CODIGO_DIR)
 
 
 if __name__ == "__main__":
