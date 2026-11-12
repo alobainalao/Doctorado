@@ -50,7 +50,7 @@ from config.geometry import build_geometry  # noqa: E402
 from experimentos.catalogo import GRUPOS, iter_casos  # noqa: E402
 
 OUT_ROOT = os.path.join(CODIGO_DIR, "data", "output", "experimentos")
-MALLA_PKL = os.path.join(CODIGO_DIR, "data", "input", "malla_compartida", "malla.pkl")
+MALLA_PKL = os.path.join(CODIGO_DIR, "data", "input", "malla_conos", "malla.pkl")   # malla común desde el 12-nov-2026
 TOL_NODO = 1e-6          # [m] emparejamiento BFR ↔ vértices FEM
 MAX_CUADROS = 144        # el video se submuestrea si Nt es mayor (las métricas no)
 IGNORAR_CFG = {"metodo", "exp_dir", "keep_pre"}

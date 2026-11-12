@@ -2,7 +2,7 @@
   "model": "adr",
   "domain": "real",
   "run_type": "standard",
-  "mesh_pkl": "data/input/malla_compartida/malla.pkl",
+  "mesh_pkl": "data/input/malla_conos/malla.pkl",
   "pre": true,
   "save_dat": true,
   "animate": false,

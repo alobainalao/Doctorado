@@ -5,8 +5,8 @@ oct 2026 (commits 87f4654 y 5c2d9a8) en lugar del anillo radial de la malla comp
     python -m preprocessing.malla_conos                       # → data/input/malla_conos/malla.pkl
     python -m preprocessing.malla_conos --figura <prefijo>    # + PNG de la malla y del espaciado
 
-Corre en bfr_env.  No sustituye a data/input/malla_compartida/malla.pkl: para usarla, un config aparte
-con "mesh_pkl": "data/input/malla_conos/malla.pkl".
+Corre en bfr_env.  Desde el 12-nov-2026 es la malla común de BFR y FEniCSx (`mesh_pkl` de experimentos/base.json y
+config/nitrato_vscale_malla.json); la malla de 4 niveles anterior queda en data/input/malla_compartida/malla.pkl.
 
 Niveles (valores del config: min_sp, s_cone, min_sp_boundary, spacing):
   * min_sp (4 m)            dos cápsulas (rectángulo entre dos centros más un círculo de radio R_CAPSULA
