@@ -47,6 +47,8 @@ class Parameters:
                 "Vscale", "demand_day", "demand_agri",
                 "S0", "S_max", "t0_hour",
                 "pump_cycling", "pump_ton", "pump_toff",
+                # Control fijo (experimentos/correr_optimo.py): serie Q(t) y profundidad del pozo
+                "Q_control", "zp_control",
                 "bfr_mesh",
                 # Experimentos (experimentos/): BC de salida BFR, malla congelada
                 # y carpeta de salida propia por caso.
@@ -196,6 +198,9 @@ class Parameters:
                               getattr(self, "lado_cuadrado", 1000.0))
         for k, v in geom.items():
             setattr(self, k, v)
+        # Profundidad del pozo impuesta (p. ej. la óptima); x_p no cambia.
+        if getattr(self, "zp_control", None) is not None:
+            self.pozo = np.array([self.pozo[0], float(self.zp_control)])
         # Fuente de contaminante: valores absolutos opcionales (None = los de la configuración estándar).
         #   epsilon_z_fuente [m]: ancho vertical ε_z (= epsilon_y) de la gaussiana (estándar: spacing·sigma_fuente).
         #   intensidad_fuente: coeficiente del pico temporal de la fuente (estándar: 1e-11; el de la base, 1e-12, es 1/10).
@@ -270,6 +275,10 @@ class Parameters:
         # primera iteración (bombeo suficiente para arrastrar el contaminante
         # de z=+109 m hacia el pozo en z=−700 m) y JE ≠ 0 al arranque.
         _q0 = np.full(self.Nt, self.Q_std)
+        # Serie de caudal impuesta (p. ej. la óptima), una por paso de tiempo.
+        if getattr(self, "Q_control", None) is not None:
+            _q0 = np.asarray(self.Q_control, float)
+            assert len(_q0) == self.Nt, f"Q_control tiene {len(_q0)} valores y Nt={self.Nt}"
 
         Q_base_rest = [1e-4, 1e-5, 0]
         self.Qout = [_q0.copy()] + [np.full(self.Nt, Q_base_rest[i]) for i in range(self.K - 1)]

@@ -87,6 +87,20 @@ def _lu_solver(A, comm):
     return ksp
 
 
+def _campo_desde_dual(Qs, hist):
+    """M⁻¹·Λ para cada fila de `hist` (…, N_Q): de vector dual (∫ψ z_i) a coeficientes del campo ψ."""
+    Mq = assemble_matrix(fem.form(inner(TrialFunction(Qs), TestFunction(Qs)) * ufl.dx)); Mq.assemble()
+    ksp_M = _lu_solver(Mq, Qs.mesh.comm)
+    lam, campo = Mq.createVecRight(), Mq.createVecLeft()
+    out = np.array(hist, float)
+    for idx in np.ndindex(out.shape[:-1]):
+        lam.array[:] = out[idx]
+        ksp_M.solve(lam, campo)
+        out[idx] = campo.array
+    ksp_M.destroy(); Mq.destroy(); lam.destroy(); campo.destroy()
+    return out
+
+
 def build_context(pozo, p, mesh_cache):
     """Arma todo lo independiente de los controles (espacios, K_z, φ, D estático,
     fronteras, condición inicial). `mesh_cache=(domain, facet_tags, porosidad)`."""
@@ -483,6 +497,7 @@ def _solve_adjoint_grad(ctx, states):
 
     psiH_hist = []   # acumula en orden backward; se invierte al final
     psiC_hist = []
+    psiIm_hist = []  # MRMT: multiplicadores de C_im,r en DOFs de Q (solo para guardar y graficar)
 
     def arr(fn_space, ufl_form):
         v = assemble_vector(fem.form(ufl_form))
@@ -636,6 +651,8 @@ def _solve_adjoint_grad(ctx, states):
         # capturar estado adjunto del paso n (antes de los carry-overs)
         psiH_hist.append(psiH.x.array.copy())
         psiC_hist.append(psiC.x.array.copy())
+        if psiC_im_N is not None:
+            psiIm_hist.append(np.stack(psiC_im_N))
 
         # ---- gradiente: dJ/dθ = ∂J/∂θ + ψ_h·∂R^h/∂θ + ψ_C·∂R^C/∂θ ----
         # Q_n:  J3 + flujo (Q·gauss_flow)
@@ -703,6 +720,9 @@ def _solve_adjoint_grad(ctx, states):
         "psiH": np.asarray(psiH_hist[::-1]) / dt,   # (Nt, N_G)
         "psiC": np.asarray(psiC_hist[::-1]) / dt,   # (Nt, N_Q)
     }
+    if psiIm_hist:
+        # vector dual (lleva la masa ∫z_i z_j); el campo se obtiene con _campo_desde_dual al guardar
+        adj_states["psiIm"] = np.moveaxis(np.asarray(psiIm_hist[::-1]), 1, 0) / dt   # (Nr, Nt, N_Q)
     return np.concatenate([grad_Q, [grad_zp]]), adj_states
 
 
@@ -902,4 +922,5 @@ def adjoint_fenicsx(p, mesh_cache=None):
         fx_io.save_adjoint_results(
             p.save_data, nodes_G, nodes_Q,
             adj_states["psiH"], adj_states["psiC"], p.dt,
+            psiIm_hist=_campo_desde_dual(ctx.Q, adj_states["psiIm"]) if "psiIm" in adj_states else None,
         )

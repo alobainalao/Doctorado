@@ -914,6 +914,9 @@ class SimulationAdjoint:
                     self.psi_H[k][np.asarray(d.groups["boundary:outlet"], int)] = 0.0
                 self.psi_C[k] = self.exacto["LamC"][step + 1] / (p.dt * d.wi)
                 psiC_im_n = None
+                lam_im = self.exacto.get("LamIm")
+                if lam_im is not None and lam_im[step + 1] is not None:
+                    self.psi_C_im = lam_im[step + 1] / (p.dt * d.wi)   # solo para guardar (psi_Ci), misma escala que ψ_C
             else:
               self.psi_H[k], self.psi_C[k], psiC_im_n = step_adjoint(
                 A_solver=d.A_H,
@@ -1321,7 +1324,7 @@ def finalize_outputs_adj(outputs, sim):
 
         if "mrmt" in p.model:
             save_dict["psi_Ci"] = np.array([
-                np.array(hist) for hist in outputs["psi_Ci_hist"]
+                np.array(hist[::-1]) for hist in outputs["psi_Ci_hist"]   # se llenó hacia atrás: orden directo
             ])
 
         np.savez(

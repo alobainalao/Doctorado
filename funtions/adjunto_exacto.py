@@ -242,6 +242,7 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
         e_r = np.asarray(d.exp_lam_dt, float)
         a_r = beta * (1.0 - e_r)
     ybar = [np.zeros(N) for _ in range(Nr)]       # cotangente de y_r^{ℓ} (bloque) / de C_im,r^{ℓ} (semi)
+    LamIm = [None] * (Nt + 2)                     # multiplicador de C_im,r (−cotangente) al nivel ℓ, solo para guardar
     B_next = None
     for l in range(Nt, 0, -1):
         coefA, coefB = _coefs(d, p, pho, Un[l], Dn[l], Dn[l - 1], ht[l])
@@ -271,6 +272,8 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
                 ct = (1.0 - a_r[r]) * ct + (1.0 - e_r[r]) * ybar[r]
             ybar = nueva
         LamC[l] = -splu(A.T.tocsc()).solve(ct)
+        if Nr:
+            LamIm[l] = -np.array(ybar)
         B_next = B
         # El residuo r_C^ℓ = A C_sol − B x^{ℓ-1} (− Σ Q y) se evalúa con la solución SIN recortar:
         # x^ℓ guardado = max(C_sol, 0) (step_time). Se recupera resolviendo de nuevo el paso.
@@ -318,7 +321,7 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
             qv = Q[(s - 1) % Nt]
             g_zp += (LamH[s + 1] @ (E * dd)) * ((1.0 - th) * qv + th * qn)
     if debug is not None:
-        debug.update(sigma=sigma, LamC=LamC, LamH=LamH, Hn=Hn, Un=Un, Cn=Cn)
+        debug.update(sigma=sigma, LamC=LamC, LamH=LamH, LamIm=LamIm, Hn=Hn, Un=Un, Cn=Cn)
     return gQ, g_zp
 
 

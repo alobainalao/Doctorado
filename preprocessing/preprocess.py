@@ -32,6 +32,8 @@ def run_preprocess():
             _m = pickle.load(f)
         nodes, groups, normals = _m["nodes"], _m["groups"], _m["normals"]
         simplices, pozo_cor = _m["simplices"], _m["pozo_cor"]
+        if getattr(p, "zp_control", None) is not None:   # pozo desplazado: observación en la nueva posición
+            pozo_cor = np.asarray(p.pozo, float)
         triangulos = _m.get("triangles")
         print(f">>> Malla congelada: {mesh_pkl} ({len(nodes)} nodos)")
     else:

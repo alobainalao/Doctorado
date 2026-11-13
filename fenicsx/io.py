@@ -40,9 +40,10 @@ def save_results(save_dir, nodes, H_hist, C_hist, U_hist, dt, C_im_hist=None, no
     print(f"[fenicsx] datos guardados ✔  {path}")
 
 
-def save_adjoint_results(save_dir, nodes_G, nodes_Q, psiH_hist, psiC_hist, dt):
+def save_adjoint_results(save_dir, nodes_G, nodes_Q, psiH_hist, psiC_hist, dt, psiIm_hist=None):
     """Guarda el historial adjunto (psiH en DOFs de G, psiC en DOFs de Q) en
-    `{save_dir}/adjoint_results.npz`, análogo a finalize_outputs_adj de bfr."""
+    `{save_dir}/adjoint_results.npz`, análogo a finalize_outputs_adj de bfr.
+    MRMT: psiIm_hist (Nr, Nt, N_Q), multiplicadores de las regiones inmóviles (psi_Ci, como en bfr)."""
     os.makedirs(save_dir, exist_ok=True)
     path = f"{save_dir}/adjoint_results.npz"
     np.savez(
@@ -52,6 +53,7 @@ def save_adjoint_results(save_dir, nodes_G, nodes_Q, psiH_hist, psiC_hist, dt):
         nodes_G=np.asarray(nodes_G),   # (N_G, 2)  DOFs de G (Lagrange-1)
         nodes_Q=np.asarray(nodes_Q),   # (N_Q, 2)  DOFs de Q (Lagrange-2)
         dt=dt,
+        **({"psi_Ci": np.asarray(psiIm_hist)} if psiIm_hist is not None else {}),
     )
     print(f"[fenicsx] adjunto guardado ✔  {path}")
 

@@ -2,7 +2,8 @@
 """
 animate_grid_3col.py  <campo>
 
-campo ∈ {H, dH, C, V, C_im, adj_H, adj_C}   (dH = h − h del primer paso guardado)
+campo ∈ {H, dH, C, V, C_im, adj_H, adj_C, adj_Ci0, adj_Ci1, adj_Ci2}   (dH = h − h del primer paso guardado;
+adj_Ci<r>: adjunto de la región inmóvil r, solo MRMT)
 
 Grilla 3 × 3 como la de animate_grid.py (filas ADR / MRMT semi / MRMT bloque; columnas BFR / FEniCS) con una
 tercera columna BFR − FEniCS (escala simétrica propia, mapa RdBu_r). Mismos mapas de color y rangos de la
@@ -38,7 +39,8 @@ from view.plot import get_colormaps
 campo = sys.argv[1] if len(sys.argv) > 1 else "C"
 # Adjuntos (por defecto): una sola escala para BFR y FEniCS; −ψ_C en escala log (magma_r) y ψ_h con la paleta
 # original (YlOrRd, potencia). GRID3_ADJ_UNICA=0 vuelve a una escala por código; GRID3_ADJ_LOG=0/1 fuerza la escala.
-ADJ_LOG = os.environ.get("GRID3_ADJ_LOG", "1" if campo == "adj_C" else "0") == "1"
+ES_IM = campo.startswith("adj_Ci")
+ADJ_LOG = os.environ.get("GRID3_ADJ_LOG", "1" if campo == "adj_C" or ES_IM else "0") == "1"
 ADJ_UNICA = os.environ.get("GRID3_ADJ_UNICA", "1") == "1"
 ADJ_DECADAS = float(os.environ.get("GRID3_ADJ_DECADAS", "4"))
 MODELOS = ["adr", "mrmt_semi", "mrmt_block"]
@@ -65,6 +67,7 @@ INFO = {
     "V": dict(lo=4e-12, hi=4.5e-4, cmap=cmap_main, lab="|U|  (m/s)", fmt="%.1e", pfx="t"),
     "adj_H": dict(lo=0.0, hi=None, cmap=_adj, lab="ψ_H", fmt="%.2e", pfx="τ", gamma=0.35),
     "adj_C": dict(lo=0.0, hi=None, cmap=_adj, lab="−ψ_C", fmt="%.2e", pfx="τ", gamma=0.35),
+    **{f"adj_Ci{r}": dict(lo=0.0, hi=None, cmap=_adj, lab=f"−ψ_im,{r + 1}", fmt="%.2e", pfx="τ", gamma=0.35) for r in range(3)},
 }[campo]
 # H_RANGE="lo,hi": rango propio de h (el de la presentación, 305–309, apenas deja ver el cono); lo que baja de lo se pinta en gris
 _h_rango = os.environ.get("H_RANGE") if campo == "H" else None
@@ -76,6 +79,11 @@ def cargar(m, b):
     d0 = os.path.join(ROOT, f"{PREFIJO}{m}", b)
     if is_adj:
         z = np.load(os.path.join(d0, "adjoint_results.npz"), allow_pickle=True)
+        if ES_IM:
+            if "psi_Ci" not in z.files:
+                return None
+            nod = z["nodes"] if b == "bfr" else z["nodes_Q"]
+            return nod, np.asarray(z["psi_Ci"], float)[int(campo[-1])], float(z["dt"])
         fk = "psi_H" if campo == "adj_H" else "psi_C"
         if b == "bfr":
             return z["nodes"], np.asarray(z[fk], float)[:, 0], float(z["dt"])
@@ -105,7 +113,7 @@ for m in MODELOS:
             r = None
         if r is not None:
             n, f, dt = r[:3]
-            if campo == "adj_C":
+            if campo == "adj_C" or ES_IM:
                 f = -f      # ψ_C < 0 en casi todo el dominio (convención del código): se dibuja −ψ_C
             datos[(m, b)] = dict(f=f, dl=Delaunay(np.asarray(n, float)), dt=dt, U=r[3] if len(r) > 3 else None)
 if not datos:
@@ -196,7 +204,7 @@ for i, m in enumerate(MODELOS):
         ax[(i, j)] = a
         clip = _Poly(_VERTS, transform=a.transData, fc="none", ec="none"); a.add_patch(clip)
         if j < 2 and (m, BACK[j]) not in datos or j == 2 and not all((m, b) in datos for b in BACK):
-            a.text(0.5, 0.5, "sin región inmóvil" if campo == "C_im" else "sin datos", ha="center",
+            a.text(0.5, 0.5, "sin región inmóvil" if campo == "C_im" or ES_IM else "sin datos", ha="center",
                    va="center", transform=a.transAxes, fontsize=16)
             continue
         g = np.full(_XI.shape, np.nan)
