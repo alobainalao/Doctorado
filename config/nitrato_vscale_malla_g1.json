@@ -77,5 +77,5 @@
   "C_ref": 0.05,
   "normalizar_J": true,
   "factor_almacenamiento_C": 1.0,
-  "mesh_pkl": "data/input/malla_compartida/malla.pkl"
+  "mesh_pkl": "data/input/malla_conos/malla.pkl"
 }
