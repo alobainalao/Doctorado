@@ -850,15 +850,47 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         gn = float(np.linalg.norm(g_scaled))
         history["grad_norm"].append(gn)
         if ctx.comm.rank == 0:
-            print(f"[fenicsx-opt grad #{n_jac[0]}] ‖∇J‖={gn:.3e} (escalado, gtol=1e-5)")
+            print(f"[fenicsx-opt grad #{n_jac[0]}] ‖∇Ĵ‖={gn:.3e} (variables escaladas)")
         return g_scaled
 
-    # gtol: norma del gradiente proyectado en espacio escalado (∥∇J/J_scale∥ < gtol)
-    # equivale a condición KKT (Cap. 3 Obs. Slater + Thm. existencia).
+    # Variables escaladas ξ = x/s (Q/Q_max, z_p/rango de z_p): con x crudo un mismo radio de confianza mide
+    # 1 m en z_p y 10·Q_max en Q.
+    s = np.concatenate([np.full(len(Q0), Q_max), [zp_hi - zp_lo]])
+    lin = [(c.A * s[None, :], c.lb, c.ub) for c in cons_list]
+    lb_s, ub_s = bounds.lb / s, bounds.ub / s
+
+    # Criterio de paro: medida de criticidad χ(ξ) = ‖ξ − P_U(ξ − ∇Ĵ)‖∞, con P_U la proyección euclídea sobre el
+    # conjunto admisible (poliedro convexo); χ = 0 ⇔ KKT. El gtol de trust-constr usa multiplicadores de mínimos
+    # cuadrados sin signo y, con más filas de restricción que variables, se cumple en puntos no estacionarios.
+    chi_tol = float(getattr(p, "opt_chi_tol", 1e-4))
+
+    def proyectar(y):
+        r = minimize(lambda z: 0.5 * np.dot(z - y, z - y), np.clip(y, lb_s, ub_s), jac=lambda z: z - y,
+                     method="SLSQP", bounds=list(zip(lb_s, ub_s)),
+                     constraints=[c for A_, l_, u_ in lin for c in (
+                         {"type": "ineq", "fun": lambda z, A_=A_, l_=l_: A_ @ z - l_, "jac": lambda z, A_=A_: A_},
+                         {"type": "ineq", "fun": lambda z, A_=A_, u_=u_: u_ - A_ @ z, "jac": lambda z, A_=A_: -A_})],
+                     options={"ftol": 1e-14, "maxiter": 500})
+        return r.x
+
+    history["chi"] = []
+
+    def criticidad(xk, state):
+        chi = float(np.max(np.abs(xk - proyectar(xk - state.grad))))
+        history["chi"].append(chi)
+        if ctx.comm.rank == 0:
+            print(f"[fenicsx-opt it {state.nit}] χ={chi:.3e} (tol {chi_tol:.0e})  "
+                  f"Ĵ={state.fun:.6e}  violación={state.constr_violation:.1e}", flush=True)
+        return chi < chi_tol and state.constr_violation < 1e-8
+
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
-            "gtol": 1e-5, "xtol": 1e-8}
-    res = minimize(fun, x0, jac=jac, method="trust-constr",
-                   bounds=bounds, constraints=cons_list, options=opts)
+            "gtol": 1e-12, "xtol": 1e-8}
+    res = minimize(lambda xi: fun(s * xi), x0 / s, jac=lambda xi: jac(s * xi) * s, method="trust-constr",
+                   bounds=Bounds(lb_s, ub_s), constraints=[LinearConstraint(A_, l_, u_) for A_, l_, u_ in lin],
+                   callback=criticidad, options=opts)
+    res.x = s * res.x
+    if res.status == 3:
+        res.success, res.message = True, f"χ < {chi_tol:g} (KKT)"
 
     S_opt  = storage_trajectory(res.x[:-1], p)
     J_phys = res.fun * J_scale
@@ -873,7 +905,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                 Q=np.asarray(history["Q"]),
                 zp=np.asarray(history["zp"]),
                 J=np.asarray(history["J"]),
-                grad_norm=np.asarray(history["grad_norm"]),
+                grad_norm=np.asarray(history["grad_norm"]), chi=np.asarray(history["chi"]),
                 x_opt=res.x, J_opt=J_phys, J_opt_scaled=res.fun, S_opt=S_opt,
             )
             print(f"[fenicsx-opt] historial guardado ✔  "
