@@ -277,7 +277,8 @@ def step_adjoint(
         ii = groups['interior']
         rhs_H[ii] += getattr(p, "_alm_src_scale", 0.5) * f_alm * pho[ii] * sig_alm[ii]
 
-    # solve ψ_H
+    # solve ψ_H con A_H (adjunto continuo discretizado, sin transponer: ver make_adj_H_operator). No es el
+    # transpuesto de A_left; el adjunto discreto exacto está en funtions/adjunto_exacto.py.
     psiH_n = A_solver.solve(rhs_H)
 
     return psiH_n, psiC_n, psiC_im_n

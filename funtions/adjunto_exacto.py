@@ -24,51 +24,23 @@ Alcance: ADR, MRMT por bloque y MRMT semi-analítico; transporte centrado (sin u
 (el modelo no lo incluye).
 """
 import numpy as np
-from scipy.sparse import csr_matrix, diags
-from rbf.pde.fd import weight_matrix
-from rbf.sputils import expand_rows
 
 from funtions.runtime import RUNTIME
-from funtions.operators import coeficientes_transporte, peso_theta_C, factor_avance
-
-DIFFS = [[0, 0], [2, 0], [0, 2], [1, 0], [0, 1]]
+from funtions.operators import coeficientes_transporte, peso_theta_C, factor_avance, estenciles_transporte
 
 
 class OperadoresTransporte:
     """Estenciles fijos O_k del transporte y de sus filas de frontera (misma construcción que build_matrix)."""
 
     def __init__(self, d):
-        p = RUNTIME.get()
-        g = d.groups
-        self.N = len(d.nodes)
-        self.idx = np.hstack([g['interior'], g['boundary:inlet'], g['boundary:outlet'], g['boundary:wall']])
-        eps = np.asarray(d.eps_M)
-        self.O = [csr_matrix(weight_matrix(x=d.nodes[self.idx], p=d.nodes, n=p.n_stencil, diffs=[df],
-                                           phi=p.phi, order=p.order, eps=eps[self.idx], chunk_size=None))
-                  for df in DIFFS]
-        self.bc = []
-        for tag in ("inlet", "wall", "outlet"):            # mismo orden que make_transport_bc
-            ib = g.get(f'boundary:{tag}', None)
-            if ib is None or len(ib) == 0:
-                continue
-            gh = g.get(f'ghosts:{tag}', ib)
-            Ox, Oz = [csr_matrix(weight_matrix(x=d.nodes[ib], p=d.nodes, n=p.n_stencil, diffs=[df], phi=p.phi,
-                                               order=p.order, eps=eps[ib], chunk_size=None))
-                      for df in ([1, 0], [0, 1])]
-            self.bc.append((np.asarray(ib), np.asarray(gh), Ox, Oz))
+        # Los estenciles son los mismos que usa el directo (caché de funtions/operators.py).
+        self._est = estenciles_transporte(d.nodes, d.groups, d.eps_M)
+        self.N, self.idx, self.O, self.bc = self._est.N, self._est.idx, self._est.O, self._est.bc
         self.normals = d.normals
 
     def matriz(self, coefs, D, con_bc):
         """A (con_bc) o B (sin filas de frontera) a partir de los coeficientes puntuales."""
-        A = None
-        for c, O in zip(coefs, self.O):
-            blk = expand_rows(diags(c[self.idx]) @ O, self.idx, self.N)
-            A = blk if A is None else A + blk
-        if con_bc:
-            for ib, gh, Ox, Oz in self.bc:
-                blk = diags(-D[ib, 0] * self.normals[ib, 0]) @ Ox + diags(-D[ib, 1] * self.normals[ib, 1]) @ Oz
-                A = A + expand_rows(csr_matrix(blk), gh, self.N)
-        return A.tocsc()
+        return self._est.matriz(coefs, D, self.normals, con_bc)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -271,7 +243,9 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
                 nueva[r] = a_r[r] * ct + e_r[r] * ybar[r]
                 ct = (1.0 - a_r[r]) * ct + (1.0 - e_r[r]) * ybar[r]
             ybar = nueva
-        LamC[l] = -splu(A.T.tocsc()).solve(ct)
+        # Una sola LU de A por paso: sirve para el adjunto (Aᵀ, trans='T') y para recuperar C_sol (A).
+        lu_A = splu(A.tocsc())
+        LamC[l] = -lu_A.solve(ct, trans='T')
         if Nr:
             LamIm[l] = -np.array(ybar)
         B_next = B
@@ -282,7 +256,7 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
         if p.model == "mrmt_block":
             for r in range(Nr):
                 b[idx] += (Qr[r] * ylev[l - 1][r])[idx]
-        C_sol = splu(A.tocsc()).solve(b)
+        C_sol = lu_A.solve(b)
         # σ: derivada de Λ_C^ℓ·r_C^ℓ respecto de (H^ℓ, H^{ℓ-1})
         Hnew, Hold = _vjp_transporte(d, p, ops, pho, LamC[l], C_sol, Cn[l - 1], Un[l], Un[l - 1], Dn[l], Dn[l - 1],
                                      ht[l], nivel_viejo_es_dato=(l == 1))

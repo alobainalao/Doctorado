@@ -587,9 +587,83 @@ def make_transport_bc(normals, D):
         for tag in ["inlet", "wall", "outlet"]
     ]
 
+TRANSPORTE_DIFFS = [[0, 0], [2, 0], [0, 2], [1, 0], [0, 1]]
+
+
+class EstencilesTransporte:
+    """
+    Estenciles fijos O_k (identidad, ∂xx, ∂zz, ∂x, ∂z) del transporte y los de sus filas de frontera
+    (∂x, ∂z en inlet/wall/outlet, filas en los fantasmas). Sólo dependen de la malla y de eps_M, no del
+    estado: las filas del transporte son Σ_k diag(c_k) O_k con coeficientes puntuales c_k (misma
+    construcción que build_matrix, sin recalcular los pesos RBF-FD en cada paso).
+    """
+
+    def __init__(self, nodes, groups, eps_M):
+        p = RUNTIME.get()
+        self.N = len(nodes)
+        self.idx = np.hstack([groups['interior'], groups['boundary:inlet'], groups['boundary:outlet'],
+                              groups['boundary:wall']])
+        eps = np.asarray(eps_M)
+        self.O = [csr_matrix(weight_matrix(x=nodes[self.idx], p=nodes, n=p.n_stencil, diffs=[df],
+                                           phi=p.phi, order=p.order, eps=eps[self.idx], chunk_size=None))
+                  for df in TRANSPORTE_DIFFS]
+        self.bc = []
+        for tag in ("inlet", "wall", "outlet"):            # mismo orden que make_transport_bc
+            ib = groups.get(f'boundary:{tag}', None)
+            if ib is None or len(ib) == 0:
+                continue
+            gh = groups.get(f'ghosts:{tag}', ib)
+            Ox, Oz = [csr_matrix(weight_matrix(x=nodes[ib], p=nodes, n=p.n_stencil, diffs=[df], phi=p.phi,
+                                               order=p.order, eps=eps[ib], chunk_size=None))
+                      for df in ([1, 0], [0, 1])]
+            self.bc.append((np.asarray(ib), np.asarray(gh), Ox, Oz))
+
+    def matriz(self, coefs, D, normals, con_bc):
+        """A (con_bc) o B (sin filas de frontera) a partir de los coeficientes puntuales."""
+        A = None
+        for c, O in zip(coefs, self.O):
+            blk = expand_rows(diags(c[self.idx]) @ O, self.idx, self.N)
+            A = blk if A is None else A + blk
+        if con_bc:
+            for ib, gh, Ox, Oz in self.bc:
+                blk = diags(-D[ib, 0] * normals[ib, 0]) @ Ox + diags(-D[ib, 1] * normals[ib, 1]) @ Oz
+                A = A + expand_rows(csr_matrix(blk), gh, self.N)
+        return A.tocsc()
+
+
+_ESTENCILES_CACHE = {}
+
+
+def estenciles_transporte(nodes, groups, eps_M):
+    """EstencilesTransporte de la malla, construido una sola vez (clave: contenido de nodos, grupos, eps_M y
+    parámetros del estencil). Se guarda sólo la última malla."""
+    p = RUNTIME.get()
+    nodes = np.asarray(nodes)
+    clave = (hash(nodes.tobytes()), hash(np.asarray(eps_M).tobytes()), p.n_stencil, str(p.phi), p.order,
+             tuple((k, hash(np.asarray(v).tobytes())) for k, v in sorted(groups.items())
+                   if k.startswith(('interior', 'boundary:', 'ghosts:'))))
+    if clave not in _ESTENCILES_CACHE:
+        _ESTENCILES_CACHE.clear()
+        _ESTENCILES_CACHE[clave] = EstencilesTransporte(nodes, groups, eps_M)
+    return _ESTENCILES_CACHE[clave]
+
+
 def build_transport_matrix(V, nodes, groups, normals,
                            pho, D, Div_D,
                            Qout, eps_M, gauss_p, sig, h_t=None):
+    """Matriz del transporte (sig<0: lado implícito con filas de frontera; sig>0: lado explícito) con los
+    estenciles fijos de la malla. Idéntica a build_transport_matrix_directo (comprobado en
+    tests/test_adjunto_exacto.py), sin recalcular los pesos RBF-FD."""
+    p = RUNTIME.get()
+    est = estenciles_transporte(nodes, groups, eps_M)
+    coefs = coeficientes_transporte(p, pho, V, D, Div_D, sig, h_t)
+    return est.matriz(coefs, D, normals, con_bc=sig < 0)
+
+
+def build_transport_matrix_directo(V, nodes, groups, normals,
+                                   pho, D, Div_D,
+                                   Qout, eps_M, gauss_p, sig, h_t=None):
+    """Construcción original (pesos RBF-FD recalculados en cada llamada); sólo para pruebas."""
 
     p = RUNTIME.get()
     N = len(nodes)
@@ -814,9 +888,11 @@ def make_adj_H_operator(
 
         coeffs_func=lambda i: [
 
-            # Adjunto discreto exacto: A_H = A_left (operador de flujo forward).
-            # La ecuación de flujo es simétrica → A_left^T = A_left = A_H.
-            # Mismos coeficientes que make_H_operator "full".
+            # Mismos coeficientes que make_H_operator "full" (A_H = A_left en el interior), SIN transponer.
+            # Con colocación RBF-FD A_left NO es simétrica (‖WA−(WA)ᵀ‖/‖WA‖ ≈ 0.5), así que esto NO es el
+            # adjunto discreto: es la discretización del adjunto continuo (operador autoadjunto, ψ_h = 0 en
+            # inlet/outlet). Sólo lo usa step_adjoint (adjoint_exact=False o upwind); el gradiente usa
+            # A_leftᵀ en funtions/adjunto_exacto.py.
             S_s[i] / p.dt,
 
             theta * sig * K[i, 0],

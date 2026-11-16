@@ -67,8 +67,13 @@ def main():
     ht = (H - Hv) / p.dt
     cA, cB = _coefs(d, p, d.pho, U1, D1, D0, ht)
     A = ops.matriz(cA, D1, True); B = ops.matriz(cB, D0, False)
-    A0 = build_transport_matrix(U1, d.nodes, d.groups, d.normals, d.pho, D1, Div_KD(D1, d.grad), 0, d.eps_M, d.gauss_p, -1, h_t=ht)
-    B0 = build_transport_matrix(U1, d.nodes, d.groups, d.normals, d.pho, D0, Div_KD(D0, d.grad), 0, d.eps_M, d.gauss_p, +1, h_t=ht)
+    # contra la construcción original (pesos RBF-FD recalculados), no contra la versión con estenciles en caché
+    from funtions.operators import build_transport_matrix_directo
+    A0 = build_transport_matrix_directo(U1, d.nodes, d.groups, d.normals, d.pho, D1, Div_KD(D1, d.grad), 0, d.eps_M, d.gauss_p, -1, h_t=ht)
+    B0 = build_transport_matrix_directo(U1, d.nodes, d.groups, d.normals, d.pho, D0, Div_KD(D0, d.grad), 0, d.eps_M, d.gauss_p, +1, h_t=ht)
+    A1 = build_transport_matrix(U1, d.nodes, d.groups, d.normals, d.pho, D1, Div_KD(D1, d.grad), 0, d.eps_M, d.gauss_p, -1, h_t=ht)
+    B1 = build_transport_matrix(U1, d.nodes, d.groups, d.normals, d.pho, D0, Div_KD(D0, d.grad), 0, d.eps_M, d.gauss_p, +1, h_t=ht)
+    print(f"[1] caché           |A1-A0|max={abs(A1-A0).max():.2e}   |B1-B0|max={abs(B1-B0).max():.2e}", flush=True)
     print(f"[1] reconstrucción  |A-A0|max={abs(A-A0).max():.2e} (|A0|max={abs(A0).max():.2e})   "
           f"|B-B0|max={abs(B-B0).max():.2e}", flush=True)
 
