@@ -25,6 +25,9 @@ SIN_POZO = {"activate_ext": False}
 # Grupo M: configuración de main.py (default.json + malla_sp60: dt 18000 s, 30 d, n_stencil 25, Q_std 0.3) salvo la malla compartida
 # (necesaria para que BFR y FEniCSx usen los mismos nodos). La fuente es más estrecha en z y menos intensa, igual en todas las variantes.
 MAIN_FUENTE = {"n_stencil": 25, "epsilon_z_fuente": 30.0, "intensidad_fuente": 5e-12}
+# Caso ADR del grupo MC (malla con conos), base de los estudios de paso de tiempo.
+MC_ADR = {"model": "adr", "Q_std": 0.3, "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre",
+          **MAIN_FUENTE, "mesh_pkl": "data/input/malla_conos/malla.pkl"}
 
 GRUPOS = {
     # ── M. Modelo nuevo (sin sumidero W-, con almacenamiento S_s = φ) con la configuración de main ──
@@ -48,6 +51,19 @@ GRUPOS = {
                                 "cfg": {"model": modelo, "Q_std": 0.3, "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre",
                                         **MAIN_FUENTE, "mesh_pkl": "data/input/malla_conos/malla.pkl"}}
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
+        },
+    },
+    # ── MT. Paso de tiempo (docs/informe_metodos_numericos.md §6.2): MC0_adr con el código del 16-nov ──
+    "MT_paso_tiempo": {
+        "desc": "ADR de MC0_adr con Δt = 5 h (regresión) y Δt = 2 h; FEniCSx con h en P1 y en P2",
+        "pregunta": "¿Cuánto cambia el directo al bajar Δt de 5 h a 2 h (Euler implícito) y al subir h a P2 en FEM?",
+        "casos": {
+            "MT0_adr_dt5h": {"desc": "MC0_adr (Δt = 5 h) con LU directa y cuadratura fija en FEM, estenciles en caché en BFR",
+                             "cfg": {**MC_ADR}},
+            "MT1_adr_dt2h": {"desc": "MC0_adr con Δt = 2 h (360 pasos)",
+                             "cfg": {**MC_ADR, "dt": 7200}},
+            "MT2_adr_dt2h_h2": {"desc": "MT1_adr_dt2h con h en Lagrange P2 en FEniCSx (u = −K∇h en P1 discontinuo)",
+                                "cfg": {**MC_ADR, "dt": 7200}, "fenicsx": {"grado_h": 2}},
         },
     },
     "M_adjunto": {

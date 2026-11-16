@@ -46,14 +46,21 @@ from petsc4py import PETSc
 from basix.ufl import element
 from dolfinx import fem
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, apply_lifting, set_bc
+import ufl
 from ufl import (
     TrialFunction, TestFunction, grad, nabla_grad, inner, as_vector,
-    sqrt, lhs, rhs, dx, Measure, FacetNormal, div, dot, conditional, gt,
+    sqrt, lhs, rhs, Measure, FacetNormal, div, dot, conditional, gt,
 )
 
 from funtions.utils import chi_eps, get_init_values
 from fenicsx.mesh import build_mesh
 from fenicsx.salida_libre import BordeLibre, es_libre
+
+# Grado de cuadratura FIJO en todas las formas, el mismo que fenicsx/adjoint.py (que lo importa de aquí): los
+# kernels del pozo y de la fuente son gaussianos estrechos (no polinómicos) y, si UFL estima el grado por forma,
+# el directo de este módulo y el de adjoint.py integran J y las fuentes con cuadraturas distintas.
+_QD = 8
+dx = ufl.dx(metadata={"quadrature_degree": _QD})
 
 # ---------------------------------------------------------------------------
 # Parámetros ESPECÍFICOS del backend FEM (geometría de los perfiles de
@@ -199,7 +206,9 @@ def _gaussian_2d(x, pozo_ext, amplitude, epsilon_x, epsilon_y):
 def _create_solver(A, comm):
     solver = PETSc.KSP().create(comm)
     solver.setOperators(A)
-    solver.setType(PETSc.KSP.Type.BCGS)
+    # LU directa (PREONLY), igual que _lu_solver de fenicsx/adjoint.py: con BCGS + PC LU el KSP iteraba sobre una
+    # factorización exacta con la tolerancia rtol por defecto.
+    solver.setType(PETSc.KSP.Type.PREONLY)
     pc = solver.getPC()
     pc.setType(PETSc.PC.Type.LU)
     return solver
@@ -412,6 +421,12 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     V, G, Q, h_inlet, h_outlet, bc_C, ds_in, ds_out = _boundaries_elements(domain, facet_tags, phys)
 
+    # Espacio de la carga: Lagrange de grado `grado_h` (1 = G, el de siempre). Con grado 2, ∇h es P1 discontinuo y
+    # u = −K∇h tiene error O(h²) en vez de O(h) (P0). φ, K_z, la δ del pozo y las salidas siguen en G (P1, nodos de la
+    # malla compartida), así que la comparación nodo a nodo con BFR no cambia. Sólo el directo: adjoint.py exige 1.
+    grado_h = int(getattr(p, "grado_h", 1))
+    Gh = G if grado_h == 1 else fem.functionspace(domain, element("Lagrange", domain.topology.cell_name(), grado_h))
+
     phi = fem.Function(G)
     phi.x.array[:] = porosidad_raw
 
@@ -435,14 +450,14 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             delta.x.array[:] = _w / _int
     delta_C = fem.Function(Q)
 
-    h = TrialFunction(G)
+    h = TrialFunction(Gh)
     C = TrialFunction(Q)
-    h_ = fem.Function(G)
+    h_ = fem.Function(Gh)
     C_ = fem.Function(Q)
     u = fem.Function(V)
     u_n = fem.Function(V)
-    h_n = fem.Function(G)
-    h_old = fem.Function(G)    # h del paso anterior (h_n se pisa con h_ antes del transporte)
+    h_n = fem.Function(Gh)
+    h_old = fem.Function(Gh)   # h del paso anterior (h_n se pisa con h_ antes del transporte)
     C_n = fem.Function(Q)
     Src = fem.Function(Q)
     Src_n = fem.Function(Q)
@@ -454,7 +469,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     # etapa final aplicada con los datos de la interfaz — no un spin-up propio.
     # H vive en G (Lagrange-1) y C en Q (Lagrange-2): DOF en coords distintas,
     # se evalúa el interpolador sobre cada espacio por separado.
-    h0, _ = get_init_values(G.tabulate_dof_coordinates()[:, :2])
+    h0, _ = get_init_values(Gh.tabulate_dof_coordinates()[:, :2])
     _, c0 = get_init_values(Q.tabulate_dof_coordinates()[:, :2])
     h_n.x.array[:] = h0
     C_n.x.array[:] = np.nan_to_num(c0, nan=phys["C_0"])
@@ -469,8 +484,15 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     borde, bc_h = None, []
     if es_libre(p):
         h_outlet.x.array[:] = 0.0          # sin dato de flujo de salida
-        borde = BordeLibre(G, facet_tags, phys["outlet_marker"], K_z.x.array, phi.x.array, dt, phys["theta"], h_n.x.array)
-        h_bc = fem.Function(G)
+        if Gh is G:
+            Kz_h, phi_h = K_z.x.array, phi.x.array
+        else:                              # K_z y φ en los DOF de Gh (los de la ecuación de borde)
+            _Kz, _ph = fem.Function(Gh), fem.Function(Gh)
+            _Kz.interpolate(fem.Expression(expr_Ki, Gh.element.interpolation_points))
+            _ph.interpolate(phi)
+            Kz_h, phi_h = _Kz.x.array, _ph.x.array
+        borde = BordeLibre(Gh, facet_tags, phys["outlet_marker"], Kz_h, phi_h, dt, phys["theta"], h_n.x.array)
+        h_bc = fem.Function(Gh)
         h_bc.x.array[:] = h_n.x.array
         bc_h = [fem.dirichletbc(h_bc, borde.dofs)]
 
@@ -498,7 +520,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             C_im_sum.x.array[:] = 0.0
 
     a_h, L_h, a_C, L_C = _variational_form_h_C(
-        Q, G, phys["R"], phys["landa"], phi, h, h_n, dt, phys["theta"], phys["theta_C"],
+        Q, Gh, phys["R"], phys["landa"], phi, h, h_n, dt, phys["theta"], phys["theta_C"],
         K_z, phys["alpha"], h_inlet, h_outlet, ds_in, ds_out, QOut_const, Src, Src_n,
         delta, delta_C, phi, C, C_n, D + D_m, D + Dm_n, u, u_n,
         alpha_sum=mrmt_alpha_sum, C_im_sum=C_im_sum,
@@ -569,6 +591,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
     C_im_hist = [] if (collect and "mrmt" in model) else None
     if collect:
         cG = fem.Function(G)
+        hG = fem.Function(G)               # h en los nodos de la malla (= h_n si grado_h = 1)
         uGx, uGy = fem.Function(G), fem.Function(G)
         expr_cG = fem.Expression(C_n, G.element.interpolation_points)
         expr_uGx = fem.Expression(u[0], G.element.interpolation_points)
@@ -643,7 +666,11 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
             cG.interpolate(expr_cG)
             uGx.interpolate(expr_uGx)
             uGy.interpolate(expr_uGy)
-            H_hist.append(h_n.x.array.copy())
+            if Gh is G:
+                H_hist.append(h_n.x.array.copy())
+            else:
+                hG.interpolate(h_n)
+                H_hist.append(hG.x.array.copy())
             C_hist.append(cG.x.array.copy())
             U_hist.append(np.column_stack([uGx.x.array, uGy.x.array]))
             if C_im_hist is not None:
