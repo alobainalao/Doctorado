@@ -38,6 +38,7 @@ Controles: x = [Q_0, …, Q_{Nt−1}, z_p] (misma convención que
 (L-BFGS-B). Requiere el entorno `fenics_env` (dolfinx 0.11.0 conda-forge,
 ver fenicsx/README.md). `app.py` despacha automáticamente a ese entorno.
 """
+import json
 import os
 import numpy as np
 from mpi4py import MPI
@@ -58,7 +59,7 @@ from ufl import (
 # (con un factor polinómico extra), y entonces el gradiente adjunto no coincide
 # con la diferencia finita del MISMO funcional. Fijándolo, J y ∂J/∂θ usan la
 # misma cuadratura y son consistentes por construcción.
-_QD = 8
+from fenicsx.forward import _QD   # = 8, compartido con el directo de fenicsx/forward.py
 dx = ufl.dx(metadata={"quadrature_degree": _QD})
 
 from funtions.utils import get_init_values
@@ -106,6 +107,8 @@ def build_context(pozo, p, mesh_cache):
     fronteras, condición inicial). `mesh_cache=(domain, facet_tags, porosidad)`."""
     from fenicsx.mesh import build_mesh
 
+    if int(getattr(p, "grado_h", 1)) != 1:
+        raise NotImplementedError("grado_h != 1 sólo está en el directo (fenicsx/forward.py); el adjunto usa h en P1")
     phys = _config_phys(p)
     domain, facet_tags, porosidad_raw = (
         mesh_cache if mesh_cache is not None else build_mesh(pozo, spacing=p.spacing)
@@ -874,6 +877,10 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         return r.x
 
     history["chi"] = []
+    # Progreso (opcional): el iterado aceptado se escribe en cada iteración en <opt_progreso>.json, y si existe
+    # <opt_progreso>.stop la optimización termina en la siguiente iteración guardando el resultado como siempre.
+    progreso = getattr(p, "opt_progreso", None)
+    parado = [False]
 
     def criticidad(xk, state):
         chi = float(np.max(np.abs(xk - proyectar(xk - state.grad))))
@@ -881,6 +888,15 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         if ctx.comm.rank == 0:
             print(f"[fenicsx-opt it {state.nit}] χ={chi:.3e} (tol {chi_tol:.0e})  "
                   f"Ĵ={state.fun:.6e}  violación={state.constr_violation:.1e}", flush=True)
+            if progreso:
+                with open(progreso + ".json", "w") as fh:
+                    json.dump(dict(nit=int(state.nit), x=(s * xk).tolist(), J=float(state.fun), chi=chi,
+                                   violacion=float(state.constr_violation)), fh)
+        if progreso and os.path.exists(progreso + ".stop"):
+            if ctx.comm.rank == 0:
+                print(f"[fenicsx-opt] paro pedido ({progreso}.stop)", flush=True)
+            parado[0] = True
+            return True
         return chi < chi_tol and state.constr_violation < 1e-8
 
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
@@ -889,7 +905,9 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                    bounds=Bounds(lb_s, ub_s), constraints=[LinearConstraint(A_, l_, u_) for A_, l_, u_ in lin],
                    callback=criticidad, options=opts)
     res.x = s * res.x
-    if res.status == 3:
+    if parado[0]:
+        res.success, res.message = False, "paro pedido por el usuario"
+    elif res.status == 3:
         res.success, res.message = True, f"χ < {chi_tol:g} (KKT)"
 
     S_opt  = storage_trajectory(res.x[:-1], p)

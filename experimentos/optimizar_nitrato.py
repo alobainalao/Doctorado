@@ -78,6 +78,10 @@ def main(modelo, variante=None, c_limite=None):
     tabla = {"x0": comp(x0[:-1], zp0),
              "x0_recortado_Qmax": comp(np.full(nQ, p.Q_max), zp0),
              "Q=0": comp(np.zeros(nQ), zp0)}
+    # iterado aceptado en cada iteración y paro limpio: touch <DIR_OUT>/<modelo>_progreso.stop
+    p.opt_progreso = os.path.join(DIR_OUT, f"{modelo}_progreso")
+    if os.path.exists(p.opt_progreso + ".stop"):
+        os.remove(p.opt_progreso + ".stop")
     res = optimize_fenicsx(p, mesh_cache=mc)
     xo = np.asarray(res.x)
     tabla["optimo"] = comp(xo[:-1], xo[-1])
