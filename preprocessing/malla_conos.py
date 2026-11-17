@@ -5,7 +5,7 @@ oct 2026 (commits 87f4654 y 5c2d9a8) en lugar del anillo radial de la malla comp
     python -m preprocessing.malla_conos                       # → data/input/malla_conos/malla.pkl
     python -m preprocessing.malla_conos --figura <prefijo>    # + PNG de la malla y del espaciado
     python -m preprocessing.malla_conos --h-eje 1 --salida data/input/malla_conos_eje/malla.pkl   # + eje del pozo
-    python -m preprocessing.malla_conos --h-eje 0.5 --r-capsula-pozo 25 --eje data/input/malla_conos/eje_pluma.npy \
+    python -m preprocessing.malla_conos --h-eje 0.5 --semiancho-eje 1 --r-capsula-pozo 25 --eje data/input/malla_conos/eje_pluma.npy \
         --salida data/input/malla_conos_eje05/malla.pkl   # eje de 0.5 m y cápsula del pozo ajustada a 3ε = r_pozo
 
 Corre en bfr_env.  Desde el 12-nov-2026 es la malla común de BFR y FEniCSx (`mesh_pkl` de experimentos/base.json y
@@ -173,6 +173,7 @@ def main():
     ap.add_argument("--figura", help="prefijo de los PNG (malla y espaciado)")
     ap.add_argument("--eje", help="eje de la pluma ya calculado (.npy), en lugar de integrarlo desde --preproceso")
     ap.add_argument("--h-eje", type=float, help="espaciado [m] de la franja del eje del pozo (sin ella si no se da)")
+    ap.add_argument("--semiancho-eje", type=float, default=SEMIANCHO_EJE, help="semiancho [m] de la franja del eje")
     ap.add_argument("--r-capsula-pozo", type=float, default=R_CAPSULA,
                     help="radio [m] de la cápsula de min_sp del pozo; algo mayor que 3ε = r_pozo, donde está casi toda "
                          "la masa de los kernels gaussianos")
@@ -198,12 +199,12 @@ def main():
             f"(cota inferior en el techo), {p.spacing:g} m lejos (eje {EJE})")
     h_extra = None
     if args.h_eje:
-        h_extra = espaciado_eje(p, args.h_eje)
-        nota += f"; franja de {args.h_eje:g} m a menos de {SEMIANCHO_EJE:g} m del eje del pozo (de z_p a zp_max)"
+        h_extra = espaciado_eje(p, args.h_eje, args.semiancho_eje)
+        nota += f"; franja de {args.h_eje:g} m a menos de {args.semiancho_eje:g} m del eje del pozo (de z_p a zp_max)"
     m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert, args.r_capsula_pozo), refino_k=None, nota_extra=nota, h_extra=h_extra)   # K ya va en h
     m["meta"]["origen"] = (f"preprocessing/malla_conos.py (min_sp={p.min_sp}, s_cone={p.s_cone} en los conos, "
                            f"min_sp_boundary={p.min_sp_boundary}, spacing={p.spacing}, r_circle={p.r_circle}, "
-                           f"grado={GRADO}, r_capsula_pozo={args.r_capsula_pozo:g}" + (f", h_eje={args.h_eje:g}, semiancho_eje={SEMIANCHO_EJE:g}" if args.h_eje else "") + ")")
+                           f"grado={GRADO}, r_capsula_pozo={args.r_capsula_pozo:g}" + (f", h_eje={args.h_eje:g}, semiancho_eje={args.semiancho_eje:g}" if args.h_eje else "") + ")")
     m["eje_pluma"] = eje
 
     os.makedirs(os.path.dirname(args.salida), exist_ok=True)
