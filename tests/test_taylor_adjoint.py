@@ -34,6 +34,9 @@ Uso:
     # Todos los FEniCS:
     /home/alex/miniconda3/envs/fenics_env/bin/python -m tests.test_taylor_adjoint fenicsx
 
+    # FEniCS con la carga h en Lagrange P2 (grado_h, fenicsx/forward.py y fenicsx/adjoint.py):
+    /home/alex/miniconda3/envs/fenics_env/bin/python -m tests.test_taylor_adjoint fenicsx adr --grado-h=2
+
 Criterio: ratio r1 ≥ 3.5 en al menos 2 refinamientos consecutivos (O(h²)).
 """
 
@@ -88,6 +91,8 @@ MRMT_PARAMS = {
 H_FRACS   = [1e-1, 5e-2, 2.5e-2, 1.25e-2, 6.25e-3]
 TOL_RATIO = 3.5    # ratio mínimo de r1 para considerar convergencia O(h²)
 TARGET_J  = 1e12   # escala de referencia para γ auto
+# Grado de la carga h en FEniCS (--grado-h=N; 1 = P1, el de siempre). Se reenvía a los subprocesos.
+GRADO_H = next((int(a.split("=", 1)[1]) for a in sys.argv if a.startswith("--grado-h=")), 1)
 
 # ─────────────────────────── Helpers ────────────────────────────────────────
 
@@ -189,11 +194,12 @@ def taylor_bfr(model: str) -> bool:
 
 def taylor_fenicsx(model: str) -> bool:
     print(f"\n{'='*62}")
-    print(f"  Test de Taylor — FEniCS / model={model}")
+    print(f"  Test de Taylor — FEniCS / model={model}  grado_h={GRADO_H}")
     print(f"{'='*62}")
 
     RUNTIME.params = Parameters(env=make_env("fenicsx", model))
     p = RUNTIME.get()
+    p.grado_h = GRADO_H                 # el modo env de Parameters no pasa la clave
 
     from fenicsx.mesh import get_mesh
     from fenicsx.adjoint import (
@@ -248,7 +254,7 @@ def taylor_fenicsx(model: str) -> bool:
     ax.set_title(f"Test de Taylor — fenicsx/{model}")
     ax.legend(fontsize=8); ax.grid(True, which="both", alpha=0.3)
     fig.tight_layout()
-    fname = f"data/output/verificacion_adjunto/taylor_fenicsx_{model}.png"
+    fname = f"data/output/verificacion_adjunto/taylor_fenicsx_{model}{'' if GRADO_H == 1 else f'_h{GRADO_H}'}.png"
     fig.savefig(fname, dpi=150)
     plt.close(fig)
     print(f"  Figura: {fname}")
@@ -275,13 +281,13 @@ def _run_single(backend: str, model: str) -> bool:
         python = "/home/alex/miniconda3/envs/fenics_env/bin/python"
     else:
         python = "/home/alex/miniconda3/envs/bfr_env/bin/python"
-    cmd = [python, "-m", _THIS_MODULE, "--worker", backend, model]
+    cmd = [python, "-m", _THIS_MODULE, "--worker", backend, model] + [f"--grado-h={GRADO_H}"] * (GRADO_H != 1)
     result = subprocess.run(cmd, cwd=_CODIGO)
     return result.returncode == 0
 
 
 def main():
-    args = sys.argv[1:]
+    args = [a for a in sys.argv[1:] if not a.startswith("--grado-h=")]
 
     # ── Modo worker: un solo modelo, corre directamente ──
     if args and args[0] == "--worker":

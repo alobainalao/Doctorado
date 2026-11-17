@@ -20,14 +20,16 @@ T = 30 d, θ = θ_C = 1, salida libre, sin W₋. Las cifras de la §4 salen de
    - Para el intercambio MRMT hay dos variantes: la semianalítica usa la exponencial exacta con *splitting* de Lie;
      la de bloque usa un factor tipo Crank–Nicolson.
    - Ninguna pieza pasa de orden 1 en Δt.
-3. **Con Δt = 5 h, el error temporal domina al espacial.**
+3. **Estimación a priori: con Δt = 5 h, el error temporal dominaría al espacial.** *Las corridas del 16-nov
+   (§9) la **refutan** para el directo ADR: el error temporal estimado con 5 h es ≈ 0.5 % en C y ≈ 0.6 % en la C
+   del pozo, unas 6 veces menor que la diferencia BFR–FEM (3 %). Lo que sigue en este punto es el argumento a priori.*
    - Euler implícito añade una difusión numérica de $v^2\Delta t/2$.
    - En la pluma, esa difusión es **1.8 veces la dispersión física** en la mediana y 3.2 veces en el percentil 90.
      Cerca del pozo llega a 50 veces.
    - Además, Δt = 5 h es mayor que el tiempo de intercambio MRMT más rápido (τ₁ = 4.2 h).
    - Δt = 5 h no divide el ciclo de la bomba (20 h encendida / 4 h apagada), así que el apagado de 4 h no se
      resuelve.
-4. **Recomendación:**
+4. **Recomendación** (a priori; **decisión del 16-nov: se mantiene Δt = 5 h con Euler implícito**, ver §9):
    - Usar **BDF2** (L-estable y de orden 2) en el flujo y en el transporte, arrancando con un paso de Euler
      implícito.
    - En MRMT semi, usar la exponencial exacta con *splitting* de **Strang**.
@@ -288,6 +290,10 @@ $$C_{im,r}^{n+1}=\frac{2C_{im,r}^n-\tfrac12C_{im,r}^{n-1}+\lambda_r\Delta t\,C^{
 
 ### 6.2 Paso de tiempo
 
+> **Decisión (2026-11-16):** se sigue con **Δt = 5 h** (144 pasos, `base.json` sin cambios). Las corridas de la §9
+> muestran que en ADR el error temporal (≈ 0.5 % en C) es unas 6 veces menor que la diferencia espacial BFR–FEM.
+> La tabla siguiente queda como referencia si el estudio en MRMT o en el óptimo indica lo contrario.
+
 | Uso | Δt | Pasos (T = 30 d) | Coste aproximado frente a hoy (144 pasos) |
 |---|---|---|---|
 | **Producción** | **2 h** | 360 | ×2.5 (≈ ×1.6 si se aplican las mejoras de la §7) |
@@ -394,3 +400,90 @@ sentido. Es lo que ya se hizo con éxito en el banco de pozos transitorio (una L
 Notas internas citadas: [estabilidad-malla-bfr-minsp], [oscilacion-pozo-bfr-inestabilidad],
 [adjunto-bfr-ruido-superficie], [bfr-mesh-fenicsx], [caso-pozos-transitorio], [caso-base-manzoni-graetz],
 [metodologia-benchmark-ocp], `experimentos/condicionamiento/README.md`.
+
+---
+
+## 9. Corridas en el dominio real (2026-11-16, grupo `MT_paso_tiempo`)
+
+Las corridas son de ADR en `malla_conos`, con la configuración de `MC0_adr`, Euler implícito y T = 30 d. Las
+diferencias relativas se miden en L² con pesos de área nodal y la C del pozo es la media gaussiana
+(ε = r_pozo/3), con los mismos criterios que `experimentos/comparar.py`.
+
+**Regresión (código nuevo frente a `MC0_adr`, Δt = 5 h).**
+- BFR da el mismo resultado: C cambia ≤ 1e-13 y H y U son idénticos. El tiempo total baja de 304 s a 208 s
+  (−32 %) gracias a los estenciles en caché.
+- FEniCSx, con LU directa y cuadratura fija de grado 8: C cambia ≤ 2e-10 y U ≤ 9e-10. Con esta malla la cuadratura
+  automática ya era suficiente.
+
+**Δt = 2 h frente a 5 h** (360 frente a 144 pasos):
+
+| magnitud | BFR | FEniCSx |
+|---|---|---|
+| C, L² relativa (t = 100 / 360 / 720 h) | 3.8e-3 / 3.0e-3 / 2.6e-3 | 3.9e-3 / 3.1e-3 / 2.8e-3 |
+| \|U\|, L² relativa (final) | 1.1e-3 | 1.1e-3 |
+| ΔH rms (final) | 1e-4 m | 1e-4 m |
+| C del pozo, máximo en el tiempo | 2.6e-3 | 2.8e-3 |
+| $\int C_{pozo}^2\,dt$ (lo que entra en $J_1$) | +3.8e-3 | +4.2e-3 |
+| máx. de C (junto a la fuente), máximo en el tiempo | 2.2e-2 | 2.2e-2 |
+| BFR–FEM: C L² final | 2.99 % → 3.01 % | |
+
+- Error de Euler implícito con 5 h, por Richardson con orden 1: $e_{5h}\approx\tfrac53\,\Delta$, es decir ≈ 0.5 % en
+  C, ≈ 0.6 % en la C del pozo y ≈ 3.6 % en el pico de C junto a la fuente.
+- La diferencia BFR–FEM no cambia, así que **es espacial, no temporal**.
+- La estimación de la §4 ($v\Delta t/2\alpha_L>1$) sobreestimó el efecto. La difusión espuria actúa sobre la
+  curvatura de C, y en estos 30 días el campo es casi todo la condición inicial, suave, que se transporta poco. Sólo
+  el pico junto a la fuente nota el Δt de forma apreciable.
+
+**FEniCSx con h en P2** (`grado_h = 2`, Δt = 2 h), frente a P1:
+- La discrepancia BFR–FEM en \|U\| baja de **12.5 % a 8.8 %**: la velocidad era la mayor fuente de diferencia entre
+  backends y P2 la reduce, como predice la §2.2.
+- La C de FEM en el pozo sube un 2 % ($\int C_{pozo}^2$ +3.7 %). La razón BFR/FEM de la C del pozo pasa de 0.951 a
+  0.933, y la diferencia en C (L²) de 3.0 % a 2.9 %.
+- ΔH entre P1 y P2 es ≈ 1.4e-3 m.
+- Coste: 462 s frente a 555 s. P2 no lo empeora; la variación es del orden del ruido de la máquina.
+
+**Consecuencias para la §6.**
+- Para el directo **ADR**, Euler implícito con 5 h ya tiene un error temporal pequeño frente al espacial. BDF2 no es
+  urgente por exactitud en ADR.
+- Los motivos que siguen en pie para bajar Δt o usar BDF2 son tres:
+  1. el ciclo de la bomba (Δt divisor de 4 h);
+  2. el intercambio MRMT (τ₁ = 4.2 h), **no medido aquí**: falta repetir el estudio con `mrmt_semi` y `mrmt_block`;
+  3. la convergencia del óptimo y del gradiente, también **no medida**.
+- **Decisión:** se mantiene Δt = 5 h; los puntos 2 y 3 se revisarán con Δt = 5 h como referencia.
+- El siguiente paso con más rendimiento es **espacial**: \|U\| en FEM (P2 ya ayuda) y la no convergencia del adjunto
+  de BFR en malla.
+
+## 10. Adjunto de FEniCSx con h en P2 (2026-11-16, grupo `MH_adjunto_p2`)
+
+`fenicsx/adjoint.py` acepta ahora `grado_h = 2`, igual que el directo:
+- h y ψ_h viven en Lagrange P2 (`ctx.Gh`);
+- φ, K_z y las salidas siguen en P1 (`ctx.G`, los 20 348 nodos de la malla compartida);
+- al guardar, h y ψ_h se interpolan a P1 (`_en_G`).
+
+**Verificación del gradiente** (`tests.test_gradiente_modelo_nuevo fenicsx <modelo> --modulada --grado-h=2`, C = 1 modulada,
+γ escalado para que domine J_m):
+
+| Modelo | Error relativo adjunto frente a diferencias finitas |
+|---|---|
+| adr | 5e-9 – 7e-7 |
+| mrmt_semi | 3e-9 – 9e-6 |
+| mrmt_block | 4e-9 – 1e-6 |
+
+Son los mismos niveles que con P1. En ADR, la derivada direccional según −∇J pasa de −2.987 (P1) a −3.098 (P2), un 3.7 %.
+El test de Taylor (`--grado-h=2`) también pasa, pero no es informativo: en ese dominio la pluma no llega al pozo, J₁ = 0
+y J lo domina el término en z_p.
+
+**Dominio real** (MC0_adr, Δt = 5 h, `run_type=comparison`), P2 frente a P1:
+
+| Campo | Diferencia relativa L² |
+|---|---|
+| h | 2.5e-6 |
+| C | 3.1e-3 |
+| u (en los nodos) | 17 % |
+| ψ_h | 1.4 % |
+| ψ_C | 4.1 % (máximo −9 %) |
+
+El cambio en ψ_C (4 %) se acerca al de la convergencia en malla del adjunto FEniCSx (3–10 %,
+[adjunto-bfr-ruido-superficie]). La velocidad, que en P1 es P0, es el factor de mayor peso en el adjunto del transporte.
+
+Coste: 964 s con P2 frente a 714 s con P1 (×1.35).

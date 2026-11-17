@@ -52,7 +52,7 @@ def main():
     _, ad = A._solve_adjoint_grad(ctx, st)
     nL = NT - 1
     dt, phys = float(p.dt), ctx.phys
-    Qs, G = ctx.Q, ctx.G
+    Qs, G = ctx.Q, ctx.Gh
     zero = lambda: fem.Constant(ctx.domain, A.PETSc.ScalarType(0.0))
     zp_c = fem.Constant(ctx.domain, A.PETSc.ScalarType(zp))
     C_n, C_prev, psi = fem.Function(Qs), fem.Function(Qs), fem.Function(Qs)

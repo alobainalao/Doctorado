@@ -43,6 +43,7 @@ import os
 import numpy as np
 from mpi4py import MPI
 from petsc4py import PETSc
+from basix.ufl import element
 from dolfinx import fem
 from dolfinx.fem.petsc import assemble_matrix, assemble_vector, set_bc, apply_lifting
 from scipy.special import ellipe
@@ -102,13 +103,26 @@ def _campo_desde_dual(Qs, hist):
     return out
 
 
+def _en_G(ctx, hist):
+    """Filas de `hist` (…, N_Gh) en los DOF de G (P1): con grado_h = 2 se interpola h o ψ_h a los nodos de la malla
+    para que las salidas tengan el mismo soporte que con P1 (y que BFR)."""
+    hist = np.asarray(hist, float)
+    if ctx.Gh is ctx.G:
+        return hist
+    fh, fG = fem.Function(ctx.Gh), fem.Function(ctx.G)
+    out = np.empty(hist.shape[:-1] + (fG.x.array.size,))
+    for idx in np.ndindex(hist.shape[:-1]):
+        fh.x.array[:] = hist[idx]
+        fG.interpolate(fh)
+        out[idx] = fG.x.array
+    return out
+
+
 def build_context(pozo, p, mesh_cache):
     """Arma todo lo independiente de los controles (espacios, K_z, φ, D estático,
     fronteras, condición inicial). `mesh_cache=(domain, facet_tags, porosidad)`."""
     from fenicsx.mesh import build_mesh
 
-    if int(getattr(p, "grado_h", 1)) != 1:
-        raise NotImplementedError("grado_h != 1 sólo está en el directo (fenicsx/forward.py); el adjunto usa h en P1")
     phys = _config_phys(p)
     domain, facet_tags, porosidad_raw = (
         mesh_cache if mesh_cache is not None else build_mesh(pozo, spacing=p.spacing)
@@ -117,28 +131,29 @@ def build_context(pozo, p, mesh_cache):
     V, G, Q, h_inlet, h_outlet, bc_C, ds_in, ds_out = _boundaries_elements(
         domain, facet_tags, phys
     )
+    # Carga h (y ψ_h) en Lagrange de grado `grado_h`, como en el directo de fenicsx/forward.py; φ, K_z y las
+    # salidas siguen en G (P1, nodos de la malla compartida).
+    grado_h = int(getattr(p, "grado_h", 1))
+    Gh = G if grado_h == 1 else fem.functionspace(domain, element("Lagrange", domain.topology.cell_name(), grado_h))
 
     phi = fem.Function(G)
     phi.x.array[:] = porosidad_raw
 
     # Conductividad K_z (depende sólo de φ) y dispersión estática D_stat (vector).
+    expr_K = 8.3e-3 * phys["g"] * phys["d_z"] ** 2 * phi ** 3 / (phys["nu"] * (1 - phi) ** 2)
     K_z = fem.Function(G)
-    K_z.interpolate(fem.Expression(
-        8.3e-3 * phys["g"] * phys["d_z"] ** 2 * phi ** 3
-        / (phys["nu"] * (1 - phi) ** 2),
-        G.element.interpolation_points,
-    ))
+    K_z.interpolate(fem.Expression(expr_K, G.element.interpolation_points))
     ell = float(ellipe(1 - phys["alpha"] ** -2))
     D_stat = 0.5 * phys["D_d"] * phi * ell * as_vector([1.0, phys["alpha"] ** -1])
 
     # Condición inicial = mismo estado precedente que carga bfr/forward.
-    h0, _ = get_init_values(G.tabulate_dof_coordinates()[:, :2])
+    h0, _ = get_init_values(Gh.tabulate_dof_coordinates()[:, :2])
     _, c0 = get_init_values(Q.tabulate_dof_coordinates()[:, :2])
 
     ctx = _Context()
     ctx.p, ctx.phys = p, phys
     ctx.domain, ctx.comm = domain, domain.comm
-    ctx.V, ctx.G, ctx.Q = V, G, Q
+    ctx.V, ctx.G, ctx.Q, ctx.Gh = V, G, Q, Gh
     ctx.phi, ctx.K_z, ctx.D_stat = phi, K_z, D_stat
     ctx.h_inlet, ctx.h_outlet, ctx.bc_C = h_inlet, h_outlet, bc_C
     ctx.ds_in, ctx.ds_out = ds_in, ds_out
@@ -148,10 +163,17 @@ def build_context(pozo, p, mesh_cache):
     ctx.borde, ctx.bc_h, ctx.bc_h0 = None, [], []
     if es_libre(p):
         h_outlet.x.array[:] = 0.0
-        ctx.borde = BordeLibre(G, facet_tags, phys["outlet_marker"], K_z.x.array, phi.x.array, p.dt, phys["theta"], h0)
-        ctx.h_bc = fem.Function(G)
+        if Gh is G:
+            Kz_h, phi_h = K_z.x.array, phi.x.array
+        else:                              # K_z y φ en los DOF de Gh (los de la ecuación de borde), como el directo
+            _Kz, _ph = fem.Function(Gh), fem.Function(Gh)
+            _Kz.interpolate(fem.Expression(expr_K, Gh.element.interpolation_points))
+            _ph.interpolate(phi)
+            Kz_h, phi_h = _Kz.x.array, _ph.x.array
+        ctx.borde = BordeLibre(Gh, facet_tags, phys["outlet_marker"], Kz_h, phi_h, p.dt, phys["theta"], h0)
+        ctx.h_bc = fem.Function(Gh)
         ctx.bc_h = [fem.dirichletbc(ctx.h_bc, ctx.borde.dofs)]
-        ctx.bc_h0 = [fem.dirichletbc(fem.Function(G), ctx.borde.dofs)]     # homogéneo: ψ_h = 0 en Γ_out
+        ctx.bc_h0 = [fem.dirichletbc(fem.Function(Gh), ctx.borde.dofs)]     # homogéneo: ψ_h = 0 en Γ_out
     ctx.xp = float(pozo[0])
 
     # Anchos de los kernels gaussianos del pozo (ver docstring del módulo).
@@ -209,7 +231,7 @@ def _flow_residual(ctx, h_cur, h_prev, Qc, zp_c):
     """R^h_n(h_cur; h_prev, Q_n, z_p) = 0."""
     p, phys = ctx.p, ctx.phys
     x = SpatialCoordinate(ctx.domain)
-    g = TestFunction(ctx.G)
+    g = TestFunction(ctx.Gh)
     theta, K_z, alpha = _const_theta(ctx, phys["theta"]), ctx.K_z, phys["alpha"]
     gauss_flow = _gauss(x, ctx.xp, zp_c, ctx.ef)
     return (
@@ -283,7 +305,7 @@ def _solve_forward(ctx, Q, zp):
     historial de arrays de estado (h, C por paso), J y las cantidades que el
     adjunto necesita (χ, amplitudes de fuente por paso)."""
     p, phys = ctx.p, ctx.phys
-    G, Qs = ctx.G, ctx.Q
+    G, Qs = ctx.Gh, ctx.Q     # G: espacio de la carga (= ctx.G con grado_h = 1)
     Nt = len(Q)
     dt = p.dt
     T_total = Nt * dt
@@ -456,7 +478,7 @@ def _solve_forward(ctx, Q, zp):
 # ---------------------------------------------------------------------------
 def _solve_adjoint_grad(ctx, states):
     p, phys = ctx.p, ctx.phys
-    G, Qs = ctx.G, ctx.Q
+    G, Qs = ctx.Gh, ctx.Q     # G: espacio de la carga (= ctx.G con grado_h = 1)
     Q = states["Q"]
     zp = states["zp"]
     Nt = len(Q)
@@ -829,25 +851,25 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
             nodes_Q = ctx.Q.tabulate_dof_coordinates()[:, :2]
             # forward
             np.savez(f"{iter_dir}/simulation_results.npz",
-                     H=np.asarray(states["h"])[:, None, :],
+                     H=_en_G(ctx, states["h"])[:, None, :],
                      C=np.asarray(states["C"])[:, None, :],
                      nodes=nodes_G, dt=p.dt, Q=states["Q"], zp=states["zp"])
             # adjunto
             from fenicsx import io as fx_io
             fx_io.save_adjoint_results(
                 iter_dir, nodes_G, nodes_Q,
-                adj_states["psiH"], adj_states["psiC"], p.dt
+                _en_G(ctx, adj_states["psiH"]), adj_states["psiC"], p.dt
             )
             if animate_on:
                 # Forward (H/C, sin V: este solver no lleva historial de
                 # velocidad) + adjunto (psi_H/psi_C) de ESTA iteración.
                 fx_io.animate_forward_fields(
-                    iter_dir, ctx.G, nodes_Q, states["h"], states["C"], p.dt,
+                    iter_dir, ctx.G, nodes_Q, _en_G(ctx, states["h"]), states["C"], p.dt,
                     Q0=float(Q_c[0]),
                 )
                 fx_io.animate_adjoint_results(
                     iter_dir, ctx.G, nodes_Q,
-                    adj_states["psiH"], adj_states["psiC"], p.dt,
+                    _en_G(ctx, adj_states["psiH"]), adj_states["psiC"], p.dt,
                 )
         g_scaled = grad / J_scale
         gn = float(np.linalg.norm(g_scaled))
@@ -971,6 +993,6 @@ def adjoint_fenicsx(p, mesh_cache=None):
         nodes_Q = ctx.Q.tabulate_dof_coordinates()[:, :2]
         fx_io.save_adjoint_results(
             p.save_data, nodes_G, nodes_Q,
-            adj_states["psiH"], adj_states["psiC"], p.dt,
+            _en_G(ctx, adj_states["psiH"]), adj_states["psiC"], p.dt,
             psiIm_hist=_campo_desde_dual(ctx.Q, adj_states["psiIm"]) if "psiIm" in adj_states else None,
         )

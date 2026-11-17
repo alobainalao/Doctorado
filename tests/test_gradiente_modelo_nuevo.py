@@ -61,6 +61,9 @@ def main(backend, model, factor_alm):
     RUNTIME.params = Parameters(env=env)
     p = RUNTIME.get()
     p.C_init_override = 1.0
+    for a in sys.argv:                  # --grado-h=N: carga h de FEniCS en Lagrange de grado N (el modo env no pasa la clave)
+        if a.startswith("--grado-h=") and backend == "fenicsx":
+            p.grado_h = int(a[10:])
     p.clip_C = "--sin-recorte" not in sys.argv         # el recorte C ≥ 0 no es diferenciable
     p.adj_disp_u = "--sin-dterm" not in sys.argv       # BFR: término ∂_u D en el adjunto del flujo
     p.adj_C_bc_exacta = "--bc-exacta" in sys.argv      # BFR: transpuesta exacta en inlet/outlet
@@ -148,7 +151,7 @@ def main(backend, model, factor_alm):
 
     out = os.path.join(_CODIGO, "data", "output", "verificacion_adjunto")
     os.makedirs(out, exist_ok=True)
-    with open(os.path.join(out, f"{backend}_{model}_alm{int(factor_alm)}{'_mod' if '--modulada' in sys.argv else ''}{'_bcx' if '--bc-exacta' in sys.argv else ''}{'_norm' if '--normalizar' in sys.argv else ''}{'_sindterm' if '--sin-dterm' in sys.argv else ''}.json"), "w") as f:
+    with open(os.path.join(out, f"{backend}_{model}_alm{int(factor_alm)}{'_mod' if '--modulada' in sys.argv else ''}{'_bcx' if '--bc-exacta' in sys.argv else ''}{'_norm' if '--normalizar' in sys.argv else ''}{'_sindterm' if '--sin-dterm' in sys.argv else ''}{'' if int(getattr(p, 'grado_h', 1)) == 1 else f'_h{p.grado_h}'}.json"), "w") as f:
         json.dump(filas, f, indent=1)
 
 

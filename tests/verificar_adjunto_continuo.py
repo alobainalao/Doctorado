@@ -58,7 +58,7 @@ def main():
     dt, phys = float(p.dt), ctx.phys
     R, lam, gamma = phys["R"], phys["landa"], float(p.gamma)
 
-    Qs, G = ctx.Q, ctx.G
+    Qs, G = ctx.Q, ctx.Gh
     x = ufl.SpatialCoordinate(ctx.domain)
     zp_c = fem.Constant(ctx.domain, A.PETSc.ScalarType(zp))
     delta_p = A._gauss(x, ctx.xp, zp_c, ctx.ep)

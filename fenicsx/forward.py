@@ -423,7 +423,7 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     # Espacio de la carga: Lagrange de grado `grado_h` (1 = G, el de siempre). Con grado 2, ∇h es P1 discontinuo y
     # u = −K∇h tiene error O(h²) en vez de O(h) (P0). φ, K_z, la δ del pozo y las salidas siguen en G (P1, nodos de la
-    # malla compartida), así que la comparación nodo a nodo con BFR no cambia. Sólo el directo: adjoint.py exige 1.
+    # malla compartida), así que la comparación nodo a nodo con BFR no cambia. fenicsx/adjoint.py usa el mismo espacio.
     grado_h = int(getattr(p, "grado_h", 1))
     Gh = G if grado_h == 1 else fem.functionspace(domain, element("Lagrange", domain.topology.cell_name(), grado_h))
 

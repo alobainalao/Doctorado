@@ -66,6 +66,17 @@ GRUPOS = {
                                 "cfg": {**MC_ADR, "dt": 7200}, "fenicsx": {"grado_h": 2}},
         },
     },
+    # ── MH. Adjunto de FEniCSx con la carga h en P2 (grado_h, fenicsx/adjoint.py), Δt = 5 h ──
+    "MH_adjunto_p2": {
+        "desc": "ADR de MC0_adr, run_type=comparison (directo + adjunto) en FEniCSx con h en P1 y en P2",
+        "pregunta": "¿Cuánto cambian ψ_h y ψ_C del adjunto FEM al subir h de P1 a P2?",
+        "comparar": False,
+        "casos": {
+            f"MH{g}_adr_h{g}": {"desc": f"MC0_adr, comparison, h en Lagrange P{g}", "backends": ["fenicsx"],
+                                "cfg": {**MC_ADR, "run_type": "comparison"}, "fenicsx": {"grado_h": g}}
+            for g in (1, 2)
+        },
+    },
     "M_adjunto": {
         "desc": "ADR / MRMT Semi / MRMT Bloque, configuración de main + fuente común, salida libre; forward + adjunto",
         "pregunta": "¿Cómo son los adjuntos ψ_h, ψ_C del modelo nuevo con la configuración final?",
