@@ -5,8 +5,9 @@ oct 2026 (commits 87f4654 y 5c2d9a8) en lugar del anillo radial de la malla comp
     python -m preprocessing.malla_conos                       # → data/input/malla_conos/malla.pkl
     python -m preprocessing.malla_conos --figura <prefijo>    # + PNG de la malla y del espaciado
     python -m preprocessing.malla_conos --h-eje 1 --salida data/input/malla_conos_eje/malla.pkl   # + eje del pozo
-    python -m preprocessing.malla_conos --h-eje 0.5 --semiancho-eje 1 --r-capsula-pozo 25 --eje data/input/malla_conos/eje_pluma.npy \
-        --salida data/input/malla_conos_eje05/malla.pkl   # eje de 0.5 m y cápsula del pozo ajustada a 3ε = r_pozo
+    python -m preprocessing.malla_conos --h-eje 0.5 --r-capsula-pozo 25 --eje data/input/malla_conos/eje_pluma.npy \
+        --salida data/input/malla_conos_eje05_s5/malla.pkl   # eje de 0.5 m a menos de 5 m y cápsula del pozo de 25 m
+                                                             # (≈ 3ε = r_pozo): malla de las optimizaciones desde el 17-nov
 
 Corre en bfr_env.  Desde el 12-nov-2026 es la malla común de BFR y FEniCSx (`mesh_pkl` de experimentos/base.json y
 config/nitrato_vscale_malla.json); la malla de 4 niveles anterior queda en data/input/malla_compartida/malla.pkl.
