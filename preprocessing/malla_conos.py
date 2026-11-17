@@ -5,6 +5,8 @@ oct 2026 (commits 87f4654 y 5c2d9a8) en lugar del anillo radial de la malla comp
     python -m preprocessing.malla_conos                       # → data/input/malla_conos/malla.pkl
     python -m preprocessing.malla_conos --figura <prefijo>    # + PNG de la malla y del espaciado
     python -m preprocessing.malla_conos --h-eje 1 --salida data/input/malla_conos_eje/malla.pkl   # + eje del pozo
+    python -m preprocessing.malla_conos --h-eje 0.5 --r-capsula-pozo 25 --eje data/input/malla_conos/eje_pluma.npy \
+        --salida data/input/malla_conos_eje05/malla.pkl   # eje de 0.5 m y cápsula del pozo ajustada a 3ε = r_pozo
 
 Corre en bfr_env.  Desde el 12-nov-2026 es la malla común de BFR y FEniCSx (`mesh_pkl` de experimentos/base.json y
 config/nitrato_vscale_malla.json); la malla de 4 niveles anterior queda en data/input/malla_compartida/malla.pkl.
@@ -92,16 +94,16 @@ def exceso_capsula(xy, f1, f2, r):
     return np.maximum(0.0, np.linalg.norm(xy - (f1 + t[:, None] * d), axis=1) - r)
 
 
-def capsulas(p, eje):
-    """(f1, f2, r) de las cápsulas del pozo y de la fuente."""
+def capsulas(p, eje, r_pozo=R_CAPSULA):
+    """(f1, f2, r) de las cápsulas del pozo (radio r_pozo) y de la fuente."""
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
     zp_max = float(getattr(p, "zp_max", -200.0))
     sentido = -1.0 if eje is None else (np.sign(eje[min(5, len(eje) - 1), 0] - eje[0, 0]) or -1.0)   # hacia la salida
-    return {"pozo": (pozo, np.array([pozo[0], zp_max]), R_CAPSULA),
+    return {"pozo": (pozo, np.array([pozo[0], zp_max]), r_pozo),
             "fuente": (fnte, fnte + np.array([sentido * DX_FUENTE, 0.0]), R_CAPSULA)}
 
 
-def espaciado(p, eje, vert):
+def espaciado(p, eje, vert, r_capsula_pozo=R_CAPSULA):
     """h(xy) de 4 niveles con los conos como nivel intermedio."""
     from funtions.mesh_test import PLUME_W0, PLUME_W1, PLUME_DEPTH_BELOW, WELL_R0, WELL_R1
     pozo, fnte = np.asarray(p.pozo, float), np.asarray(p.fnte, float)
@@ -109,7 +111,7 @@ def espaciado(p, eje, vert):
     s_bnd, s_max = float(p.min_sp_boundary), float(p.spacing)
     z_eje = float(np.interp(pozo[0], eje[::-1, 0], eje[::-1, 1]))   # eje de la pluma sobre el pozo
 
-    caps = capsulas(p, eje)
+    caps = capsulas(p, eje, r_capsula_pozo)
     z_techo = float(vert[:, 1].max())
 
     def h_exacto(xy):
@@ -171,6 +173,9 @@ def main():
     ap.add_argument("--figura", help="prefijo de los PNG (malla y espaciado)")
     ap.add_argument("--eje", help="eje de la pluma ya calculado (.npy), en lugar de integrarlo desde --preproceso")
     ap.add_argument("--h-eje", type=float, help="espaciado [m] de la franja del eje del pozo (sin ella si no se da)")
+    ap.add_argument("--r-capsula-pozo", type=float, default=R_CAPSULA,
+                    help="radio [m] de la cápsula de min_sp del pozo; algo mayor que 3ε = r_pozo, donde está casi toda "
+                         "la masa de los kernels gaussianos")
     args = ap.parse_args()
     os.chdir(CODIGO_DIR)
     if os.path.exists(args.salida):
@@ -188,17 +193,17 @@ def main():
     eje = np.load(args.eje) if args.eje else compute_plume_streamline(args.preproceso, ruta=EJE)
     if eje is None:
         raise SystemExit(f"[malla] no existe {args.preproceso}")
-    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en las cápsulas (radio {R_CAPSULA:g} m) de pozo (vertical, de z_p "
-            f"a zp_max) y fuente (horizontal), {p.s_cone:g} m en los conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera "
+    nota = (f"; 4 niveles con conos: {p.min_sp:g} m en las cápsulas de pozo (vertical, de z_p a zp_max, "
+            f"radio {args.r_capsula_pozo:g} m) y fuente (horizontal, radio {R_CAPSULA:g} m), {p.s_cone:g} m en los conos de pluma y pozo, {p.min_sp_boundary:g} m en la frontera "
             f"(cota inferior en el techo), {p.spacing:g} m lejos (eje {EJE})")
     h_extra = None
     if args.h_eje:
         h_extra = espaciado_eje(p, args.h_eje)
         nota += f"; franja de {args.h_eje:g} m a menos de {SEMIANCHO_EJE:g} m del eje del pozo (de z_p a zp_max)"
-    m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert), refino_k=None, nota_extra=nota, h_extra=h_extra)   # K ya va en h
+    m = mc.generar(cfg, h_fijo=espaciado(p, eje, vert, args.r_capsula_pozo), refino_k=None, nota_extra=nota, h_extra=h_extra)   # K ya va en h
     m["meta"]["origen"] = (f"preprocessing/malla_conos.py (min_sp={p.min_sp}, s_cone={p.s_cone} en los conos, "
                            f"min_sp_boundary={p.min_sp_boundary}, spacing={p.spacing}, r_circle={p.r_circle}, "
-                           f"grado={GRADO}" + (f", h_eje={args.h_eje:g}, semiancho_eje={SEMIANCHO_EJE:g}" if args.h_eje else "") + ")")
+                           f"grado={GRADO}, r_capsula_pozo={args.r_capsula_pozo:g}" + (f", h_eje={args.h_eje:g}, semiancho_eje={SEMIANCHO_EJE:g}" if args.h_eje else "") + ")")
     m["eje_pluma"] = eje
 
     os.makedirs(os.path.dirname(args.salida), exist_ok=True)
