@@ -1,10 +1,10 @@
 from contextlib import ExitStack
-from funtions.step_time import step_time, step_adjoint
+from funtions.step_time import step_time
 from funtions.runtime import RUNTIME
 from view.plot import update_supertitles, update_optimization_frame, create_optimization_figures
 from postprocessing.create_btc  import create_btc
 from view.plot  import create_figures, initialize_plots, create_adj_figures, initialize_adj_plots, initialize_optimization_plots
-from funtions.utils import update_pozo, get_solucion, grad_Q, grad_zp, compute_functional
+from funtions.utils import update_pozo, get_solucion, compute_functional
 import os
 import numpy as np
 import time
@@ -16,35 +16,25 @@ p = RUNTIME.params
 # SOLVE ADJOINT
 # =========================================================
 
-def solve_adjoint(h, U, C, Qout, d, animate=False, save_data=False):
+def solve_adjoint(hist, Qout, d, animate=False, save_data=False):
+    """Campos adjuntos ψ_h, ψ_C (y ψ_im en MRMT) del adjunto discreto EXACTO, el mismo del gradiente
+    (funtions/adjunto_exacto.py), a partir de las historias del directo `hist` (lo que devuelve solve_forward)."""
+    if getattr(p, "upwind_transport", False):
+        raise NotImplementedError("adjunto BFR: el adjunto exacto no cubre el transporte upwind")
+    d.psi_H = [np.zeros_like(hk) for hk in d.H]
+    d.psi_C = [np.zeros_like(ck) for ck in d.C]
+    h, U, C = hist["H"], hist["U"], hist["C"]
 
-    # Condición terminal del adjunto ψ(T)=0. Se inicializa aquí si el llamador
-    # no lo hizo (p.ej. gradient()/optimize_bfr/checkpoint), no sólo dentro de
-    # conjugate_gradient — así cualquier ruta que resuelva el adjunto funciona.
-    if getattr(d, "psi_H", None) is None:
-        d.psi_H = [np.zeros_like(hk) for hk in d.H]
-        d.psi_C = [np.zeros_like(ck) for ck in d.C]
-
-    # ==============================
-    # 🔹 SOLO SI HAY ANIMACIÓN
-    # ==============================
     figs = None
     visuals = None
-
     if animate:
         figs, axes, cmaps = create_adj_figures()
         visuals = initialize_adj_plots(d, axes, cmaps, figs)
 
-    # =====================================================
-    # SIMULACIÓN ADJUNTA
-    # =====================================================
-    # ψ guardado/animado = variables del adjunto discreto EXACTO (el del gradiente), no las de step_adjoint
-    exacto = None
-    if getattr(p, "adjoint_exact", True) and not getattr(p, "upwind_transport", False):
-        from funtions.adjunto_exacto import gradiente_exacto
-        Ci = get_solucion(["Ci"], f"{p.save_data}/simulation_results.npz")[0] if "mrmt" in p.model else None
-        exacto = {}
-        gradiente_exacto(d, p, np.asarray(Qout[0], float), float(d.pozo_cor[1]), h, U, C, Ci=Ci, debug=exacto)
+    from funtions.adjunto_exacto import gradiente_exacto
+    exacto = {}
+    gradiente_exacto(d, p, np.asarray(Qout[0], float), float(d.pozo_cor[1]), h, U, C, Ci=hist.get("Ci"),
+                     Csol=hist.get("Csol"), debug=exacto)
     sim = SimulationAdjoint(d.psi_H, d.psi_C, exacto=exacto)
 
     outputs = setup_outputs_adj(
@@ -82,162 +72,11 @@ def solve_forward(d, Qout, animate, save_data):
 
     run_simulation(sim, p.Nt, outputs, d, figs, visuals)
 
-    finalize_outputs(outputs, sim)
+    hist = finalize_outputs(outputs, sim)
 
     if p.postproc:
         create_btc()
-
-def conjugate_gradient(d, animate, save_data, p, max_iter=20):
-
-    fig = None
-    axes = None
-    visuals = None
-
-    if animate:
-        fig, axes = create_optimization_figures()
-
-        visuals = initialize_optimization_plots(
-            history={"Q": [], "zp": [], "J": []},
-            fig=fig,
-            axes=axes
-        )
-
-    outputs = setup_optimization_outputs(
-        fig=fig,
-        save_data=save_data,
-        animate=animate
-    )
-
-    # =====================================================
-    # VARIABLES
-    # =====================================================
-    Qout = p.Qout
-    pozo_cor = p.pozo
-
-    g_prev = None
-    dQ = None
-
-    d.psi_H = [np.zeros_like(h) for h in d.H]
-    d.psi_C = [np.zeros_like(c) for c in d.C]
-
-    # =====================================================
-    
-    # TIMER
-    # =====================================================
-    t_start = time.perf_counter()
-
-    print("Iniciando optimización...")
-
-
-    if outputs["animate"]:
-        stack = ExitStack()
-        stack.enter_context(outputs["context"])
-
-    try:
-
-        for k in range(max_iter):
-
-            # =================================================
-            # GEOMETRÍA
-            # =================================================
-
-            d = update_pozo(d, pozo_cor)
-
-            # =================================================
-            # FORWARD
-            # =================================================
-
-            solve_forward(d, Qout, animate, save_data)
-
-            h, U, C = get_solucion(
-                ["H", "U", "C"],
-                f"{p.save_data}/simulation_results.npz"
-            )
-
-            # =================================================
-            # ADJOINT
-            # =================================================
-
-            solve_adjoint(h, U, C, Qout, d, animate, save_data)
-
-            psi_C, psi_h = get_solucion(
-                ["psi_C", "psi_H"],
-                f"{p.save_data}/adjoint_results.npz"
-            )
-
-            # =================================================
-            # GRADIENTES
-            # =================================================
-
-            gQ = grad_Q(Qout[0], psi_h, psi_C, C, d)
-            gzp = grad_zp(Qout[0], psi_h, psi_C, C, d)
-
-            # =================================================
-            # DIRECCIÓN CONJUGADA
-            # =================================================
-
-            if k == 0:
-                dQ = -gQ
-            else:
-                beta = np.dot(gQ, gQ) / (np.dot(g_prev, g_prev) + 1e-14)
-                dQ = -gQ + beta * dQ
-
-            # =================================================
-            # STEP
-            # =================================================
-
-            alpha = 1e-3
-
-            Qout[0] += alpha * dQ
-            pozo_cor[1] -= alpha * gzp
-
-            # =================================================
-            # FUNCIONAL
-            # =================================================
-
-            J = compute_functional(Qout[0], pozo_cor[1], C, d)
-
-            # =================================================
-            # HISTORIAL
-            # =================================================
-
-            if outputs["save_data"]:
-
-                outputs["Q_hist"].append(Qout[0].copy())
-                outputs["zp_hist"].append(pozo_cor[1].copy())
-                outputs["J_hist"].append(J)
-
-            # =================================================
-            # ANIMACIÓN
-            # =================================================
-
-            if outputs["animate"]:
-
-                update_optimization_frame(
-                    k,
-                    {
-                        "Q": outputs["Q_hist"],
-                        "zp": outputs["zp_hist"],
-                        "J": outputs["J_hist"]
-                    },
-                    visuals,
-                    fig
-                )
-
-                outputs["writer"].grab_frame()
-
-            g_prev = gQ.copy()
-
-    finally:
-
-        if outputs["animate"]:
-            stack.close()
-
-    print(f"Tiempo total: {time.perf_counter() - t_start:.2f} s")
-
-    return Qout, pozo_cor, outputs
-
-
+    return hist
 
 def pack_controls(Q, zp):
 
@@ -254,542 +93,101 @@ def unpack_controls(x):
 
     return Q, zp
 
-def functional(
-    x,
-    d,
-    p,
-    animate=False,
-    save_data=True
-):
+# Historias del último directo por control: functional y gradient en el mismo x (trust-constr los pide así)
+# comparten un solo directo, sin escribir ni releer el npz.
+_ULTIMO = {"clave": None, "hist": None}
 
-    # -----------------------------------------------------
-    # controles
-    # -----------------------------------------------------
 
-    Q, zp = unpack_controls(x)
-
-    Qout = [Q.copy()]
-
+def _directo(x, d, p, animate=False, save_data=False):
+    """Directo con el control x = [Q, z_p]; devuelve las historias {H, U, C[, Ci, Csol]} (niveles 1..N_t)."""
+    Q, zp = unpack_controls(np.asarray(x, float))
+    clave = (np.asarray(x, float).tobytes(), p.model, id(d))
+    if _ULTIMO["clave"] == clave and not animate and not save_data:
+        return _ULTIMO["hist"]
     pozo_cor = np.array(p.pozo, dtype=float)   # p.pozo puede ser entero: sin esto z_p se truncaba a metros enteros
-
     pozo_cor[1] = zp
-
-    # -----------------------------------------------------
-    # actualizar pozo
-    # -----------------------------------------------------
-
     d = update_pozo(d, pozo_cor)
+    hist = solve_forward(d, [Q.copy()], animate, save_data=save_data)
+    _ULTIMO.update(clave=clave, hist=hist)
+    return hist
+
+
+def functional(x, d, p, animate=False, save_data=False):
+    Q, zp = unpack_controls(np.asarray(x, float))
+    hist = _directo(x, d, p, animate, save_data)
+    return compute_functional(Q, zp, hist["C"], d)
+
+
+def gradient(x, d, p, animate=False, save_data=False):
+    """∇Ĵ por el adjunto discreto exacto (funtions/adjunto_exacto.py): derivada exacta del esquema programado."""
+    if getattr(p, "upwind_transport", False):
+        raise NotImplementedError("gradiente BFR: el adjunto exacto no cubre el transporte upwind")
+    from funtions.adjunto_exacto import gradiente_exacto
+    Q, zp = unpack_controls(np.asarray(x, float))
+    hist = _directo(x, d, p, animate, save_data)
+    gQ, gzp = gradiente_exacto(d, p, Q, zp, hist["H"], hist["U"], hist["C"], Ci=hist.get("Ci"),
+                               Csol=hist.get("Csol"))
+    return pack_controls(gQ, gzp)
 
-    # -----------------------------------------------------
-    # forward
-    # -----------------------------------------------------
-
-    # functional() carga h/U/C desde el npz justo después: siempre guardar.
-    solve_forward(
-        d,
-        Qout,
-        animate,
-        save_data=True
-    )
-
-    h, U, C = get_solucion(
-        ["H", "U", "C"],
-        f"{p.save_data}/simulation_results.npz"
-    )
-
-    # -----------------------------------------------------
-    # funcional
-    # -----------------------------------------------------
-
-    J = compute_functional(
-        Q,
-        zp,
-        C,
-        d
-    )
-
-    return J
-
-def gradient(
-    x,
-    d,
-    p,
-    animate=False,
-    save_data=True
-):
-
-    # -----------------------------------------------------
-    # controles
-    # -----------------------------------------------------
-
-    Q, zp = unpack_controls(x)
-
-    Qout = [Q.copy()]
-
-    pozo_cor = np.array(p.pozo, dtype=float)   # p.pozo puede ser entero: sin esto z_p se truncaba a metros enteros
-
-    pozo_cor[1] = zp
-
-    # -----------------------------------------------------
-    # actualizar pozo
-    # -----------------------------------------------------
-
-    d = update_pozo(d, pozo_cor)
-
-    # -----------------------------------------------------
-    # FORWARD
-    # -----------------------------------------------------
-
-    # El forward siempre guarda: el adjunto carga h/U/C desde el npz
-    # independientemente de save_data (que controla el historial del optimizador).
-    solve_forward(
-        d,
-        Qout,
-        animate,
-        save_data=True
-    )
-
-    h, U, C = get_solucion(
-        ["H", "U", "C"],
-        f"{p.save_data}/simulation_results.npz"
-    )
-
-    # -----------------------------------------------------
-    # ADJUNTO DISCRETO EXACTO (funtions/adjunto_exacto.py): derivada exacta del esquema programado
-    # -----------------------------------------------------
-    _exacto_ok = not getattr(p, "upwind_transport", False)
-    if getattr(p, "adjoint_exact", True) and not _exacto_ok:
-        print("[gradient] AVISO: adjunto exacto no disponible con upwind; se usa el adjunto heredado "
-              "(sin verificar contra diferencias finitas)", flush=True)
-    if getattr(p, "adjoint_exact", True) and _exacto_ok:
-        from funtions.adjunto_exacto import gradiente_exacto
-        Ci = get_solucion(["Ci"], f"{p.save_data}/simulation_results.npz")[0] if "mrmt" in p.model else None
-        gQ, gzp = gradiente_exacto(d, p, Q, zp, h, U, C, Ci=Ci)
-        return pack_controls(gQ, gzp)
-
-    # -----------------------------------------------------
-    # ADJOINT
-    # -----------------------------------------------------
-
-    # El adjunto siempre guarda: gradient() carga psi desde el npz.
-    solve_adjoint(
-        h,
-        U,
-        C,
-        Qout,
-        d,
-        animate,
-        save_data=True
-    )
-
-    psi_C, psi_h = get_solucion(
-        ["psi_C", "psi_H"],
-        f"{p.save_data}/adjoint_results.npz"
-    )
-
-    # -----------------------------------------------------
-    # gradientes parciales
-    # -----------------------------------------------------
-
-    gQ = grad_Q(
-        Q,
-        psi_h,
-        psi_C,
-        C,
-        d
-    )
-
-    gzp = grad_zp(
-        Q,
-        psi_h,
-        psi_C,
-        C,
-        d
-    )
-
-    # -----------------------------------------------------
-    # gradiente global
-    # -----------------------------------------------------
-
-    g = pack_controls(gQ, gzp)
-
-    return g
-
-def line_search(
-    f,
-    x,
-    ddir,
-    g,
-    d,
-    p,
-    alpha0=1.0,
-    c=1e-4,
-    tau=0.5,
-    max_ls=20
-):
-
-    fx = f(x, d, p)
-
-    alpha = alpha0
-
-    gd = np.dot(g, ddir)
-
-    for _ in range(max_ls):
-
-        x_trial = x + alpha * ddir
-
-        f_trial = f(x_trial, d, p)
-
-        # Armijo
-        if f_trial <= fx + c * alpha * gd:
-
-            return alpha
-
-        alpha *= tau
-
-    return alpha
-
-
-# =========================================================
-# NONLINEAR CONJUGATE GRADIENT
-# =========================================================
-
-def nonlinear_cg(
-    d,
-    p,
-    maxiter=50,
-    tol=1e-6,
-    animate=False,
-    save_data=True
-):
-
-    # -----------------------------------------------------
-    # control inicial
-    # -----------------------------------------------------
-
-    Q0 = p.Qout[0]
-
-    zp0 = p.pozo[1]
-
-    x = pack_controls(Q0, zp0)
-
-    # -----------------------------------------------------
-    # gradiente inicial
-    # -----------------------------------------------------
-
-    g = gradient(
-        x,
-        d,
-        p,
-        animate=False,
-        save_data=save_data
-    )
-
-    # dirección inicial
-    ddir = -g
-
-    # historial
-    history = {
-        "J": [],
-        "grad_norm": [],
-        "Q": [],
-        "zp": []
-    }
-
-    # =====================================================
-    # ITERACIONES
-    # =====================================================
-
-    for k in range(maxiter):
-
-        # -------------------------------------------------
-        # funcional actual
-        # -------------------------------------------------
-
-        J = functional(
-            x,
-            d,
-            p,
-            animate=False,
-            save_data=save_data
-        )
-
-        # -------------------------------------------------
-        # norma gradiente
-        # -------------------------------------------------
-
-        gnorm = np.linalg.norm(g)
-
-        # guardar
-        Qk, zpk = unpack_controls(x)
-
-        history["J"].append(J)
-        history["grad_norm"].append(gnorm)
-        history["Q"].append(Qk.copy())
-        history["zp"].append(zpk)
-
-        # print
-        print(
-            f"Iter {k:03d} | "
-            f"J={J:.6e} | "
-            f"||g||={gnorm:.3e} | "
-            f"zp={zpk:.4f}"
-        )
-
-        # -------------------------------------------------
-        # stopping
-        # -------------------------------------------------
-
-        if gnorm < tol:
-
-            print("Convergencia alcanzada ✔")
-
-            break
-
-        # -------------------------------------------------
-        # line search
-        # -------------------------------------------------
-
-        alpha = line_search(
-            functional,
-            x,
-            ddir,
-            g,
-            d,
-            p
-        )
-
-        # -------------------------------------------------
-        # update variables
-        # -------------------------------------------------
-
-        x_new = x + alpha * ddir
-
-        # -------------------------------------------------
-        # nuevo gradiente
-        # -------------------------------------------------
-
-        g_new = gradient(
-            x_new,
-            d,
-            p,
-            animate=False,
-            save_data=save_data
-        )
-
-        # -------------------------------------------------
-        # Polak-Ribiere
-        # -------------------------------------------------
-
-        y = g_new - g
-
-        beta = np.dot(g_new, y) / (
-            np.dot(g, g) + 1e-14
-        )
-
-        # restart automático
-        beta = max(beta, 0.0)
-
-        # -------------------------------------------------
-        # nueva dirección conjugada
-        # -------------------------------------------------
-
-        ddir = -g_new + beta * ddir
-
-        # -------------------------------------------------
-        # update variables
-        # -------------------------------------------------
-
-        x = x_new
-        g = g_new
-
-    # =====================================================
-    # RESULTADO FINAL
-    # =====================================================
-
-    Q_opt, zp_opt = unpack_controls(x)
-
-    return Q_opt, zp_opt, history
-
-
-# =========================================================
-# OPTIMIZACIÓN — trust-constr (consistente con backend fenicsx)
-# =========================================================
 
 def optimize_bfr(d, p, max_iter=None):
-    """Optimización adjunta MULTIOBJETIVO (Pareto) sobre x=[Q(t), z_p].
+    """Optimización adjunta sobre x = [Q(t), z_p] con el optimizador común (funtions/optimizador.py): variables
+    escaladas, trust-constr y paro por la medida de criticidad χ; mismo algoritmo que optimize_fenicsx."""
+    import json
+    from funtions.optimizador import minimizar
+    from funtions.water_supply import storage_trajectory
 
-    Minimiza J = gamma*J1 + J2 + J3  (Cap. 3, ec. 3.9) con:
-      J1 = ∫∫ g_p(x) C(x,t)² dΩ dt       (calidad: kernel Gaussiano en pozo)
-      J2 = kappa * |z_p - z0|²             (costo de instalación)
-      J3 = |z_p - z0| * ∫ Q(t)² dt        (costo energético de bombeo)
+    Q0 = np.asarray(p.Qout[0], float)
+    x0 = pack_controls(Q0, float(p.pozo[1]))
+    zp_lo = float(getattr(p, "zp_min", float(d.nodes[:, 1].min()) + float(p.spacing)))
+    zp_hi = float(getattr(p, "zp_max", float(d.nodes[:, 1].max()) - float(p.spacing)))
+    if max_iter:
+        p.opt_maxiter = int(max_iter)
 
-    z0 = p.z0 = nivel de la superficie del terreno (referencia física fija,
-    Cap. 3 §3.2). J2 y J3 son cero cuando z_p = z0 y crecen con la profundidad.
-    gamma controla el punto sobre la frontera de Pareto (Cap. 3 §Escalarización):
-      gamma grande → más peso a calidad → pozo más profundo (menor J1)
-      gamma pequeño → más peso a costo → pozo más superficial
-
-    Escalado por gradiente inicial: escala_i = 1/|∂J/∂x_i|, necesario porque
-    |∂J/∂Q| ~ 10³ y |∂J/∂z_p| ~ 10¹⁶ en unidades físicas; trust-constr
-    trabaja en espacio escalado para mejor condicionamiento (Cap. 3 §Algoritmo).
-    Criterio de parada: norma del gradiente proyectado < gtol (condición KKT,
-    Cap. 3 Thm. existencia + Obs. Slater).
-    Restricción lineal DURA de suministro 0 ≤ S_n ≤ S_max (water_supply.py)."""
-    import time, json, sys
-    from scipy.optimize import minimize, LinearConstraint, Bounds
-    from funtions.water_supply import (supply_constraint, storage_trajectory,
-                                       pump_upper_bounds, pump_duty_constraint)
-
-    Q0  = np.asarray(p.Qout[0], float)
-    zp0 = float(p.pozo[1])
-    x0  = pack_controls(Q0, zp0)
-    n   = len(x0)
-
-    Q_max = float(getattr(p, "Q_max", 1e-2))
-    z_lo  = float(d.nodes[:, 1].min()) + float(p.spacing)
-    z_hi  = float(d.nodes[:, 1].max()) - float(p.spacing)
-    zp_lo = float(getattr(p, "zp_min", z_lo))
-    zp_hi = float(getattr(p, "zp_max", z_hi))
-
-    # --- Gradiente inicial para escalar variables ---
-    print("[bfr-opt] Calculando gradiente inicial para escalado...", flush=True)
-    g0    = gradient(x0, d, p, animate=False, save_data=False)
-    abs_g = np.abs(g0)
-    med   = np.median(abs_g[abs_g > 0]) if np.any(abs_g > 0) else 1.0
-    abs_g = np.where(abs_g < 1e-30 * med, med, abs_g)
-    # u = (x - x0) * abs_g  →  x = x0 + u/abs_g  →  ∂J/∂u_i|u0 = ±1
-    u0 = np.zeros(n)
-
-    # --- Evaluar J₀ para logging ---
-    print("[bfr-opt] Evaluando J₀...", flush=True)
-    J0_raw = functional(x0, d, p, animate=False, save_data=False)
-    print(f"[bfr-opt] J₀={J0_raw:.4e}  (abs_g ya da |dJ/du|=±1)", flush=True)
-
-    def to_phys(u):  return x0 + u / abs_g
-
-    lo_phys  = np.concatenate([np.zeros(len(Q0)), [zp_lo]])
-    hi_phys  = np.concatenate([pump_upper_bounds(p, len(Q0), Q_max), [zp_hi]])
-    bounds_u = list(zip((lo_phys - x0) * abs_g, (hi_phys - x0) * abs_g))
-
-    A_phys, clb, cub = supply_constraint(p, n)
-    A_u   = A_phys / abs_g
-    clb_u = clb - A_phys @ x0
-    cub_u = cub - A_phys @ x0
-    cons_list = [LinearConstraint(A_u, clb_u, cub_u)]
-    duty = pump_duty_constraint(p, n, Q_max)
-    if duty is not None:
-        Ad, lbd, ubd = duty
-        Ad_u   = Ad / abs_g
-        lbd_u  = lbd - Ad @ x0
-        ubd_u  = ubd - Ad @ x0
-        cons_list.append(LinearConstraint(Ad_u, lbd_u, ubd_u))
-
-    history   = {"Q": [], "zp": [], "J": [], "grad_norm": []}
-    save_dir  = p.save_data
-    # p.save_data ya vive bajo .../optimization (run_type="optimization" es la
-    # única forma de llegar a optimize_bfr, ver main.py) — no anidar de nuevo.
-    opt_dir   = save_dir
+    opt_dir = p.save_data
     os.makedirs(opt_dir, exist_ok=True)
     prog_path = os.path.join(opt_dir, "progress.jsonl")
     open(prog_path, "w").close()
+    history = {"Q": [], "zp": [], "J": [], "grad_norm": []}
+    t0 = time.time()
 
-    n_fun  = [0]
-    n_jac  = [0]
-    t0_opt = time.time()
-    max_it = int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20))
+    def _log(msg):
+        print(msg, flush=True)
 
-    def _log(msg):  print(msg, flush=True)
-
-    def _write(rec):
-        with open(prog_path, "a") as f:
-            f.write(json.dumps(rec) + "\n")
-
-    def fun(u):
-        x     = to_phys(u)
-        t_s   = time.time()
-        J     = functional(x, d, p, animate=False, save_data=True)
-        dt_s  = time.time() - t_s
-        tot   = time.time() - t0_opt
-        n_fun[0] += 1
-        history["Q"].append(x[:-1].copy())
-        history["zp"].append(float(x[-1]))
-        history["J"].append(float(J))
-        eta = (tot / n_fun[0]) * max(0, max_it - n_fun[0])
-        rec = {"eval": n_fun[0], "J": float(J),
-               "zp": float(x[-1]),
-               "Q_mean": float(x[:-1].mean()), "Q_min": float(x[:-1].min()),
-               "Q_max": float(x[:-1].max()),
-               "elapsed_s": round(tot,1), "iter_s": round(dt_s,1),
-               "eta_s": round(eta,1)}
-        _write(rec)
-        _log(f"[bfr-opt #{n_fun[0]:>3d}/{max_it}] J={J:.4e}  "
-             f"z_p={x[-1]:.1f}m  Q̄={x[:-1].mean():.3e}  iter={dt_s:.0f}s  ETA≈{int(eta//60)}m{int(eta%60):02d}s")
+    def fun(x):
+        t_s = time.time()
+        J = functional(x, d, p)
+        history["Q"].append(x[:-1].copy()); history["zp"].append(float(x[-1])); history["J"].append(float(J))
+        with open(prog_path, "a") as fh:
+            fh.write(json.dumps({"eval": len(history["J"]), "J": float(J), "zp": float(x[-1]),
+                                 "Q_mean": float(x[:-1].mean()), "iter_s": round(time.time() - t_s, 1),
+                                 "elapsed_s": round(time.time() - t0, 1)}) + "\n")
+        _log(f"[bfr-opt] J={J:.6e}  z_p={x[-1]:.1f}m  Q̄={x[:-1].mean():.3e}  ({time.time() - t_s:.0f}s)")
         return J
 
-    def jac(u):
-        x = to_phys(u)
-        n_jac[0] += 1
-        _log(f"[bfr-opt grad #{n_jac[0]}] adjunto en z_p={x[-1]:.1f}m ...")
-        # Forward + adjunto de ESTA iteración van directo a su propio
-        # subdirectorio (datos .npz y animación H/V/C + psi_H/psi_C), en vez
-        # de pisar el .npz raíz de save_dir cada vez: se redirige save_data/
-        # save_video temporalmente (p es el mismo objeto que ya leen
-        # view.animation/view.plot a nivel de módulo).
-        iter_dir = os.path.join(opt_dir, f"iter_{n_jac[0]:03d}")
-        os.makedirs(iter_dir, exist_ok=True)
-        orig_data, orig_video = p.save_data, p.save_video
-        p.save_data, p.save_video = iter_dir, iter_dir
-        try:
-            g = gradient(x, d, p, animate=True, save_data=True) / abs_g
-        finally:
-            p.save_data, p.save_video = orig_data, orig_video
-        gn = float(np.linalg.norm(g))
-        history["grad_norm"].append(gn)
-        _log(f"[bfr-opt grad #{n_jac[0]}] ‖∇J‖={gn:.3e} (escalado)")
+    def jac(x):
+        g = gradient(x, d, p)
+        history["grad_norm"].append(float(np.linalg.norm(g)))
+        _log(f"[bfr-opt grad #{len(history['grad_norm'])}] z_p={x[-1]:.1f}m  ‖∇Ĵ‖={history['grad_norm'][-1]:.3e}")
         return g
 
-    # Verificar factibilidad de Slater: x0 debe satisfacer estrictamente
-    # las cotas para que las condiciones KKT sean aplicables (Cap. 3 Obs. Slater).
-    slater_ok = (np.all(x0[:-1] > lo_phys[:-1]) and np.all(x0[:-1] < hi_phys[:-1])
-                 and lo_phys[-1] < x0[-1] < hi_phys[-1])
-    _log(f"[bfr-opt] z_p inicial={zp0:.1f}m  z0={getattr(p,'z0',0.0):.1f}m  "
-         f"max_iter={max_it}  Slater={'OK' if slater_ok else 'FRONTERA (KKT puede fallar)'}  "
-         f"progress→{prog_path}")
-    res = minimize(fun, u0, jac=jac, method="trust-constr",
-                   bounds=Bounds((lo_phys - x0) * abs_g, (hi_phys - x0) * abs_g),
-                   constraints=cons_list,
-                   options={"maxiter": max_it, "gtol": 1e-6})
-
-    x_opt  = to_phys(res.x)
-    S_opt  = storage_trajectory(x_opt[:-1], p)
-    J_phys = res.fun
-    _log(f"[bfr-opt] TERMINADO: J={J_phys:.6e}  "
-         f"success={res.success}  nit={res.nit}  msg={res.message}")
-    _log(f"[bfr-opt] z_p*={x_opt[-1]:.2f}m  "
-         f"Q*: min={x_opt[:-1].min():.3e}  max={x_opt[:-1].max():.3e}  "
-         f"mean={x_opt[:-1].mean():.3e}")
-    _log(f"[bfr-opt] S∈[{S_opt.min():.2f}, {S_opt.max():.2f}] m³  "
-         f"(S_max={getattr(p,'S_max',200.0)})")
-    _write({"status": "done", "J_opt": float(J_phys),
-            "zp_opt": float(x_opt[-1]), "success": bool(res.success),
-            "nit": int(res.nit)})
+    res, chi = minimizar(fun, jac, x0, p, zp_lo, zp_hi, log=_log,
+                         progreso=getattr(p, "opt_progreso", os.path.join(opt_dir, "progreso")))
+    x_opt = res.x
+    S_opt = storage_trajectory(x_opt[:-1], p)
+    _log(f"[bfr-opt] terminado: J={res.fun:.6e}  success={res.success}  nit={res.nit}  msg={res.message}")
+    _log(f"[bfr-opt] z_p*={x_opt[-1]:.2f}m  S∈[{S_opt.min():.2f}, {S_opt.max():.2f}] m³")
     np.savez(f"{opt_dir}/optimization_results.npz",
-             Q=np.asarray(history["Q"]), zp=np.asarray(history["zp"]),
-             J=np.asarray(history["J"]),
-             grad_norm=np.asarray(history["grad_norm"]),
+             Q=np.asarray(history["Q"]), zp=np.asarray(history["zp"]), J=np.asarray(history["J"]),
+             grad_norm=np.asarray(history["grad_norm"]), chi=chi,
              x_opt=x_opt, J_opt=res.fun, S_opt=S_opt)
     _log(f"[bfr-opt] historial guardado ✔  {opt_dir}/optimization_results.npz")
-
     try:
         from scripts.opt_animation import render_opt_animation
-        render_opt_animation(
-            np.asarray(history["Q"]), np.asarray(history["zp"]), np.asarray(history["J"]),
-            dt=p.dt, fig_dir=opt_dir, title=f"BFR · {p.domain}/{p.model}"
-        )
+        render_opt_animation(np.asarray(history["Q"]), np.asarray(history["zp"]), np.asarray(history["J"]),
+                             dt=p.dt, fig_dir=opt_dir, title=f"BFR · {p.domain}/{p.model}")
     except Exception as e:
         _log(f"[bfr-opt] aviso: no se pudo generar opt_animation ({e})")
-
     return res
 
 
@@ -801,7 +199,7 @@ class Simulation:
         self.U = [u.copy() for u in U_list]
         self.C = [c.copy() for c in C_list]
         self.C_im = [m for m in C_im_list]
-
+        self.Csol = [None for _ in C_list]   # C del paso antes del recorte C ≥ 0 (lo usa el adjunto exacto)
 
         self.Qout = Qout
         self.t = 0.0
@@ -814,7 +212,7 @@ class Simulation:
             im_H, im_V, im_C, im_C_im, quiv_V = visuals
 
         for k in range(p.K): 
-            self.H[k], self.U[k], self.C[k], self.C_im[k] = step_time( H=self.H[k], U=self.U[k], C=self.C[k], C_im=self.C_im[k],
+            self.H[k], self.U[k], self.C[k], self.C_im[k], self.Csol[k] = step_time( H=self.H[k], U=self.U[k], C=self.C[k], C_im=self.C_im[k],
                                          nodes=d.nodes, groups=d.groups, normals=d.normals, A_solver=d.A_left,
                                          eps_M=d.eps_M, K=d.K, grad=d.grad, pho=d.pho, D_f=d.D_f, A_right=d.A_right,
                                          delta_p=d.delta_p, gauss_p=d.gauss_p, gauss_f=d.gauss_f, Qout_n=self.Qout[k][step-1],
@@ -875,9 +273,9 @@ class Simulation:
 
 class SimulationAdjoint:
 
-    def __init__(self, psi_H_list, psi_C_list, exacto=None):
+    def __init__(self, psi_H_list, psi_C_list, exacto):
 
-        self.exacto = exacto   # {'LamH','LamC'} de gradiente_exacto (nivel l = paso+1) o None
+        self.exacto = exacto   # {'LamH','LamC','LamIm'} de gradiente_exacto (nivel l = paso+1)
 
         self.psi_H = [h.copy() for h in psi_H_list]
         self.psi_C = [c.copy() for c in psi_C_list]
@@ -904,57 +302,19 @@ class SimulationAdjoint:
             # =====================================================
             # STEP ADJUNTO
             # =====================================================
-            if self.exacto is not None:
-                # multiplicador nodal Λ → ψ del documento: ψ(x_i) = Λ_i/(Δt w_i) (Δt de la cuadratura temporal, w_i de la espacial)
-                self.psi_H[k] = self.exacto["LamH"][step + 1] / (p.dt * d.wi)
-                if getattr(p, "bc_outlet_mode", "pfs") == "libre":
-                    # Cierre (D): h|Γ_out evoluciona solo (las filas de salida de A_left/A_right no usan columnas de
-                    # otros nodos), su multiplicador no realimenta al interior ni entra en ∇Q ni ∇z_p, y FEniCSx lo
-                    # elimina (Dirichlet). Convención del documento (§salida): ψ_h = 0 en Γ_out.
-                    self.psi_H[k][np.asarray(d.groups["boundary:outlet"], int)] = 0.0
-                self.psi_C[k] = self.exacto["LamC"][step + 1] / (p.dt * d.wi)
-                psiC_im_n = None
-                lam_im = self.exacto.get("LamIm")
-                if lam_im is not None and lam_im[step + 1] is not None:
-                    self.psi_C_im = lam_im[step + 1] / (p.dt * d.wi)   # solo para guardar (psi_Ci), misma escala que ψ_C
-            else:
-              self.psi_H[k], self.psi_C[k], psiC_im_n = step_adjoint(
-                A_solver=d.A_H,
-                B=d.B_H,
-                psiH_N=self.psi_H[k],
-                psiC_N=self.psi_C[k],
-                H_N=h[step][k],
-                H_n=h[step - 1][k],
-                V_N=U[step][k],
-                V_n=U[step-1][k],
-                C_N=C[step][k],
-                C_n=C[step - 1][k],
-                S_s=d.pho,
-                K=d.K,
-                Div_K=d.div_K,
-                pho=d.pho,
-                D=d.D_f,
-                Qout_N=Qout[k][step],
-                Qout_n=Qout[k][step - 1],
-                gauss_p=d.gauss_p,
-                gamma=p.gamma,
-                wi=d.wi,
-                grad=d.grad,
-                nodes=d.nodes,
-                groups=d.groups,
-                normals=d.normals,
-                eps_M=d.eps_M,
-                psiC_im_N=self.psi_C_im,
-                exp_lam_dt=d.exp_lam_dt,
-                forced_well_node=getattr(d, 'forced_well_node', -1),
-                forced_well_nbrs=getattr(d, 'forced_well_nbrs', None),
-                forced_well_idw=getattr(d, 'forced_well_idw', None),
-                C_nm1=C[step - 2][k] if step >= 2 else None,
-            )
-
-            if "mrmt" in p.model and psiC_im_n is not None:
-                self.psi_C_im = psiC_im_n
-
+            # multiplicador nodal Λ → ψ del documento: ψ(x_i) = Λ_i/(Δt w_i) (Δt de la cuadratura temporal, w_i de la
+            # espacial); en los nodos fantasma (w_i = 0, fuera del dominio) ψ = 0
+            inv = np.divide(1.0, p.dt * d.wi, out=np.zeros_like(d.wi), where=d.wi > 0)
+            self.psi_H[k] = self.exacto["LamH"][step + 1] * inv
+            if getattr(p, "bc_outlet_mode", "pfs") == "libre":
+                # Cierre (D): h|Γ_out evoluciona solo (las filas de salida de A_left/A_right no usan columnas de
+                # otros nodos), su multiplicador no realimenta al interior ni entra en ∇Q ni ∇z_p, y FEniCSx lo
+                # elimina (Dirichlet). Convención del documento (§salida): ψ_h = 0 en Γ_out.
+                self.psi_H[k][np.asarray(d.groups["boundary:outlet"], int)] = 0.0
+            self.psi_C[k] = self.exacto["LamC"][step + 1] * inv
+            lam_im = self.exacto.get("LamIm")
+            if lam_im is not None and lam_im[step + 1] is not None:
+                self.psi_C_im = lam_im[step + 1] * inv   # solo para guardar (psi_Ci), misma escala que ψ_C
             # =====================================================
             # VISUALIZATION (optional)
             # =====================================================
@@ -989,24 +349,14 @@ def run_simulation(sim, frames, outputs, d, figs=None, visuals=None):
 
             sim.update(n, d, figs, visuals)
 
-            # 🔹 DATA
-            if outputs["save_data"]:
-                outputs["H_hist"].append(sim.H.copy())
-                outputs["C_hist"].append(sim.C.copy())
-                outputs["U_hist"].append(sim.U.copy())
-
-
-                if "mrmt" in p.model:
-
-                    for r in range(p.Nr):
-                        temp = []
-
-                        for k in range(p.K):
-                            temp.append(sim.C_im[k][r].copy())
-
-                        outputs["Ci_hist"][r].append(np.array(temp))
-
-
+            # 🔹 DATA (siempre en memoria: el funcional y el adjunto la leen de aquí; el npz sólo con save_data)
+            outputs["H_hist"].append(sim.H.copy())
+            outputs["C_hist"].append(sim.C.copy())
+            outputs["U_hist"].append(sim.U.copy())
+            outputs["Csol_hist"].append(sim.Csol.copy())
+            if "mrmt" in p.model:
+                for r in range(p.Nr):
+                    outputs["Ci_hist"][r].append(np.array([sim.C_im[k][r].copy() for k in range(p.K)]))
 
 
             # 🔹 ANIMACIÓN
@@ -1211,6 +561,7 @@ def setup_outputs(figs=None, save_data=False, animate=False, nodes=None, anim_st
         "H_hist": [],
         "C_hist": [],
         "U_hist": [],
+        "Csol_hist": [],
         "nodes": nodes
     }
     if "mrmt" in p.model:
@@ -1271,27 +622,22 @@ def setup_outputs_adj(figs=None, save_data=False, animate=False, nodes=None):
 
 
 def finalize_outputs(outputs, sim):
+    """Historias del directo {H, U, C[, Ci], Csol} (niveles 1..N_t); el npz sólo con save_data."""
+    save_dict = {
+        "H": np.array(outputs["H_hist"]),
+        "C": np.array(outputs["C_hist"]),
+        "U": np.array(outputs["U_hist"]),
+        "nodes": outputs["nodes"],
+        "dt": sim.dt
+    }
+    if "mrmt" in p.model:
+        save_dict["Ci"] = np.array([np.array(hist) for hist in outputs["Ci_hist"]])
 
     if outputs["save_data"]:
-
-        save_dict = {
-            "H": np.array(outputs["H_hist"]),
-            "C": np.array(outputs["C_hist"]),
-            "U": np.array(outputs["U_hist"]),
-            "nodes": outputs["nodes"],
-            "dt": sim.dt
-        }
-
-        # agregar MRMT solo si aplica
-        if "mrmt" in p.model:
-            save_dict["Ci"] = np.array([np.array(hist) for hist in outputs["Ci_hist"]])
-
-        # una sola escritura
         np.savez(f"{p.save_data}/simulation_results.npz", **save_dict)
-
-
-
         print("Datos guardados ✔")
+    save_dict["Csol"] = np.array(outputs["Csol_hist"])
+    return save_dict
 
 def finalize_optimization_outputs(history):
 

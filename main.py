@@ -52,7 +52,6 @@ def main():
 
     from view.animation import solve_forward, solve_adjoint, optimize_bfr
     from preprocessing.preprocess import load_data
-    from funtions.utils import get_solucion
 
     d = load_data()
 
@@ -75,16 +74,11 @@ def main():
     elif p.run_type == "comparison":
         # Forward + adjunto discreto guardados para comparación animada.
         Qout = p.Qout
-        solve_forward(d, Qout, False, True)
-        h, U, C = get_solucion(
-            ["H", "U", "C"],
-            f"{p.save_data}/simulation_results.npz",
-        )
-        solve_adjoint(h, U, C, Qout, d, False, True)
+        hist = solve_forward(d, Qout, False, True)
+        solve_adjoint(hist, Qout, d, False, True)
 
     elif p.run_type == "optimization":
-        # Adjunto (ψ_h/ψ_C validados por tests/test_gradient_checkpoint.py) +
-        # scipy L-BFGS-B, mismo optimizador que el backend fenicsx.
+        # Adjunto discreto exacto + optimizador común (funtions/optimizador.py), igual que el backend fenicsx.
         return optimize_bfr(d, p)
 
     else:

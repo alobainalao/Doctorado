@@ -171,141 +171,8 @@ def chi_eps(Q, eps=1e-6):
     )
 
 
-def dchi_eps(Q, eps=1e-6):
-
-    return (
-        0.5 / eps
-        *
-        (1.0 - np.tanh(Q / eps)**2)
-    )
-
-
-# ============================================================
-# ∂g/∂zp
-# ============================================================
-
-def d_g_dz(d):
-    p = RUNTIME.get()
-    dz = d.nodes[:, 1]-d.pozo_cor[1]
-
-    return d.gauss_p * (
-        dz/(p.epsilon_pozo**2)
-    )
-
-
-# ============================================================
-# Gradientes
-# ============================================================
-
-def grad_Q(
-    Q,
-    psi_h,
-    psi_C,
-    C,
-    d
-):
-
-    p = RUNTIME.get()
-
-    Nt = len(Q)
-
-    grad = np.zeros(Nt)
-
-    g = d.gauss_p
-
-    for n in range(Nt):
-
-        integrand = psi_h[n].squeeze()
-
-        integral = np.sum(g * integrand* d.wi)
-
-        # Término económico ∂J3/∂Q_n con J3 = Σ Q² dt |z_p−z0|: lleva el factor
-        # p.dt (faltaba — grad_zp sí lo incluye; el checkpoint lo delató como un
-        # desfase exacto de dt entre gradiente adjunto y diferencias finitas).
-        grad[n] = (
-            2.0
-            *
-            abs(d.pozo_cor[1] - d.z0)
-            *
-            Q[n]
-            *
-            p.dt
-            +
-            integral
-        )
-
-    return grad
-
-def grad_zp(
-    Q,
-    psi_h,
-    psi_C,
-    C,
-    d
-):
-
-    p = RUNTIME.get()
-    Nt = len(Q)
-
-    # --------------------------------------------------------
-    # γ ∫∫ ∂g_p/∂z_p · C² dΩ dt
-    # Derivada DIRECTA de J₁ = γ∫∫ g_p C² dΩ dt respecto a z_p
-    # (sensibilidad explícita del kernel Gaussiano al mover el pozo).
-    # Fórmula: ∂g_p/∂z_p = g_p · (z−z_p)/ε_y²  (= d_g_dz)
-    # Nota: usa gauss_p (como compute_functional J₁), NO delta_p.
-    # Para C suave cerca del pozo, coincide con 2γ∫C ∂C/∂z δ_p dΩ dt
-    # hasta primer orden (los dos formulas dan lo mismo cuando C es lineal
-    # en (z−z_p)). Ver derivación en articulos/optimizacion-adjunto/§5.1.
-    # --------------------------------------------------------
-
-    dgdzp = d_g_dz(d)
-    term1 = 0.0
-    for n in range(Nt):
-        C_n = C[n].squeeze()
-        term1 += np.sum(dgdzp * C_n**2 * d.wi) * p.dt
-
-    term1 *= p.gamma
-
-    # --------------------------------------------------------
-    # - ∫ Q² dt
-    # --------------------------------------------------------
-
-    term2 = -np.sum(
-        Q**2
-    ) * p.dt
-
-    # --------------------------------------------------------
-    # 2β(zp-z0)
-    # --------------------------------------------------------
-    term3 = 2.0*p.koppa*(d.pozo_cor[1] - d.z0)
-
-    # --------------------------------------------------------
-    # Integral adjunta
-    # --------------------------------------------------------
-
-    term4 = 0.0
-
-    for n in range(Nt):
-
-        integrand = Q[n] * psi_h[n].squeeze()
-
-        term4 += np.sum(
-            dgdzp * integrand * d.wi
-        )* p.dt
-
-    return (
-        term1
-        +
-        term2
-        +
-        term3
-        +
-        term4
-    )
-
-
 def compute_functional(Q, zp, C, d):
-    """J = γ J₁ + J₂ + J₃  (consistente con grad_Q / grad_zp).
+    """J = γ J₁ + J₂ + J₃  (su gradiente: funtions/adjunto_exacto.py).
 
     J₁ = ∫₀ᵀ ∫_Ω g_p(x) C(x,t)² dΩ dt   (kernel Gaussiano, igual al adjunto)
     J₂ = κ |z_p − z₀|²
@@ -400,53 +267,6 @@ def D_total(Dif, V):
     # Aquí ya todo es (N,2)
     return Dif + D_disp
 
-
-def upwind_diffusion(D, V, h_local):
-    """
-    Difusión artificial de upwinding de primer orden en dirección streamline.
-
-    Para cada nodo i calcula la cantidad mínima de difusión necesaria para que
-    el número de Péclet local Pe = |V|·h / D_stream sea ≤ 2, y la añade al
-    tensor D en la dirección de la velocidad.
-
-    κ_art[i] = max(0,  |V[i]|·h[i]/2  −  D_stream[i])
-
-    D_stream[i] = D[i,0]·(Vx/|V|)² + D[i,1]·(Vy/|V|)²  (proyección sobre û)
-
-    Parámetros
-    ----------
-    D       : (N,2) tensor de difusión diagonal ya calculado (D_total)
-    V       : (N,2) velocidades de Darcy
-    h_local : (N,)  spacing local (distancia al vecino más cercano)
-
-    Devuelve D_upw (N,2) = D + difusión streamline.
-    """
-    Vx = V[:, 0]; Vy = V[:, 1]
-    Vnorm = np.sqrt(Vx**2 + Vy**2)
-    Vnorm_safe = np.where(Vnorm < 1e-30, 1e-30, Vnorm)
-
-    ux = Vx / Vnorm_safe          # coseno del ángulo de flujo
-    uy = Vy / Vnorm_safe
-
-    # Difusión en dirección streamline (proyección de D sobre û)
-    D_stream = D[:, 0] * ux**2 + D[:, 1] * uy**2
-
-    # Difusión artificial mínima para Pe ≤ 2
-    kappa = np.maximum(0.0, Vnorm * h_local / 2.0 - D_stream)
-
-    # Añadir solo donde hay flujo significativo
-    kappa = np.where(Vnorm < 1e-20, 0.0, kappa)
-
-    D_upw = D.copy()
-    D_upw[:, 0] += kappa * ux**2
-    D_upw[:, 1] += kappa * uy**2
-
-    return D_upw
-
-def delta_char(nodes, x_p, tol):
-
-    dist = np.linalg.norm(nodes - x_p, axis=1)
-    return np.where(dist < tol, 1.0, 0.0)
 
 def Div_KD(Op_vec, grad, anisotropic=True):
 
@@ -586,23 +406,6 @@ def get_init_values(new_nodes):
             c_new = c_new * (1.0 + A * np.cos(2 * np.pi * new_nodes[:, 0] / lx) * np.cos(2 * np.pi * new_nodes[:, 1] / lz))
 
     return h_new, c_new
-
-def set_limits(ax, delt=150):
-    """
-    Ajusta los límites del eje con un margen adicional `delt`.
-
-    Parámetros
-    ----------
-    ax : axis de matplotlib
-    xmin, xmax, ymin, ymax : float
-        Límites reales del dominio.
-    delt : float
-        Margen extra alrededor del dominio.
-    """
-    p = RUNTIME.get()
-
-    ax.set_xlim(p.xmin - delt, p.xmax + delt)
-    ax.set_ylim(p.ymin - delt, p.ymax + delt)
 
 def new_H_init(H, M_right, gauss_p, groups, N, eps_arr,
                  nodes, normals, pho, K, div_K, eps_M):

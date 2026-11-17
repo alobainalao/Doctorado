@@ -161,10 +161,12 @@ def ddelta_dzp(d, p):
 # ---------------------------------------------------------------------------------------------
 # Gradiente exacto
 # ---------------------------------------------------------------------------------------------
-def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
+def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=None):
     """
     H, U, C: historias del forward (niveles 1..N_t, forma (N_t, K, N[,2])) tal como las guarda la simulación;
-    los niveles 0 son d.H[0], d.U[0], d.C[0]. Devuelve (gQ, gzp) del funcional de `compute_functional`.
+    los niveles 0 son d.H[0], d.U[0], d.C[0]. Csol (opcional, misma forma que C): C de cada paso antes del recorte
+    C ≥ 0, que guarda el directo; sin ella se recupera resolviendo otra vez el paso.
+    Devuelve (gQ, gzp) del funcional de `compute_functional`.
     """
     if p.model not in ("adr", "mrmt_block", "mrmt_semi"):
         raise NotImplementedError(f"adjunto exacto: modelo {p.model}")
@@ -250,13 +252,16 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None):
             LamIm[l] = -np.array(ybar)
         B_next = B
         # El residuo r_C^ℓ = A C_sol − B x^{ℓ-1} (− Σ Q y) se evalúa con la solución SIN recortar:
-        # x^ℓ guardado = max(C_sol, 0) (step_time). Se recupera resolviendo de nuevo el paso.
-        b = np.zeros(N)
-        b[idx] = (B @ Cn[l - 1])[idx]
-        if p.model == "mrmt_block":
-            for r in range(Nr):
-                b[idx] += (Qr[r] * ylev[l - 1][r])[idx]
-        C_sol = lu_A.solve(b)
+        # x^ℓ guardado = max(C_sol, 0) (step_time). La guarda el directo; si no, se resuelve de nuevo el paso.
+        if Csol is not None:
+            C_sol = np.asarray(Csol[l - 1, 0], float)
+        else:
+            b = np.zeros(N)
+            b[idx] = (B @ Cn[l - 1])[idx]
+            if p.model == "mrmt_block":
+                for r in range(Nr):
+                    b[idx] += (Qr[r] * ylev[l - 1][r])[idx]
+            C_sol = lu_A.solve(b)
         # σ: derivada de Λ_C^ℓ·r_C^ℓ respecto de (H^ℓ, H^{ℓ-1})
         Hnew, Hold = _vjp_transporte(d, p, ops, pho, LamC[l], C_sol, Cn[l - 1], Un[l], Un[l - 1], Dn[l], Dn[l - 1],
                                      ht[l], nivel_viejo_es_dato=(l == 1))

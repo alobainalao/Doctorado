@@ -72,60 +72,15 @@ def run_preprocess():
 
     delta_p = discrete_delta(nodes, np.array(p.pozo), p.radio_delta_pozo)
     if p.norm_delta_pozo == "area":
-        delta_p = normalizar_delta_area(delta_p, rbf_integration_weights(nodes))
-    # delta_p = delta_char(nodes, pozo_cor, 1e-6)
+        delta_p = normalizar_delta_area(delta_p, rbf_integration_weights(nodes, triangulos=triangulos))
     gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_pozo)
 
-    # Detectar si existe el nodo forzado en p.pozo y precomputar pesos IDW
-    # para corregir la oscilación espuria del adjunto en ese nodo.
-    _r_pozo = np.linalg.norm(nodes - np.asarray(p.pozo, float), axis=1)
-    _fi = int(np.argmin(_r_pozo))
-    if _r_pozo[_fi] < 0.5:
-        _kd = KDTree(nodes)
-        _, _nbrs = _kd.query(nodes[_fi:_fi+1], k=p.n_stencil + 1)
-        _nbrs = _nbrs[0][1:]   # excluir self
-        _dists = np.linalg.norm(nodes[_nbrs] - nodes[_fi], axis=1)
-        _w = 1.0 / np.maximum(_dists, 1e-12)
-        _w /= _w.sum()
-        forced_well_node = _fi
-        forced_well_nbrs = _nbrs.astype(int)
-        forced_well_idw  = _w.astype(float)
-    else:
-        forced_well_node = -1
-        forced_well_nbrs = np.array([], dtype=int)
-        forced_well_idw  = np.array([], dtype=float)
     gauss_f = gaussian_2d(nodes, p.fnte, 1, p.epsilon_x, p.epsilon_y)
 
     
     
-    if p.run_type in ("optimization", "comparison"):
-        # Matrices del paso adjunto (ψ_H): necesarias para comparison y optimization.
-        A_H = build_adj_H_matrix(
-            nodes=nodes,
-            groups=groups,
-            normals=normals,
-            theta=p.theta,
-            S_s=S_s,
-            K=K,
-            Div_K=div_K,
-            eps_M=eps_M,
-            sig=-1
-        )
-
-        B_H = build_adj_H_matrix(
-            nodes=nodes,
-            groups=groups,
-            normals=normals,
-            theta=1-p.theta,
-            S_s=S_s,
-            K=K,
-            Div_K=div_K,
-            eps_M=eps_M,
-            sig=+1
-        )
-
-        if p.run_type in ("optimization", "comparison"):
-            wi = rbf_integration_weights(nodes, 2.0)
+    # Pesos de cuadratura nodales (J₁ y fuente del adjunto): triángulos de la malla congelada si los hay.
+    wi = rbf_integration_weights(nodes, triangulos=triangulos)
 
     N = nodes.shape[0]
 
@@ -165,10 +120,7 @@ def run_preprocess():
         delta_p=delta_p, gauss_p=gauss_p, gauss_f=gauss_f,
         H=H, C=C, U=U,
         xy_grid=xy_grid, xy=xy, I=I, mask=mask,
-        stencils=stencils,
-        forced_well_node=forced_well_node,
-        forced_well_nbrs=forced_well_nbrs,
-        forced_well_idw=forced_well_idw,
+        stencils=stencils, wi=wi,
     )
 
     if "mrmt" in p.model:
@@ -186,15 +138,8 @@ def run_preprocess():
         data["exp_lam_dt"] = None
         data["C_im"] = [None for _ in range(p.K)]
 
-    if p.run_type in ("optimization", "comparison"):
-        data["A_H"] = A_H
-        data["B_H"] = B_H
-        data["wi"] = wi  # necesario para la fuente adjunta ∂J/∂C = 2γ·gₚ·wi·C
-        # z0 (profundidad de referencia del término económico): fuente única en
-        # `p` para que la app lo controle y coincida con el backend fenicsx.
-        data["z0"] = p.z0
-
-
+    # z0 (profundidad de referencia del término económico): fuente única en `p` para que coincida con fenicsx.
+    data["z0"] = p.z0
 
     savefile = f"{p.save_preprocess}/preproceso.pkl"
     with open(savefile, "wb") as f:
@@ -220,13 +165,9 @@ def load_data():
         print(">>> Cargando datos...")
         with open(savefile, "rb") as f:
             data = pickle.load(f)
-        # Si se necesitan matrices adjuntas pero el pkl fue generado sin ellas, regenerar.
-        if p.run_type in ("optimization", "comparison") and "A_H" not in data:
-            print(">>> Regenerando preproceso (A_H no disponible)...")
-            data = run_preprocess()
-        # Regenerar si faltan los pesos IDW del nodo forzado (pkls anteriores al fix).
-        elif "forced_well_node" not in data:
-            print(">>> Regenerando preproceso (forced_well_node no disponible)...")
+        # pkls anteriores a los pesos de cuadratura con los triángulos de la malla: regenerar.
+        if "wi" not in data:
+            print(">>> Regenerando preproceso (sin pesos de cuadratura wi)...")
             data = run_preprocess()
 
     class Data:
@@ -235,8 +176,6 @@ def load_data():
     d = Data()
     d.__dict__.update(data)
     d.A_left = splu(d.A_left)
-    if p.run_type in ("optimization", "comparison"):
-        d.A_H = splu(d.A_H)
 
 
     print(">>> Datos listos")
