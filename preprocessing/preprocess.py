@@ -120,7 +120,7 @@ def run_preprocess():
         delta_p=delta_p, gauss_p=gauss_p, gauss_f=gauss_f,
         H=H, C=C, U=U,
         xy_grid=xy_grid, xy=xy, I=I, mask=mask,
-        stencils=stencils, wi=wi,
+        stencils=stencils, wi=wi, triangulos=triangulos,
     )
 
     if "mrmt" in p.model:
@@ -176,6 +176,8 @@ def load_data():
     d = Data()
     d.__dict__.update(data)
     d.A_left = splu(d.A_left)
+    if getattr(p, "kernel_pozo_triangulos", False):
+        update_pozo(d, np.asarray(d.pozo_cor, float))   # kernels del pozo con cuadratura en los triángulos
 
 
     print(">>> Datos listos")

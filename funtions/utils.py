@@ -134,11 +134,69 @@ def discrete_delta(nodes, x_p, radius):
 
     return delta
 
+# Dunavant de grado 5 (7 puntos): coordenadas baricéntricas (λ1, λ2) y pesos (suman 1)
+_DUN5_A, _DUN5_B = (6 - 15 ** 0.5) / 21, (6 + 15 ** 0.5) / 21
+_DUN5 = np.array([[1 / 3, 1 / 3, 0.225],
+                  [_DUN5_A, _DUN5_A, (155 - 15 ** 0.5) / 1200], [1 - 2 * _DUN5_A, _DUN5_A, (155 - 15 ** 0.5) / 1200],
+                  [_DUN5_A, 1 - 2 * _DUN5_A, (155 - 15 ** 0.5) / 1200],
+                  [_DUN5_B, _DUN5_B, (155 + 15 ** 0.5) / 1200], [1 - 2 * _DUN5_B, _DUN5_B, (155 + 15 ** 0.5) / 1200],
+                  [_DUN5_B, 1 - 2 * _DUN5_B, (155 + 15 ** 0.5) / 1200]])
+
+
+def kernels_pozo_triangulos(d, pozo_cor):
+    """Kernels del pozo como promedios nodales k_i/w_i, con k_i = ∫ K φ_i dΩ (φ_i: sombrero P1 de la malla) por
+    cuadratura de Dunavant de grado 5 en cada triángulo, y sus derivadas exactas respecto de z_p.
+
+    Muestrear K en los nodos hace que Ĵ(z_p) salte cada vez que un nodo entra o sale del soporte del kernel
+    (mínimos locales espurios con periodo ≈ h); el promedio con cuadratura varía de forma suave con z_p, como en
+    FEniCSx. Devuelve (delta_p, ddelta_p, gauss_p, dgauss_p): delta_p es la Wendland C2 del sumidero normalizada con
+    Σ δ_i w_i = 1 (como norm_delta_pozo='area') y gauss_p la gaussiana de observación (∫ g dΩ = 1)."""
+    p = RUNTIME.get()
+    T = np.asarray(d.triangulos, int)
+    X = np.asarray(d.nodes, float)
+    xp, zp = float(pozo_cor[0]), float(pozo_cor[1])
+    R, eps = float(p.radio_delta_pozo), float(p.epsilon_pozo)
+    alcance = max(R, 6.0 * eps)
+    cerca = np.any(np.hypot(X[T, 0] - xp, X[T, 1] - zp) < alcance + 60.0, axis=1)
+    T = T[cerca]
+    v = X[T]                                                   # (nT, 3, 2)
+    area = 0.5 * np.abs((v[:, 1, 0] - v[:, 0, 0]) * (v[:, 2, 1] - v[:, 0, 1])
+                        - (v[:, 2, 0] - v[:, 0, 0]) * (v[:, 1, 1] - v[:, 0, 1]))
+    N = len(X)
+    kW, dkW, kG, dkG = (np.zeros(N) for _ in range(4))
+    for l1, l2, w in _DUN5:
+        lam = np.array([l1, l2, 1.0 - l1 - l2])                # valores de φ en el punto de cuadratura
+        q = np.einsum("k,tkc->tc", lam, v)                     # puntos de cuadratura (nT, 2)
+        dx, dz = q[:, 0] - xp, q[:, 1] - zp
+        r = np.hypot(dx, dz)
+        s = r / R
+        m = s < 1.0
+        W = np.where(m, (1 - s) ** 4 * (4 * s + 1), 0.0)
+        # ∂W/∂z_p = W'(s)·∂s/∂z_p, W'(s) = −20 s (1−s)³, ∂s/∂z_p = −dz/(r R)
+        dW = np.where(m, 20.0 * (1 - s) ** 3 * dz / R ** 2, 0.0)
+        G = np.exp(-(dx ** 2 + dz ** 2) / (2 * eps ** 2)) / (2 * np.pi * eps ** 2)
+        dG = G * dz / eps ** 2
+        for k in range(3):
+            pw = w * area * lam[k]
+            np.add.at(kW, T[:, k], pw * W); np.add.at(dkW, T[:, k], pw * dW)
+            np.add.at(kG, T[:, k], pw * G); np.add.at(dkG, T[:, k], pw * dG)
+    inv = np.divide(1.0, d.wi, out=np.zeros(N), where=d.wi > 0)
+    S, dS = kW.sum(), dkW.sum()
+    delta = kW * inv / S
+    ddelta = dkW * inv / S - kW * inv * dS / S ** 2
+    return delta, ddelta, kG * inv, dkG * inv
+
+
 def update_pozo(d, pozo_cor):
 
     p = RUNTIME.get()
 
     d.pozo_cor = pozo_cor
+
+    if getattr(p, "kernel_pozo_triangulos", False) and getattr(d, "triangulos", None) is not None:
+        d.delta_p, d.ddelta_p, d.gauss_p, d.dgauss_p = kernels_pozo_triangulos(d, pozo_cor)
+        return d
+    d.ddelta_p = d.dgauss_p = None    # muestreados en los nodos: derivadas en funtions/adjunto_exacto.py
 
     d.delta_p = discrete_delta(d.nodes, pozo_cor, p.radio_delta_pozo)
     if p.norm_delta_pozo == "area":

@@ -292,12 +292,13 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=N
     gQ += 2.0 * w3 * zdist * np.asarray(Q) * dt
 
     # z_p: kernel de J_1, costo económico y desplazamiento de la delta del flujo
-    dgdz = d.gauss_p * (d.nodes[:, 1] - d.pozo_cor[1]) / (p.epsilon_pozo ** 2)
+    dgdz = d.dgauss_p if getattr(d, "dgauss_p", None) is not None else \
+        d.gauss_p * (d.nodes[:, 1] - d.pozo_cor[1]) / (p.epsilon_pozo ** 2)
     g_zp = gam * dt * sum(np.sum(wi * dgdz * Cn[l] ** 2) for l in range(1, Nt + 1))
     g_zp += 2.0 * p.koppa * w2 * (zp - d.z0)
     g_zp += w3 * np.sign(zp - d.z0) * np.sum(np.asarray(Q) ** 2) * dt
     if p.activate_ext:
-        dd, _ = ddelta_dzp(d, p)
+        dd = d.ddelta_p if getattr(d, "ddelta_p", None) is not None else ddelta_dzp(d, p)[0]
         for s in range(Nt):
             qn = Q[s]
             qv = Q[(s - 1) % Nt]

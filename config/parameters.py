@@ -61,6 +61,8 @@ class Parameters:
                 "galerkin_banda",
                 # Fuente de contaminante: ancho vertical e intensidad (1.0 = estándar)
                 "epsilon_z_fuente", "intensidad_fuente",
+                # BFR: kernels del pozo promediados con cuadratura sobre los triángulos de la malla
+                "kernel_pozo_triangulos",
             }
 
             data = {k: v for k, v in env.items() if k in VALID_KEYS}
