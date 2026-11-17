@@ -26,12 +26,8 @@ Enfoque (discretize-then-optimize), ver el plan y
   simbólicamente en `zp_const` para que su sensibilidad ∂/∂z_p sea analítica y
   exacta (kernel·(x_z−z_p)/ε²).
 
-Desviación deliberada respecto a `fenicsx/forward.py` (documentada): el sumidero
-de FLUJO del pozo usa aquí un **gaussiano** (como el de transporte) en vez del
-Wendland C2 normalizado del forward estándar, para que TODA la dependencia en z_p
-sea diferenciable en forma cerrada. El checkpoint valida la CONSISTENCIA interna
-(gradiente adjunto vs diferencias finitas del MISMO funcional), no la comparación
-con `bfr` (que además difiere por la discretización).
+El sumidero de FLUJO del pozo es una gaussiana normalizada de ancho ε_f = r_pozo/3, la misma que en
+`fenicsx/forward.py` y en bfr: toda la dependencia en z_p es diferenciable en forma cerrada (kernel·(x_z−z_p)/ε²).
 
 Controles: x = [Q_0, …, Q_{Nt−1}, z_p] (misma convención que
 `view/animation.py:pack_controls`). Optimizador: `scipy.optimize.minimize`
@@ -966,7 +962,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
 # RUN_TYPE=comparison: forward físico + adjunto discreto, ambos guardados.
 # ---------------------------------------------------------------------------
 def adjoint_fenicsx(p, mesh_cache=None):
-    """Forward físico (Wendland C2 → simulation_results.npz) +
+    """Forward físico (sumidero gaussiano → simulation_results.npz) +
     adjunto discreto (Gaussiano consistente → adjoint_results.npz).
     Llamado desde main.py con run_type='comparison'."""
     from fenicsx.forward import solve_forward_fenicsx

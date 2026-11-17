@@ -70,9 +70,7 @@ def run_preprocess():
     A_right = build_H_matrix(nodes, groups, normals, 1-p.theta, S_s, K, div_K, eps_M, 1, triangulos=triangulos)
     
 
-    delta_p = discrete_delta(nodes, np.array(p.pozo), p.radio_delta_pozo)
-    if p.norm_delta_pozo == "area":
-        delta_p = normalizar_delta_area(delta_p, rbf_integration_weights(nodes, triangulos=triangulos))
+    delta_p = gaussian_2d(nodes, pozo_cor, 1, ancho_sumidero_pozo(p))   # sumidero de flujo (update_pozo)
     gauss_p = gaussian_2d(nodes, pozo_cor, 1, p.epsilon_pozo)
 
     gauss_f = gaussian_2d(nodes, p.fnte, 1, p.epsilon_x, p.epsilon_y)
@@ -176,8 +174,7 @@ def load_data():
     d = Data()
     d.__dict__.update(data)
     d.A_left = splu(d.A_left)
-    if getattr(p, "kernel_pozo_triangulos", False):
-        update_pozo(d, np.asarray(d.pozo_cor, float))   # kernels del pozo con cuadratura en los triángulos
+    update_pozo(d, np.asarray(d.pozo_cor, float))   # kernels del pozo y sus derivadas en z_p
 
 
     print(">>> Datos listos")

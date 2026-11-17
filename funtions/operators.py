@@ -643,10 +643,8 @@ def H_vector(H, M_right, delta_p, groups, nodes, N, operador=None, Qout_n=0, Qou
     b = np.zeros(N)
     aux = H if operador == "Identity" else M_right @ H
     if p.activate_ext and operador != "Identity":
-        # smooth_well_h=True → Gaussiano (mismo kernel que C extraction, igual que FEniCS)
-        # smooth_well_h=False → Wendland C2 compacto (default histórico)
-        well_kernel = gauss_p if (gauss_p is not None and getattr(p, "smooth_well_h", False)) else delta_p
-        aux -= ((1-p.theta)*Qout_n + p.theta*Qout_N) * well_kernel
+        # sumidero de flujo: gaussiana del pozo (funtions/utils.py:update_pozo), la misma que fenicsx
+        aux -= ((1-p.theta)*Qout_n + p.theta*Qout_N) * delta_p
 
     b[idx] = aux[idx]
     apply_boundary(b, nodes, groups.get('ghosts:inlet', []),

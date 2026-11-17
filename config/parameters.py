@@ -212,10 +212,9 @@ class Parameters:
             self.epsilon_y = float(self.epsilon_z_fuente)
 
         # Soporte de los kernels del pozo [m], fijo e independiente de la malla.
-        # r_pozo = radio del Wendland C2 del sumidero de flujo; las gaussianas
-        # del pozo (sumidero de C, observación J1, adjuntos) usan ε = r_pozo/3
-        # (~99 % de la masa dentro de r_pozo). Sin r_pozo se conserva el
-        # comportamiento anterior (radio 2.5·spacing, ε = epsilon_y en bfr).
+        # r_pozo = radio del pozo: las gaussianas del pozo (sumidero de flujo, observación J1, adjuntos) usan
+        # ε = r_pozo/3 (~99 % de la masa dentro de r_pozo) en bfr y en fenicsx. Sin r_pozo: sumidero con
+        # ε = spacing y observación con ε = epsilon_y (radio_delta_pozo sólo lo usa discrete_delta, en desuso).
         self.r_pozo = getattr(self, "r_pozo", None)
         if self.r_pozo:
             self.radio_delta_pozo = float(self.r_pozo)

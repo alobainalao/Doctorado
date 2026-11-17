@@ -134,31 +134,6 @@ def _vjp_transporte(d, p, ops, pho, lam, C_new, C_old, U_new, U_old, D_new, D_ol
 
 
 # ---------------------------------------------------------------------------------------------
-# Derivada de la delta del pozo respecto de z_p (Wendland C2 normalizada, como discrete_delta)
-# ---------------------------------------------------------------------------------------------
-def ddelta_dzp(d, p):
-    x = d.nodes
-    R = p.radio_delta_pozo
-    dx, dz = x[:, 0] - d.pozo_cor[0], x[:, 1] - d.pozo_cor[1]
-    r = np.hypot(dx, dz)
-    q = r / R
-    m = q < 1.0
-    W = np.zeros(len(x)); dW = np.zeros(len(x))
-    W[m] = (1 - q[m]) ** 4 * (4 * q[m] + 1)
-    rp = np.where(r > 0, r, 1.0)
-    dq_dz = np.where(r > 0, -dz / rp / R, 0.0)
-    dW[m] = -20.0 * q[m] * (1 - q[m]) ** 3 * dq_dz[m]
-    if p.norm_delta_pozo == "area":
-        wi = d.wi
-        S, dS = np.sum(W * wi), np.sum(dW * wi)
-        Wn = W / S
-        # delta = (W/ΣW)/Σ((W/ΣW) wi) = W/Σ(W wi)
-        return dW / S - W * dS / S ** 2, Wn
-    S, dS = np.sum(W), np.sum(dW)
-    return dW / S - W * dS / S ** 2, W / S
-
-
-# ---------------------------------------------------------------------------------------------
 # Gradiente exacto
 # ---------------------------------------------------------------------------------------------
 def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=None):
@@ -292,13 +267,12 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=N
     gQ += 2.0 * w3 * zdist * np.asarray(Q) * dt
 
     # z_p: kernel de J_1, costo económico y desplazamiento de la delta del flujo
-    dgdz = d.dgauss_p if getattr(d, "dgauss_p", None) is not None else \
-        d.gauss_p * (d.nodes[:, 1] - d.pozo_cor[1]) / (p.epsilon_pozo ** 2)
+    dgdz = d.dgauss_p
     g_zp = gam * dt * sum(np.sum(wi * dgdz * Cn[l] ** 2) for l in range(1, Nt + 1))
     g_zp += 2.0 * p.koppa * w2 * (zp - d.z0)
     g_zp += w3 * np.sign(zp - d.z0) * np.sum(np.asarray(Q) ** 2) * dt
     if p.activate_ext:
-        dd = d.ddelta_p if getattr(d, "ddelta_p", None) is not None else ddelta_dzp(d, p)[0]
+        dd = d.ddelta_p
         for s in range(Nt):
             qn = Q[s]
             qv = Q[(s - 1) % Nt]

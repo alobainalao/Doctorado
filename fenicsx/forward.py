@@ -27,12 +27,9 @@ necesarias para Q(t) variable — documentadas aquí para que se revisen):
    criterio de gateo (on/off según si se extrae), pero continuo en vez de
    0/1 — necesario para que el gradiente adjunto (a derivar) sea suave.
 
-Sumidero de flujo del pozo (`delta`): réplica del discrete_delta de bfr —
-kernel Wendland C2 normalizado a Σ=1 sobre los DOF de G, radio 2.5·spacing,
-centrado en `pozo` (misma convención de pesos que bfr para que el drawdown
-tenga la misma escala). Se evalúa directamente en `pozo`, así que responde a
-z_p sin remallar (el embebido del pozo en la malla ya sólo sirve de
-refinamiento local, no lo necesita el término). El sumidero de TRANSPORTE
+Sumidero de flujo del pozo (`delta`): gaussiana normalizada de ancho ε_f = r_pozo/3, la misma en el directo,
+en el adjunto (fenicsx/adjoint.py) y en bfr. Se evalúa directamente en `pozo`, así que responde a z_p sin
+remallar (el embebido del pozo en la malla ya sólo sirve de refinamiento local, no lo necesita el término). El sumidero de TRANSPORTE
 (delta_C) usa un gaussiano suave normalizado, mismo criterio.
 
 Requiere dolfinx + gmsh + mpi4py + petsc4py + h5py (no están en
@@ -432,22 +429,13 @@ def solve_forward_fenicsx(Qout, pozo, p, mesh_cache=None, save_dir=None):
 
     D, D_m, Dm_n = _diffusion_operator(V, phys["D_d"], phi, phys["alpha"])
 
-    # Sumidero de flujo del pozo: kernel Wendland C2 normalizado a Σ=1 sobre los
-    # DOF de G, réplica del discrete_delta de bfr (funtions/utils.py) — misma
-    # convención de pesos que bfr para que el drawdown del pozo tenga la misma
-    # escala. Radio de soporte p.radio_delta_pozo (r_pozo, o 2.5·spacing), igual que bfr.
-    delta = fem.Function(G)
-    _gc = G.tabulate_dof_coordinates()[:, :2]
-    _q = np.sqrt((_gc[:, 0] - pozo[0]) ** 2 + (_gc[:, 1] - pozo[1]) ** 2) / float(p.radio_delta_pozo)
-    _w = np.where(_q < 1.0, (1.0 - np.minimum(_q, 1.0)) ** 4 * (4.0 * _q + 1.0), 0.0)
-    if _w.sum() > 0:
-        _w = _w / _w.sum()
-    delta.x.array[:] = _w
-    if getattr(p, "norm_delta_pozo", "suma") == "area":
-        # ∫δ dΩ = 1 (mismo criterio que bfr): el caudal extraído es Q.
-        _int = fem.assemble_scalar(fem.form(delta * dx(domain=domain)))
-        if _int > 0:
-            delta.x.array[:] = _w / _int
+    # Sumidero de flujo del pozo: gaussiana normalizada (∫ dΩ = 1) de ancho ε_f = r_pozo/3 (o spacing sin r_pozo),
+    # como expresión de UFL integrada con la cuadratura fija: la misma de fenicsx/adjoint.py y la misma que BFR
+    # (funtions/utils.py:update_pozo).
+    _xs = ufl.SpatialCoordinate(domain)
+    _ef = float(p.epsilon_pozo if getattr(p, "r_pozo", None) else p.spacing)
+    delta = 1.0 / (2 * np.pi * _ef ** 2) * ufl.exp(
+        -((_xs[0] - float(pozo[0])) ** 2 + (_xs[1] - float(pozo[1])) ** 2) / (2 * _ef ** 2))
     delta_C = fem.Function(Q)
 
     h = TrialFunction(Gh)
