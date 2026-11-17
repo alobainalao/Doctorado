@@ -172,24 +172,24 @@ def chi_eps(Q, eps=1e-6):
 
 
 def compute_functional(Q, zp, C, d):
-    """J = γ J₁ + J₂ + J₃  (su gradiente: funtions/adjunto_exacto.py).
+    """Ĵ = γ w1 J₁ + κ w2 J₂ + w3 J₃  (su gradiente: funtions/adjunto_exacto.py; pesos w: funtions/optimizador.py).
 
-    J₁ = ∫₀ᵀ ∫_Ω g_p(x) C(x,t)² dΩ dt   (kernel Gaussiano, igual al adjunto)
-    J₂ = κ |z_p − z₀|²
+    J₁ = ∫₀ᵀ ∫_Ω g_p(x) C(x,t)² dΩ dt   (kernel gaussiano normalizado, ∫g_p dΩ = 1)
+    J₂ = |z_p − z₀|²
     J₃ = |z_p − z₀| ∫₀ᵀ Q(t)² dt
     """
+    from funtions.optimizador import pesos_J
     p = RUNTIME.get()
     Nt = len(Q)
+    w1, w2, w3 = pesos_J(p, Nt * p.dt)
 
     J1 = 0.0
     for n in range(Nt):
-        # gauss_p es el kernel Gaussiano normalizado ∫g_p dΩ = 1;
-        # es el mismo kernel que usa grad_Q → J y ∇J son consistentes.
         C_n = np.asarray(C[n]).squeeze()
-        J1 += p.gamma * np.sum(d.gauss_p * C_n**2 * d.wi) * p.dt
+        J1 += p.gamma * w1 * np.sum(d.gauss_p * C_n**2 * d.wi) * p.dt
 
-    J2 = p.koppa * abs(zp - d.z0)**2
-    J3 = np.sum(Q**2) * p.dt * abs(zp - d.z0)
+    J2 = p.koppa * w2 * abs(zp - d.z0)**2
+    J3 = w3 * np.sum(Q**2) * p.dt * abs(zp - d.z0)
 
     return J1 + J2 + J3
 

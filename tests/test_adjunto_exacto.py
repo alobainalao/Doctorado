@@ -6,7 +6,7 @@ Pruebas del adjunto discreto exacto de BFR (funtions/adjunto_exacto.py).
  2. VJP del transporte respecto de H^ℓ y H^{ℓ-1} contra diferencias finitas de los constructores reales;
  3. gradiente completo (Q y z_p) contra diferencias finitas del funcional, con C uniforme y modulada.
 
-    python -m tests.test_adjunto_exacto [--model=adr|mrmt_block|mrmt_semi] [--theta-c=0.5] [--nt=4] [--alm=1] [--sin-dispersion] [--domain=real --q=0.3]
+    python -m tests.test_adjunto_exacto [--model=adr|mrmt_block|mrmt_semi] [--theta-c=0.5] [--nt=4] [--alm=1] [--sin-dispersion] [--normalizar] [--domain=real --q=0.3]
 """
 import os
 import sys
@@ -45,6 +45,8 @@ def main():
     RUNTIME.params = Parameters(env=entorno())
     p = RUNTIME.get()
     p.C_init_override = 1.0
+    if "--normalizar" in sys.argv:          # Ĵ normalizado (pesos w1, w2, w3 de funtions/optimizador.py:pesos_J)
+        p.normalizar_J, p.C_ref, p.zp_min, p.zp_max = True, 0.5, -600.0, -50.0
     if "--sin-dispersion" in sys.argv:     # D constante: D_disp(U) ∝ |U| no es derivable en U = 0 (nodos estancados)
         p.a_l = p.a_t = 0.0
     if "--modulada" in sys.argv:

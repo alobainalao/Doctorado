@@ -20,6 +20,18 @@ import os
 import numpy as np
 
 
+def pesos_J(p, T_total):
+    """Pesos (w1, w2, w3) de J1, J2, J3 (mismos que fenicsx/adjoint.py:_pesos_J). Sin `normalizar_J` valen 1.
+    Con `normalizar_J` cada término se divide entre su máximo posible: J1 entre C_ref²·T (C_ref = límite de salud,
+    en unidades de C), J2 entre max|z_p − z0|² sobre [zp_min, zp_max], J3 entre Q_max²·T·max|z_p − z0|."""
+    if not getattr(p, "normalizar_J", False):
+        return 1.0, 1.0, 1.0
+    z0 = float(getattr(p, "z0", 0.0))
+    dz = max(abs(float(p.zp_min) - z0), abs(float(p.zp_max) - z0))
+    Q_max = float(getattr(p, "Q_max", 1e-2))
+    return 1.0 / (float(p.C_ref) ** 2 * T_total), 1.0 / dz ** 2, 1.0 / (Q_max ** 2 * T_total * dz)
+
+
 def conjunto_admisible(p, nQ, zp_lo, zp_hi):
     """(lb, ub, [(A, l, u), …]) de U_ad en variables físicas."""
     from funtions.water_supply import supply_constraint, pump_upper_bounds, pump_duty_constraint

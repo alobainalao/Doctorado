@@ -50,7 +50,8 @@ def main():
 
         return solve_forward_fenicsx(p.Qout[0], p.pozo, p, mesh_cache=mesh_cache)
 
-    from view.animation import solve_forward, solve_adjoint, optimize_bfr
+    from view.animation import solve_forward, solve_adjoint
+    from funtions.optimizacion_bfr import optimize_bfr
     from preprocessing.preprocess import load_data
 
     d = load_data()

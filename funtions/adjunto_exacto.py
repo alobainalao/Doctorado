@@ -191,6 +191,9 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=N
     ht = [None] + [(Hn[l] - Hn[l - 1]) / dt for l in range(1, Nt + 1)]
 
     wi, gp = d.wi, d.gauss_p
+    from funtions.optimizador import pesos_J
+    w1, w2, w3 = pesos_J(p, Nt * dt)
+    gam = p.gamma * w1
     # --- adjunto del transporte (hacia atrás) y fuentes σ del flujo -------------------------------
     # Se propagan COTANGENTES del esquema (modo reverso exacto); Λ_C^ℓ = −A_ℓ^{-T} (cotangente de C_sol^ℓ).
     #   ADR      : x^ℓ = M A^{-1} B x^{ℓ-1}
@@ -223,7 +226,7 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=N
         A = ops.matriz(coefA, Dn[l], True)
         B = ops.matriz(coefB, Dn[l - 1], False)
         # ∇j_ℓ = 2γ Δt w_i g_i C^ℓ   (J_1 = γ Δt Σ_ℓ Σ_i w_i g_i (C_i^ℓ)²)
-        xbar = 2.0 * p.gamma * dt * wi * gp * Cn[l]
+        xbar = 2.0 * gam * dt * wi * gp * Cn[l]
         if B_next is not None:
             xbar = xbar - B_next.T @ LamC[l + 1]
         mask = (Cn[l] > 0.0) if getattr(p, "clip_C", True) else np.ones(N, bool)
@@ -286,13 +289,13 @@ def gradiente_exacto(d, p, Q, zp, H, U, C, Ci=None, ops=None, debug=None, Csol=N
             gQ[k] += th * (LamH[k + 1] @ Ed)
             lprima = (k + 1) % Nt + 1
             gQ[k] += (1.0 - th) * (LamH[lprima] @ Ed)
-    gQ += 2.0 * zdist * np.asarray(Q) * dt
+    gQ += 2.0 * w3 * zdist * np.asarray(Q) * dt
 
     # z_p: kernel de J_1, costo económico y desplazamiento de la delta del flujo
     dgdz = d.gauss_p * (d.nodes[:, 1] - d.pozo_cor[1]) / (p.epsilon_pozo ** 2)
-    g_zp = p.gamma * dt * sum(np.sum(wi * dgdz * Cn[l] ** 2) for l in range(1, Nt + 1))
-    g_zp += 2.0 * p.koppa * (zp - d.z0)
-    g_zp += np.sign(zp - d.z0) * np.sum(np.asarray(Q) ** 2) * dt
+    g_zp = gam * dt * sum(np.sum(wi * dgdz * Cn[l] ** 2) for l in range(1, Nt + 1))
+    g_zp += 2.0 * p.koppa * w2 * (zp - d.z0)
+    g_zp += w3 * np.sign(zp - d.z0) * np.sum(np.asarray(Q) ** 2) * dt
     if p.activate_ext:
         dd, _ = ddelta_dzp(d, p)
         for s in range(Nt):
