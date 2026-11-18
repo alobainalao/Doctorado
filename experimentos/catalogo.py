@@ -64,6 +64,17 @@ GRUPOS = {
             for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
         },
     },
+    # ── MJ. Igual que MC en malla_conos_eje (eje del pozo de 1 m a menos de 5 m): malla común de BFR y FEM desde el 17-nov ──
+    "MJ_malla_eje": {
+        "desc": "Modelo nuevo ADR / MRMT semi / MRMT bloque en malla_conos_eje, Q_std = 0.3, 30 días",
+        "pregunta": "¿Cambia el directo al refinar el eje del pozo a 1 m con el sumidero gaussiano en ambos backends?",
+        "casos": {
+            f"MJ{i}_{modelo}": {"desc": f"{modelo} como MC{i}_{modelo}, malla data/input/malla_conos_eje/malla.pkl",
+                                "cfg": {"model": modelo, "Q_std": 0.3, "factor_almacenamiento_C": 1.0, "bc_outlet_mode": "libre",
+                                        **MAIN_FUENTE, "mesh_pkl": "data/input/malla_conos_eje/malla.pkl"}}
+            for i, modelo in enumerate(("adr", "mrmt_semi", "mrmt_block"))
+        },
+    },
     # ── MT. Paso de tiempo (docs/informe_metodos_numericos.md §6.2): MC0_adr con el código del 16-nov ──
     "MT_paso_tiempo": {
         "desc": "ADR de MC0_adr con Δt = 5 h (regresión) y Δt = 2 h; FEniCSx con h en P1 y en P2",
