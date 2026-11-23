@@ -896,18 +896,37 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     # cuadrados sin signo y, con más filas de restricción que variables, se cumple en puntos no estacionarios.
     chi_tol = float(getattr(p, "opt_chi_tol", 1e-4))
 
-    def proyectar(y):
-        r = minimize(lambda z: 0.5 * np.dot(z - y, z - y), np.clip(y, lb_s, ub_s), jac=lambda z: z - y,
-                     method="SLSQP", bounds=list(zip(lb_s, ub_s)),
+    def proyectar(y, m=0.0):
+        # m > 0: proyección sobre el conjunto contraído una fracción m del ancho de cada cota (punto interior)
+        lb_m, ub_m = lb_s + m * (ub_s - lb_s), ub_s - m * (ub_s - lb_s)
+        r = minimize(lambda z: 0.5 * np.dot(z - y, z - y), np.clip(y, lb_m, ub_m), jac=lambda z: z - y,
+                     method="SLSQP", bounds=list(zip(lb_m, ub_m)),
                      constraints=[c for A_, l_, u_ in lin for c in (
-                         {"type": "ineq", "fun": lambda z, A_=A_, l_=l_: A_ @ z - l_, "jac": lambda z, A_=A_: A_},
-                         {"type": "ineq", "fun": lambda z, A_=A_, u_=u_: u_ - A_ @ z, "jac": lambda z, A_=A_: -A_})],
+                         {"type": "ineq", "fun": lambda z, A_=A_, l_=l_ + m * (u_ - l_): A_ @ z - l_, "jac": lambda z, A_=A_: A_},
+                         {"type": "ineq", "fun": lambda z, A_=A_, u_=u_ - m * (u_ - l_): u_ - A_ @ z, "jac": lambda z, A_=A_: -A_})],
                      options={"ftol": 1e-14, "maxiter": 500})
         return r.x
 
+    # Iterados admisibles (opcional, opt_factible): keep_feasible en cotas y restricciones; trust-constr fija la
+    # holgura en −c(x) y rechaza los pasos que salen del conjunto admisible (Nocedal y Wright 2006, p. 576), así que
+    # todo iterado guardado es admisible. Al reanudar evita que la holgura inicial de scipy, s₀ = max(−1.5·c(x₀), 1),
+    # incoherente con x₀, lo saque del conjunto. x₀ tiene que ser estrictamente interior: si no lo es, se proyecta
+    # sobre el conjunto contraído un 0.1 % del ancho de cada cota.
+    factible = bool(getattr(p, "opt_factible", False))
+    xi0 = x0 / s
+    if factible:
+        margen = min([np.min(np.r_[xi0 - lb_s, ub_s - xi0] / np.r_[ub_s - lb_s, ub_s - lb_s])] +
+                     [np.min(np.r_[A_ @ xi0 - l_, u_ - A_ @ xi0] / np.r_[u_ - l_, u_ - l_]) for A_, l_, u_ in lin])
+        if margen < 1e-6:
+            xi0 = proyectar(xi0, 1e-3)
+            if ctx.comm.rank == 0:
+                print(f"[fenicsx-opt] x₀ no es interior (margen relativo {margen:.1e}): proyectado, "
+                      f"|ΔQ|∞={np.max(np.abs(s * xi0 - x0)[:-1]):.2e} m³/s", flush=True)
+
     history["chi"] = []
-    # Progreso (opcional): el iterado aceptado se escribe en cada iteración en <opt_progreso>.json, y si existe
-    # <opt_progreso>.stop la optimización termina en la siguiente iteración guardando el resultado como siempre.
+    # Progreso (opcional): el iterado aceptado se escribe en cada iteración en <opt_progreso>.json y se añade a
+    # <opt_progreso>.jsonl (todos los iterados); si existe <opt_progreso>.stop la optimización termina en la
+    # siguiente iteración guardando el resultado como siempre.
     progreso = getattr(p, "opt_progreso", None)
     parado = [False]
 
@@ -918,9 +937,12 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
             print(f"[fenicsx-opt it {state.nit}] χ={chi:.3e} (tol {chi_tol:.0e})  "
                   f"Ĵ={state.fun:.6e}  violación={state.constr_violation:.1e}", flush=True)
             if progreso:
+                reg = dict(nit=int(state.nit), x=(s * xk).tolist(), J=float(state.fun), chi=chi,
+                           violacion=float(state.constr_violation))
                 with open(progreso + ".json", "w") as fh:
-                    json.dump(dict(nit=int(state.nit), x=(s * xk).tolist(), J=float(state.fun), chi=chi,
-                                   violacion=float(state.constr_violation)), fh)
+                    json.dump(reg, fh)
+                with open(progreso + ".jsonl", "a") as fh:
+                    fh.write(json.dumps(reg) + "\n")
         if progreso and os.path.exists(progreso + ".stop"):
             if ctx.comm.rank == 0:
                 print(f"[fenicsx-opt] paro pedido ({progreso}.stop)", flush=True)
@@ -935,8 +957,9 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         opts.update(initial_barrier_parameter=float(barrera0), initial_barrier_tolerance=float(barrera0))
     if getattr(p, "opt_radio0", None):
         opts["initial_tr_radius"] = float(p.opt_radio0)
-    res = minimize(lambda xi: fun(s * xi), x0 / s, jac=lambda xi: jac(s * xi) * s, method="trust-constr",
-                   bounds=Bounds(lb_s, ub_s), constraints=[LinearConstraint(A_, l_, u_) for A_, l_, u_ in lin],
+    res = minimize(lambda xi: fun(s * xi), xi0, jac=lambda xi: jac(s * xi) * s, method="trust-constr",
+                   bounds=Bounds(lb_s, ub_s, keep_feasible=factible),
+                   constraints=[LinearConstraint(A_, l_, u_, keep_feasible=factible) for A_, l_, u_ in lin],
                    callback=criticidad, options=opts)
     res.x = s * res.x
     if parado[0]:

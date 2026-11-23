@@ -2,11 +2,13 @@
 Optimización adjunta (FEniCSx) con config/nitrato.json: nitrato, J1/J2/J3 normalizados (normalizar_J).
 
     python -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block> [variante c_limite] [--x0=RUTA --etiqueta=E
-                                             --barrera0=B --radio0=R]
+                                             --barrera0=B --radio0=R --factible=1]
 
 --x0: reanuda desde un iterado guardado (<modelo>_progreso.json o <modelo>.json, de cualquier modelo); --etiqueta:
 las salidas pasan a <modelo>_<etiqueta>[_progreso].json para no pisar las de la corrida original; --barrera0 y
---radio0: barrera y radio de confianza iniciales de trust-constr (por defecto los de scipy, 0.1 y 1).
+--radio0: barrera y radio de confianza iniciales de trust-constr (por defecto los de scipy, 0.1 y 1); --factible:
+todos los iterados admisibles (keep_feasible; x0 se proyecta al interior si hace falta). Si ya hay salidas con
+el mismo nombre la corrida no arranca: nunca sobrescribe resultados.
 
 La fuente se escala por f tal que el pico de C sin bombeo (ADR) sea 42 mg/L como N = 0.1859 kg/m³ de
 nitrato. El modelo es lineal en C, así que equivale a expresar C_ref = 0.05 kg/m³ (valor guía OMS)
@@ -34,7 +36,7 @@ C_LIMITE = 0.05                    # kg/m³ (50 mg/L como nitrato, OMS)
 DIR_OUT = os.path.join(CODIGO, "data", "output", "optimizacion_nitrato")
 
 
-def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=None, radio0=None):
+def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=None, radio0=None, factible=None):
     """variante: nombre de config/<variante>.json (p.ej. nitrato_estricto) y c_limite [kg/m³]; salida
     aparte en data/output/optimizacion_<variante>/ para no pisar los resultados estándar. x0: ruta de un iterado
     guardado desde el que se reanuda; etiqueta: sufijo de las salidas."""
@@ -43,6 +45,11 @@ def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=
         DIR_OUT = os.path.join(CODIGO, "data", "output", f"optimizacion_{variante}")
     if c_limite:
         C_LIMITE = float(c_limite)
+    nombre = f"{modelo}_{etiqueta}" if etiqueta else modelo
+    previas = [r for r in (f"{nombre}.json", f"{nombre}_progreso.json", f"{nombre}_progreso.jsonl")
+               if os.path.exists(os.path.join(DIR_OUT, r))]
+    if previas:
+        sys.exit(f"ya existen {previas} en {DIR_OUT}: usa otra --etiqueta para no sobrescribirlos")
     cfg = json.load(open(os.path.join(CODIGO, "config", f"{variante or 'nitrato'}.json")))
     cfg.update({"metodo": "fenicsx", "run_type": "optimization", "model": modelo, "pre": True,
                 "save_dat": False, "opt_maxiter": 100, "animate": False, "postproc": False,
@@ -72,13 +79,12 @@ def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=
     p.C_ref = C_LIMITE / f
     print(f"MODELO={modelo} pico_modelo={pico:.4e} f={f:.4e} C_ref_modelo={p.C_ref:.4e}", flush=True)
 
-    nombre = f"{modelo}_{etiqueta}" if etiqueta else modelo
     if x0:
         d = json.load(open(x0))
         p.opt_x0, x0 = x0, np.asarray(d.get("x", d.get("x_opt")), float)
     else:
         x0 = np.concatenate([np.asarray(p.Qout[0], float), [zp0]])
-    p.opt_barrera0, p.opt_radio0 = barrera0, radio0
+    p.opt_barrera0, p.opt_radio0, p.opt_factible = barrera0, radio0, bool(factible)
     w1, w2, w3 = _pesos_J(p, nQ * p.dt)
 
     def comp(Q, zp):
