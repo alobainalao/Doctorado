@@ -1,7 +1,12 @@
 """
 Optimización adjunta (FEniCSx) con config/nitrato.json: nitrato, J1/J2/J3 normalizados (normalizar_J).
 
-    python -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block> [variante c_limite]
+    python -m experimentos.optimizar_nitrato <adr|mrmt_semi|mrmt_block> [variante c_limite] [--x0=RUTA --etiqueta=E
+                                             --barrera0=B --radio0=R]
+
+--x0: reanuda desde un iterado guardado (<modelo>_progreso.json o <modelo>.json, de cualquier modelo); --etiqueta:
+las salidas pasan a <modelo>_<etiqueta>[_progreso].json para no pisar las de la corrida original; --barrera0 y
+--radio0: barrera y radio de confianza iniciales de trust-constr (por defecto los de scipy, 0.1 y 1).
 
 La fuente se escala por f tal que el pico de C sin bombeo (ADR) sea 42 mg/L como N = 0.1859 kg/m³ de
 nitrato. El modelo es lineal en C, así que equivale a expresar C_ref = 0.05 kg/m³ (valor guía OMS)
@@ -29,9 +34,10 @@ C_LIMITE = 0.05                    # kg/m³ (50 mg/L como nitrato, OMS)
 DIR_OUT = os.path.join(CODIGO, "data", "output", "optimizacion_nitrato")
 
 
-def main(modelo, variante=None, c_limite=None):
+def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=None, radio0=None):
     """variante: nombre de config/<variante>.json (p.ej. nitrato_estricto) y c_limite [kg/m³]; salida
-    aparte en data/output/optimizacion_<variante>/ para no pisar los resultados estándar."""
+    aparte en data/output/optimizacion_<variante>/ para no pisar los resultados estándar. x0: ruta de un iterado
+    guardado desde el que se reanuda; etiqueta: sufijo de las salidas."""
     global DIR_OUT, C_LIMITE
     if variante:
         DIR_OUT = os.path.join(CODIGO, "data", "output", f"optimizacion_{variante}")
@@ -66,7 +72,13 @@ def main(modelo, variante=None, c_limite=None):
     p.C_ref = C_LIMITE / f
     print(f"MODELO={modelo} pico_modelo={pico:.4e} f={f:.4e} C_ref_modelo={p.C_ref:.4e}", flush=True)
 
-    x0 = np.concatenate([np.asarray(p.Qout[0], float), [zp0]])
+    nombre = f"{modelo}_{etiqueta}" if etiqueta else modelo
+    if x0:
+        d = json.load(open(x0))
+        p.opt_x0, x0 = x0, np.asarray(d.get("x", d.get("x_opt")), float)
+    else:
+        x0 = np.concatenate([np.asarray(p.Qout[0], float), [zp0]])
+    p.opt_barrera0, p.opt_radio0 = barrera0, radio0
     w1, w2, w3 = _pesos_J(p, nQ * p.dt)
 
     def comp(Q, zp):
@@ -75,11 +87,11 @@ def main(modelo, variante=None, c_limite=None):
         J3 = w3 * np.sum(np.asarray(Q) ** 2) * p.dt * abs(zp - p.z0)
         return dict(J=float(r["J"]), J1=float(r["J1"]), J2=float(J2), J3=float(J3))
 
-    tabla = {"x0": comp(x0[:-1], zp0),
-             "x0_recortado_Qmax": comp(np.full(nQ, p.Q_max), zp0),
-             "Q=0": comp(np.zeros(nQ), zp0)}
-    # iterado aceptado en cada iteración y paro limpio: touch <DIR_OUT>/<modelo>_progreso.stop
-    p.opt_progreso = os.path.join(DIR_OUT, f"{modelo}_progreso")
+    tabla = {"x0": comp(x0[:-1], x0[-1])}
+    if not getattr(p, "opt_x0", None):     # referencias del arranque estándar (al reanudar ya están en la corrida original)
+        tabla.update({"x0_recortado_Qmax": comp(np.full(nQ, p.Q_max), zp0), "Q=0": comp(np.zeros(nQ), zp0)})
+    # iterado aceptado en cada iteración y paro limpio: touch <DIR_OUT>/<nombre>_progreso.stop
+    p.opt_progreso = os.path.join(DIR_OUT, f"{nombre}_progreso")
     if os.path.exists(p.opt_progreso + ".stop"):
         os.remove(p.opt_progreso + ".stop")
     res = optimize_fenicsx(p, mesh_cache=mc)
@@ -88,13 +100,15 @@ def main(modelo, variante=None, c_limite=None):
     for k, v in tabla.items():
         print(f"{k:20s}", {a: f"{b:.4e}" for a, b in v.items()}, flush=True)
 
-    out = dict(modelo=modelo, pico_modelo=pico, f=f, C_ref_modelo=p.C_ref, x0=x0.tolist(),
+    out = dict(modelo=modelo, pico_modelo=pico, f=f, C_ref_modelo=p.C_ref, x0=x0.tolist(), x0_de=getattr(p, "opt_x0", None),
                x_opt=xo.tolist(), nit=int(res.nit), success=bool(res.success),
                msg=str(res.message), tabla=tabla)
-    with open(os.path.join(DIR_OUT, f"{modelo}.json"), "w") as fh:
+    with open(os.path.join(DIR_OUT, f"{nombre}.json"), "w") as fh:
         json.dump(out, fh, indent=1, default=float)
     print("FIN", modelo, out["nit"], out["success"], out["msg"], flush=True)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    pos = [a for a in sys.argv[1:] if not a.startswith("--")]
+    opc = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--"))
+    main(*pos[:3], **opc)

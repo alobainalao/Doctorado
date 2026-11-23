@@ -779,6 +779,17 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
 
     Q0 = np.asarray(p.Qout[0], float)
     x0 = np.concatenate([Q0, [float(pozo[1])]])
+    # Reanudar (opcional): x0 desde un iterado guardado (<opt_x0>: "x" de <modelo>_progreso.json o "x_opt" de
+    # <modelo>.json). trust-constr no guarda su estado (BFGS, radio, barrera), así que se reinician; con un punto
+    # admisible conviene una barrera inicial pequeña (opt_barrera0) para no alejarlo de las restricciones activas.
+    x0_ruta = getattr(p, "opt_x0", None)
+    if x0_ruta:
+        d = json.load(open(x0_ruta))
+        x0 = np.asarray(d.get("x", d.get("x_opt")), float)
+        if len(x0) != len(Q0) + 1:
+            raise ValueError(f"opt_x0={x0_ruta}: {len(x0)} variables, se esperaban {len(Q0) + 1}")
+        if ctx.comm.rank == 0:
+            print(f"[fenicsx-opt] reanudando desde {x0_ruta} (z_p={x0[-1]:.1f})", flush=True)
     n = len(x0)
 
     history = {"Q": [], "zp": [], "J": [], "grad_norm": []}
@@ -919,6 +930,11 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
 
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
             "gtol": 1e-12, "xtol": 1e-8}
+    barrera0 = getattr(p, "opt_barrera0", None)
+    if barrera0:
+        opts.update(initial_barrier_parameter=float(barrera0), initial_barrier_tolerance=float(barrera0))
+    if getattr(p, "opt_radio0", None):
+        opts["initial_tr_radius"] = float(p.opt_radio0)
     res = minimize(lambda xi: fun(s * xi), x0 / s, jac=lambda xi: jac(s * xi) * s, method="trust-constr",
                    bounds=Bounds(lb_s, ub_s), constraints=[LinearConstraint(A_, l_, u_) for A_, l_, u_ in lin],
                    callback=criticidad, options=opts)
