@@ -24,9 +24,9 @@ Curvas de referencia
 Curva doméstica horaria:
   AWWA Manual M32 (2004), Distribution System Requirements for Fire Protection;
   Mays, L.W. (2011), Water Resources Engineering, 2ª ed., Wiley, Tabla 4-2;
-  Alvarado-Granados et al. (2023), "Coefficients and curves of hourly and daily
-  variations of water demand", Water Practice & Technology 18(8):1991–2009.
-  doi:10.2166/wpt.2023.120
+  Hernandez-Samaniego, E. et al. (2023), "Coefficients and curves of hourly and daily
+  variations of water demand for improved operation of potable water distribution
+  systems: a case study of Chihuahua City, Mexico", Water Practice & Technology 18(8).
 
 Curva de riego agrícola:
   Allen, R.G., Pereira, L.S., Raes, D., Smith, M. (1998), Crop
@@ -75,7 +75,7 @@ _SECONDS_PER_DAY = 86400.0
 # Factores relativos a la media diaria (media = 1). Horas 0-23.
 # Pico matutino ≈ 07h (factor 1.80), pico vespertino ≈ 18h (1.70),
 # mínimo nocturno ≈ 03h (0.17).
-# Fuente: AWWA M32 / Mays (2011) Tabla 4-2 / Alvarado-Granados et al. (2023)
+# Fuente: Mays (2011) / Hernandez-Samaniego et al. (2023)
 _DOMESTIC_RAW = np.array([
     0.25, 0.20, 0.18, 0.17, 0.20, 0.40,   # 00-05
     1.10, 1.80, 1.60, 1.30, 1.10, 1.00,   # 06-11

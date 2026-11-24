@@ -64,7 +64,7 @@ def main():
                                    J0=r["tabla"]["x0"], J=r["tabla"]["optimo"], historia=historia(m)))
     # f: unidades del modelo → kg/m³ de nitrato (misma fuente en los tres modelos)
     out.update(f=json.load(open(os.path.join(DIR_OPT, "f_fuente.json")))["f"],
-               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce())
+               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce(), pareto=pareto())
     js = ("// Generado por codigo/scripts/exportar_optimizacion_presentacion.py desde\n"
           f"// data/output/optimizacion_{VARIANTE}/ (<modelo>.json o <modelo>_progreso.json). No editar a mano.\n"
           f"export const OPT = {json.dumps(out, ensure_ascii=False)};\n")
@@ -138,6 +138,19 @@ def cruce():
     if not os.path.isdir(d):
         return []
     return [json.load(open(os.path.join(d, f))) for f in sorted(os.listdir(d)) if f.endswith(".json")]
+
+
+def pareto():
+    """Curva calidad–costo de ADR con el caudal fijo de su mejor iterado: J1, J2 y J3 en cada z_p del barrido
+    (pareto/adr_parte*.json, experimentos/barrido_zp.py), ordenados por z_p."""
+    d = os.path.join(DIR_OPT, "pareto")
+    partes = [json.load(open(os.path.join(d, f))) for f in sorted(os.listdir(d))
+              if f.startswith("adr_parte")] if os.path.isdir(d) else []
+    if not partes:
+        return None
+    filas = sorted(zip(*[sum((q[k] for q in partes), []) for k in ("zp", "J1", "J2", "J3")]))
+    return dict(iterado=partes[0]["iterado"], nit=partes[0]["nit"],
+                **{k: [round(float(r[i]), 6) for r in filas] for i, k in enumerate(("zp", "J1", "J2", "J3"))})
 
 
 def historia(m):
