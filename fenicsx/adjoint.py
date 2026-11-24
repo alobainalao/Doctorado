@@ -771,6 +771,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     Incluye restricción lineal de suministro 0 ≤ S_n ≤ S_max (balance del tanque
     con demanda diaria D), idéntica a optimize_bfr. Guarda historial y resultado."""
     from scipy.optimize import minimize, Bounds, LinearConstraint
+    from funtions.optimizador import proyectar
     from funtions.water_supply import (supply_constraint, storage_trajectory,
                                        pump_upper_bounds, pump_duty_constraint)
 
@@ -894,18 +895,9 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     # Criterio de paro: medida de criticidad χ(ξ) = ‖ξ − P_U(ξ − ∇Ĵ)‖∞, con P_U la proyección euclídea sobre el
     # conjunto admisible (poliedro convexo); χ = 0 ⇔ KKT. El gtol de trust-constr usa multiplicadores de mínimos
     # cuadrados sin signo y, con más filas de restricción que variables, se cumple en puntos no estacionarios.
+    # P_U (funtions/optimizador.py:proyectar) viene con su residuo KKT: si pasa de proy_tol, χ no es fiable y no se para.
     chi_tol = float(getattr(p, "opt_chi_tol", 1e-4))
-
-    def proyectar(y, m=0.0):
-        # m > 0: proyección sobre el conjunto contraído una fracción m del ancho de cada cota (punto interior)
-        lb_m, ub_m = lb_s + m * (ub_s - lb_s), ub_s - m * (ub_s - lb_s)
-        r = minimize(lambda z: 0.5 * np.dot(z - y, z - y), np.clip(y, lb_m, ub_m), jac=lambda z: z - y,
-                     method="SLSQP", bounds=list(zip(lb_m, ub_m)),
-                     constraints=[c for A_, l_, u_ in lin for c in (
-                         {"type": "ineq", "fun": lambda z, A_=A_, l_=l_ + m * (u_ - l_): A_ @ z - l_, "jac": lambda z, A_=A_: A_},
-                         {"type": "ineq", "fun": lambda z, A_=A_, u_=u_ - m * (u_ - l_): u_ - A_ @ z, "jac": lambda z, A_=A_: -A_})],
-                     options={"ftol": 1e-14, "maxiter": 500})
-        return r.x
+    proy_tol = 1e-2 * chi_tol
 
     # Iterados admisibles (opcional, opt_factible): keep_feasible en cotas y restricciones; trust-constr fija la
     # holgura en −c(x) y rechaza los pasos que salen del conjunto admisible (Nocedal y Wright 2006, p. 576), así que
@@ -918,10 +910,10 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         margen = min([np.min(np.r_[xi0 - lb_s, ub_s - xi0] / np.r_[ub_s - lb_s, ub_s - lb_s])] +
                      [np.min(np.r_[A_ @ xi0 - l_, u_ - A_ @ xi0] / np.r_[u_ - l_, u_ - l_]) for A_, l_, u_ in lin])
         if margen < 1e-6:
-            xi0 = proyectar(xi0, 1e-3)
+            xi0, residuo = proyectar(xi0, lb_s, ub_s, lin, 1e-3)
             if ctx.comm.rank == 0:
                 print(f"[fenicsx-opt] x₀ no es interior (margen relativo {margen:.1e}): proyectado, "
-                      f"|ΔQ|∞={np.max(np.abs(s * xi0 - x0)[:-1]):.2e} m³/s", flush=True)
+                      f"|ΔQ|∞={np.max(np.abs(s * xi0 - x0)[:-1]):.2e} m³/s (residuo KKT {residuo:.1e})", flush=True)
 
     history["chi"] = []
     # Progreso (opcional): el iterado aceptado se escribe en cada iteración en <opt_progreso>.json y se añade a
@@ -931,14 +923,18 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     parado = [False]
 
     def criticidad(xk, state):
-        chi = float(np.max(np.abs(xk - proyectar(xk - state.grad))))
+        z, residuo = proyectar(xk - state.grad, lb_s, ub_s, lin)
+        chi = float(np.max(np.abs(xk - z)))
         history["chi"].append(chi)
         if ctx.comm.rank == 0:
             print(f"[fenicsx-opt it {state.nit}] χ={chi:.3e} (tol {chi_tol:.0e})  "
                   f"Ĵ={state.fun:.6e}  violación={state.constr_violation:.1e}", flush=True)
+            if residuo > proy_tol:
+                print(f"[fenicsx-opt it {state.nit}] AVISO: proyección no certificada (residuo KKT {residuo:.1e}): "
+                      f"χ no es fiable", flush=True)
             if progreso:
                 reg = dict(nit=int(state.nit), x=(s * xk).tolist(), J=float(state.fun), chi=chi,
-                           violacion=float(state.constr_violation))
+                           violacion=float(state.constr_violation), residuo_proy=residuo)
                 with open(progreso + ".json", "w") as fh:
                     json.dump(reg, fh)
                 with open(progreso + ".jsonl", "a") as fh:
@@ -948,7 +944,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                 print(f"[fenicsx-opt] paro pedido ({progreso}.stop)", flush=True)
             parado[0] = True
             return True
-        return chi < chi_tol and state.constr_violation < 1e-8
+        return chi < chi_tol and residuo <= proy_tol and state.constr_violation < 1e-8
 
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
             "gtol": 1e-12, "xtol": 1e-8}
