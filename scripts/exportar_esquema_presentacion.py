@@ -3,10 +3,11 @@ Esquema animado de la apertura del avance 3 (A3D01): porosidad, líneas de corri
 con el óptimo ADR (FEniCSx, malla con eje de 1 m, config nitrato_vscale_malla_eje_g1, iterado de
 optimizacion_<variante>/instantanea_23nov/adr_progreso.json, el mismo que muestra la presentación).
 
-    python scripts/exportar_esquema_presentacion.py [--simular] [ruta_presentacion]     # fenics_env
+    python scripts/exportar_esquema_presentacion.py [--simular] [--estados=RUTA] [ruta_presentacion]   # fenics_env
 
 --simular corre los dos directos (Q = 0 y Q óptimo en su z_p) y guarda los campos en
-data/output/presentacion_esquema/campos.npz; sin él se reusa ese archivo. Escribe
+data/output/presentacion_esquema/campos.npz; sin él se reusa ese archivo. --estados: GeoJSON de los estados de México
+(p. ej. github.com/angelnmara/geojson, mexicoHigh.json) para el mapa de ubicación. Escribe
 <presentacion>/src/slides-avance3/esquema.js con contornos y polilíneas ya en las coordenadas de escena.jsx.
 """
 import json
@@ -20,6 +21,7 @@ if CODIGO not in sys.path:
     sys.path.insert(0, CODIGO)
 os.chdir(CODIGO)
 SIMULAR = "--simular" in sys.argv[1:]
+ESTADOS = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--estados=")), None)
 _ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 PRES = _ARGS[0] if _ARGS else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc")
 
@@ -33,6 +35,68 @@ ESC = 9.939
 NIV_PHI = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 NIV_C = [10.0, 50.0]                 # mg/L de nitrato: extensión visible y valor guía OMS
 PASO_C = 2                           # un cuadro de la pluma cada 2 pasos (20 h)
+
+
+# Zona de estudio digitalizada de tesis/Figures/ubicacion.png (píxeles de la ampliación de Sabinas, norte arriba): sondeos
+# 1–6, traza del corte (recta roja, ajuste x = a + b·y) y poblados (posición de su etiqueta en el mapa base). La escala sale
+# de proyectar los sondeos 2 y 6 sobre la recta: su distancia es la longitud del dominio, 10 755 − 816 = 9 939 m.
+SONDEOS_PX = {1: (1039.4, 160.2), 2: (695.5, 201.4), 3: (590.5, 335.1), 4: (590.5, 432.7), 5: (695.5, 482.7), 6: (493.0, 527.7)}
+RECTA_PX = (824.00, -0.6196, 149.0, 592.0)          # x = a + b·y para y en [y0, y1]
+POBLADOS_PX = {"Cloete": (545, 163), "Agujita": (597, 268), "Sabinas": (725, 453)}
+ALINEADOS = {6: 816.0, 4: 4354.0, 3: 6716.0, 2: 10755.0}   # sondeo de la figura → x del pozo de campo en el corte
+SABINAS = (-101.12, 27.85)                                 # lon, lat
+
+
+def zona():
+    """Zona de estudio en metros (E, N) con origen en el sondeo 6 y la escala de la recta."""
+    a, b, y0, y1 = RECTA_PX
+    p0, u = np.array([a + b * y0, y0]), np.array([b, 1.0]) / np.hypot(b, 1.0)
+    s = {k: float(np.dot(np.array(v) - p0, u)) for k, v in SONDEOS_PX.items()}
+    m_px = (ALINEADOS[2] - ALINEADOS[6]) / abs(s[6] - s[2])
+    o = np.array(SONDEOS_PX[6])
+    en = lambda q: [round(float((q[0] - o[0]) * m_px), 1), round(float(-(q[1] - o[1]) * m_px), 1)]
+    pie = {k: en(p0 + s[k] * u) for k in ALINEADOS}       # pie de la perpendicular sobre la recta
+    return dict(m_por_px=round(m_px, 3),
+                sondeos=[dict(n=k, e=en(v)[0], nn=en(v)[1], alineado=k in ALINEADOS, x_corte=ALINEADOS.get(k),
+                              pie=pie.get(k)) for k, v in SONDEOS_PX.items()],
+                recta=[en((a + b * y0, y0)), en((a + b * y1, y1))],
+                poblados=[dict(n=k, e=en(v)[0], nn=en(v)[1]) for k, v in POBLADOS_PX.items()])
+
+
+def mapa(ruta):
+    """Estados de México simplificados en una proyección equirectangular (cos 25°), en unidades de 1/10 de grado."""
+    def dp(p, tol):                                   # Douglas–Peucker
+        if len(p) < 3:
+            return p
+        a, b = p[0], p[-1]
+        n = np.hypot(*(b - a)) or 1e-12
+        dist = np.abs(np.cross(b - a, p - a)) / n
+        i = int(np.argmax(dist))
+        if dist[i] <= tol:
+            return np.array([a, b])
+        return np.vstack([dp(p[:i + 1], tol)[:-1], dp(p[i:], tol)])
+
+    d = json.load(open(ruta))
+    k, c = 10.0, np.cos(np.radians(25.0))
+    xy = lambda q: ((q[:, 0] + 118.0) * c * k, (33.0 - q[:, 1]) * k)
+    estados = []
+    for f in d["features"]:
+        g = f["geometry"]
+        polis = g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+        partes = []
+        for pol in polis:
+            q = np.asarray(pol[0], float)
+            area = 0.5 * abs(np.dot(q[:, 0], np.roll(q[:, 1], 1)) - np.dot(q[:, 1], np.roll(q[:, 0], 1)))
+            if area < 0.02:                            # islas pequeñas fuera
+                continue
+            i = int(np.argmax(np.hypot(*(q - q[0]).T)))  # anillo cerrado: se parte en el punto más lejano
+            q = np.vstack([dp(q[:i + 1], 0.03)[:-1], dp(q[i:], 0.03)])
+            x, y = xy(q)
+            partes.append("M" + "L".join(f"{u:.1f},{v:.1f}" for u, v in zip(x, y)) + "Z")
+        estados.append(dict(id=f["properties"]["id"], nombre=f["properties"]["name"], d="".join(partes)))
+    sx, sy = xy(np.array([SABINAS]))
+    return dict(estados=estados, sabinas=[round(float(sx[0]), 1), round(float(sy[0]), 1)],
+                ancho=round((118.0 - 86.5) * c * k, 1), alto=round((33.0 - 14.3) * k, 1))
 
 
 def simular():
@@ -181,6 +245,11 @@ def main():
     os.chdir(cwd)
     pozos_campo = [dict(x=round((x - 816.0) / ESC, 1), z=round((250.5 - z) / ESC, 1), phi=round(float(v), 2))
                    for (x, z), v in zip(puntos, por_n)]
+    # capas A–E de cada sondeo (techo y base) desde el datos_pozos.csv que escribe well_layer_data
+    import csv
+    capas = [dict(x=round((float(r["X"]) - 816.0) / ESC, 1), capa=r["Capa"], z0=round((250.5 - min(float(r["Z0"]), 250.5)) / ESC, 1),
+                  z1=round((250.5 - float(r["Z1"])) / ESC, 1), phi=float(r["Porosidad_n"]))
+             for r in csv.DictReader(open(os.path.join(os.path.dirname(NPZ), "datos_pozos.csv"))) if float(r["Z1"]) < 250.5]
 
     # entrada (x = 10 755 m, z de −768.5 a 250.5): semillas repartidas en la vertical
     # (por debajo de −480 m el agua casi no se mueve y la línea muere contra el fondo; arriba de 160 m sale por la pared)
@@ -197,7 +266,8 @@ def main():
         fuente=dict(variante=VARIANTE, iterado=os.path.relpath(X0_OPT, CODIGO), nit=int(d["nit"]),
                     zp=float(d["zp"]), dt_cuadro_h=PASO_C * float(d["dt"]) / 3600.0),
         phi=dict(niveles=NIV_PHI, bandas=bandas(tri, phi, NIV_PHI)),
-        pozos_campo=pozos_campo,
+        pozos_campo=pozos_campo, capas=capas, zona=zona(),
+        mapa=mapa(ESTADOS) if ESTADOS else None,
         corrientes=dict(sin=corrientes(tri, v_sin, semillas), con=corrientes(tri, v_con, semillas_con, pozo)),
         pluma=dict(niveles=NIV_C, sin=pluma["sin"], con=pluma["con"]),
     )
