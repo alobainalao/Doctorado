@@ -165,16 +165,16 @@ def validaciones(p, nQ):
         fin, prog = os.path.join(d, "adr.json"), os.path.join(d, "adr_progreso.json")
         if os.path.exists(fin):
             a = json.load(open(fin))
-            x, J, nit, estado, chi = a["x_opt"], a["tabla"]["optimo"]["J"], a["nit"], "final", None
+            x, J, nit, estado, chi, viol = a["x_opt"], a["tabla"]["optimo"]["J"], a["nit"], "final", None, None
         elif os.path.exists(prog):
             a = json.load(open(prog))
-            x, J, nit, estado, chi = a["x"], a["J"], a["nit"], "progreso", a.get("chi")
+            x, J, nit, estado, chi, viol = a["x"], a["J"], a["nit"], "progreso", a.get("chi"), a.get("violacion")
         else:
             x = None
         if x is not None:
             Q = np.asarray(x[:-1])
             S = [cfg.S0] + ws.storage_trajectory(Q, cfg).round(1).tolist()
-            r["optimizador"] = dict(zp=round(float(x[-1]), 1), Q=np.round(Q, 4).tolist(), S=S, nit=nit, estado=estado, chi=chi,
+            r["optimizador"] = dict(zp=round(float(x[-1]), 1), Q=np.round(Q, 4).tolist(), S=S, nit=nit, estado=estado, chi=chi, violacion=viol,
                                     **terminos(cfg, J, Q, x[-1], nQ))
         out[caso] = r
     return out
