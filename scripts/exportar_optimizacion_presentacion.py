@@ -64,7 +64,8 @@ def main():
                                    J0=r["tabla"]["x0"], J=r["tabla"]["optimo"], historia=historia(m)))
     # f: unidades del modelo → kg/m³ de nitrato (misma fuente en los tres modelos)
     out.update(f=json.load(open(os.path.join(DIR_OPT, "f_fuente.json")))["f"],
-               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce(), pareto=pareto(), validaciones=validaciones(p, nQ))
+               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce(), pareto=pareto(), validaciones=validaciones(p, nQ),
+               demanda_real=demanda_real())
     js = ("// Generado por codigo/scripts/exportar_optimizacion_presentacion.py desde\n"
           f"// data/output/optimizacion_{VARIANTE}/ (<modelo>.json o <modelo>_progreso.json). No editar a mano.\n"
           f"export const OPT = {json.dumps(out, ensure_ascii=False)};\n")
@@ -151,6 +152,22 @@ def pareto():
     filas = sorted(zip(*[sum((q[k] for q in partes), []) for k in ("zp", "J1", "J2", "J3")]))
     return dict(iterado=partes[0]["iterado"], nit=partes[0]["nit"],
                 **{k: [round(float(r[i]), 6) for r in filas] for i, k in enumerate(("zp", "J1", "J2", "J3"))})
+
+
+def demanda_real():
+    """Demanda y disponibilidad de la bomba con el perfil horario promediado en cada paso (config <VARIANTE>_prom,
+    profile_step_mean): volumen consumido d_n y fracción bombeable a_n por paso, y el bombeo de mínimo costo que las
+    cubre (caso sin nitrato, solución exacta de experimentos/validacion_esperada.py)."""
+    from funtions import water_supply as ws
+    v = f"{VARIANTE}_prom"
+    p = SimpleNamespace(**json.load(open(os.path.join(CODIGO, "config", f"{v}.json"))))
+    nt = int(round(p.T / p.dt))
+    out = dict(d=np.round(ws.demand_vector(p, nt), 2).tolist(), a=np.round(ws.pump_upper_bounds(p, nt, 1.0), 4).tolist())
+    e = os.path.join(CODIGO, "data", "output", f"optimizacion_{v}_sin_nitrato", "esperado.json")
+    if os.path.exists(e):
+        e = json.load(open(e))
+        out.update(Q_costo=e["Q"], S_costo=e["S"])
+    return out
 
 
 def validaciones(p, nQ):

@@ -65,6 +65,8 @@ Parámetros en la configuración `p`:
   S_max         capacidad máxima [m³],      default 2000.0  (≈2 días)
   t0_hour       hora solar del inicio, default 6.0
   pump_cycling  bool — activa disponibilidad variable de la bomba, default True
+  profile_step_mean  bool — demanda y disponibilidad promediadas sobre cada paso (volumen
+                exacto); False = valor a la mitad del paso (resultados hasta 24-nov-2026)
   dt            paso de tiempo (s)
 """
 import numpy as np
@@ -124,6 +126,30 @@ def _hour_factor(arr, t_h):
     return float(arr[i]) * (1.0 - frac) + float(arr[(i + 1) % 24]) * frac
 
 
+def _mean_factor(arr, h0, h1):
+    """Promedio exacto en [h0, h1] (horas) de la interpolación lineal circular: trapecio en cada tramo horario,
+    exacto porque el interpolante es lineal entre horas enteras."""
+    tot, h = 0.0, float(h0)
+    while h < h1 - 1e-12:
+        b = min(np.floor(h) + 1.0, float(h1))
+        tot += 0.5 * (_hour_factor(arr, h) + _hour_factor(arr, b)) * (b - h)
+        h = b
+    return tot / (h1 - h0)
+
+
+def _step_factor(arr, p, n):
+    """Factor del perfil horario en el paso n = [t0 + n·dt, t0 + (n+1)·dt].
+
+    profile_step_mean = True: promedio sobre el paso, así d_n es el volumen consumido en el paso y Q_max·a_n el
+    bombeable. False (resultados hasta el 24-nov-2026): valor a la mitad del paso; con dt = 10 h, que no divide a
+    24 h, muestrea el perfil a horas que se repiten cada 5 días (d_n entre 58 y 765 m³ en vez de 166 a 590)."""
+    dt_h = float(p.dt) / 3600.0
+    h0 = float(getattr(p, "t0_hour", 6.0)) + n * dt_h
+    if getattr(p, "profile_step_mean", False):
+        return _mean_factor(arr, h0, h0 + dt_h)
+    return _hour_factor(arr, h0 + 0.5 * dt_h)
+
+
 def supply_params(p):
     """Parámetros escalares del tanque (sin el perfil de demanda)."""
     return dict(
@@ -137,51 +163,47 @@ def supply_params(p):
 def demand_vector(p, Nt):
     """Demanda por paso de tiempo [vol/paso] con perfil diurno.
 
-    d_n = (f_dom(h_n)·D_dom + f_agri(h_n)·D_agri) · dt / 86400
+    d_n = (f_dom,n·D_dom + f_agri,n·D_agri) · dt / 86400
 
-    donde h_n es la hora solar del punto medio del paso n.
+    con f_n el factor del perfil en el paso n (_step_factor): su promedio sobre el paso si profile_step_mean,
+    si no su valor a la mitad del paso.
 
     Parámetros:
-      demand_day   D_dom  [vol/día], default 80.0
-      demand_agri  D_agri [vol/día], default 0.0
-      t0_hour      hora solar del inicio, default 6.0
-      dt           paso (s)
+      demand_day         D_dom  [vol/día], default 80.0
+      demand_agri        D_agri [vol/día], default 0.0
+      t0_hour            hora solar del inicio, default 6.0
+      profile_step_mean  bool, default False
+      dt                 paso (s)
     """
     dt     = float(p.dt)
     D_dom  = float(getattr(p, "demand_day",  80.0))
     D_agri = float(getattr(p, "demand_agri",  0.0))
-    t0_h   = float(getattr(p, "t0_hour",      6.0))
 
     d = np.empty(Nt)
     for n in range(Nt):
-        h = t0_h + (n + 0.5) * dt / 3600.0
-        d[n] = (_hour_factor(_DOMESTIC_HOURLY, h) * D_dom
-                + _hour_factor(_AGRI_HOURLY, h) * D_agri) * dt / _SECONDS_PER_DAY
+        d[n] = (_step_factor(_DOMESTIC_HOURLY, p, n) * D_dom
+                + _step_factor(_AGRI_HOURLY, p, n) * D_agri) * dt / _SECONDS_PER_DAY
     return d
 
 
 def pump_upper_bounds(p, Nt, Q_max):
     """Cota superior de Q_n según disponibilidad horaria de la bomba.
 
-    Q_upper[n] = Q_max · avail(h_n)
+    Q_upper[n] = Q_max · avail_n
 
+    con avail_n la disponibilidad en el paso n (_step_factor, como la demanda).
     Si p.pump_cycling es False (o ausente), devuelve Q_max constante.
 
     Parámetros:
-      pump_cycling  bool, default True
-      t0_hour       hora solar del inicio, default 6.0
-      dt            paso (s)
+      pump_cycling       bool, default True
+      t0_hour            hora solar del inicio, default 6.0
+      profile_step_mean  bool, default False
+      dt                 paso (s)
     """
     if not getattr(p, "pump_cycling", True):
         return np.full(Nt, float(Q_max))
 
-    dt   = float(p.dt)
-    t0_h = float(getattr(p, "t0_hour", 6.0))
-    ub   = np.empty(Nt)
-    for n in range(Nt):
-        h = t0_h + (n + 0.5) * dt / 3600.0
-        ub[n] = float(Q_max) * _hour_factor(_PUMP_AVAIL, h)
-    return ub
+    return np.array([float(Q_max) * _step_factor(_PUMP_AVAIL, p, n) for n in range(Nt)])
 
 
 def storage_trajectory(Q, p):

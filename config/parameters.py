@@ -47,6 +47,7 @@ class Parameters:
                 "Vscale", "demand_day", "demand_agri",
                 "S0", "S_max", "t0_hour",
                 "pump_cycling", "pump_ton", "pump_toff",
+                "profile_step_mean",
                 # Control fijo (experimentos/correr_optimo.py): serie Q(t) y profundidad del pozo
                 "Q_control", "zp_control",
                 "bfr_mesh",
@@ -310,6 +311,8 @@ class Parameters:
         self.pump_cycling = getattr(self, "pump_cycling",  True)  # ciclos bomba
         self.pump_ton     = getattr(self, "pump_ton",     20.0)  # h máx operación continua
         self.pump_toff    = getattr(self, "pump_toff",     4.0)  # h mín descanso
+        # perfil horario promediado en cada paso (True) o tomado a la mitad del paso (False, resultados hasta 24-nov-2026)
+        self.profile_step_mean = getattr(self, "profile_step_mean", False)
 
         # =========================
         # MRMT DERIVADOS
