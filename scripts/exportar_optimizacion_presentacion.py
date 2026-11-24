@@ -64,7 +64,7 @@ def main():
                                    J0=r["tabla"]["x0"], J=r["tabla"]["optimo"], historia=historia(m)))
     # f: unidades del modelo → kg/m³ de nitrato (misma fuente en los tres modelos)
     out.update(f=json.load(open(os.path.join(DIR_OPT, "f_fuente.json")))["f"],
-               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce(), pareto=pareto())
+               ondulacion=ondulacion(), analisis=analisis(), cruce=cruce(), pareto=pareto(), validaciones=validaciones(p, nQ))
     js = ("// Generado por codigo/scripts/exportar_optimizacion_presentacion.py desde\n"
           f"// data/output/optimizacion_{VARIANTE}/ (<modelo>.json o <modelo>_progreso.json). No editar a mano.\n"
           f"export const OPT = {json.dumps(out, ensure_ascii=False)};\n")
@@ -151,6 +151,33 @@ def pareto():
     filas = sorted(zip(*[sum((q[k] for q in partes), []) for k in ("zp", "J1", "J2", "J3")]))
     return dict(iterado=partes[0]["iterado"], nit=partes[0]["nit"],
                 **{k: [round(float(r[i]), 6) for r in filas] for i, k in enumerate(("zp", "J1", "J2", "J3"))})
+
+
+def validaciones(p, nQ):
+    """Casos de validación (ADR): solución esperada (experimentos/validacion_esperada.py, o la intuición) y lo que da el
+    optimizador en optimizacion_<VARIANTE>_<caso>/ (adr.json si terminó; si no, el último iterado aceptado)."""
+    from funtions import water_supply as ws
+    out = {}
+    for caso in ("sin_nitrato", "sin_demanda"):
+        d = os.path.join(CODIGO, "data", "output", f"optimizacion_{VARIANTE}_{caso}")
+        r = dict(esperado=json.load(open(os.path.join(d, "esperado.json"))) if os.path.exists(os.path.join(d, "esperado.json")) else None)
+        cfg = SimpleNamespace(**json.load(open(os.path.join(CODIGO, "config", f"{VARIANTE}_{caso}.json"))))
+        fin, prog = os.path.join(d, "adr.json"), os.path.join(d, "adr_progreso.json")
+        if os.path.exists(fin):
+            a = json.load(open(fin))
+            x, J, nit, estado, chi = a["x_opt"], a["tabla"]["optimo"]["J"], a["nit"], "final", None
+        elif os.path.exists(prog):
+            a = json.load(open(prog))
+            x, J, nit, estado, chi = a["x"], a["J"], a["nit"], "progreso", a.get("chi")
+        else:
+            x = None
+        if x is not None:
+            Q = np.asarray(x[:-1])
+            S = [cfg.S0] + ws.storage_trajectory(Q, cfg).round(1).tolist()
+            r["optimizador"] = dict(zp=round(float(x[-1]), 1), Q=np.round(Q, 4).tolist(), S=S, nit=nit, estado=estado, chi=chi,
+                                    **terminos(cfg, J, Q, x[-1], nQ))
+        out[caso] = r
+    return out
 
 
 def historia(m):

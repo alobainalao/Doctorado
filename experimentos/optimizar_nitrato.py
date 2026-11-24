@@ -8,7 +8,8 @@ Optimización adjunta (FEniCSx) con config/nitrato.json: nitrato, J1/J2/J3 norma
 las salidas pasan a <modelo>_<etiqueta>[_progreso].json para no pisar las de la corrida original; --barrera0 y
 --radio0: barrera y radio de confianza iniciales de trust-constr (por defecto los de scipy, 0.1 y 1); --factible:
 todos los iterados admisibles (keep_feasible; x0 se proyecta al interior si hace falta). Si ya hay salidas con
-el mismo nombre la corrida no arranca: nunca sobrescribe resultados.
+el mismo nombre la corrida no arranca: nunca sobrescribe resultados. --f=<variante>: usa la escala f de la fuente de otra
+variante (necesario si la fuente está apagada: el pico sin bombeo es 0).
 
 La fuente se escala por f tal que el pico de C sin bombeo (ADR) sea 42 mg/L como N = 0.1859 kg/m³ de
 nitrato. El modelo es lineal en C, así que equivale a expresar C_ref = 0.05 kg/m³ (valor guía OMS)
@@ -36,7 +37,7 @@ C_LIMITE = 0.05                    # kg/m³ (50 mg/L como nitrato, OMS)
 DIR_OUT = os.path.join(CODIGO, "data", "output", "optimizacion_nitrato")
 
 
-def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=None, radio0=None, factible=None):
+def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=None, radio0=None, factible=None, f=None):
     """variante: nombre de config/<variante>.json (p.ej. nitrato_estricto) y c_limite [kg/m³]; salida
     aparte en data/output/optimizacion_<variante>/ para no pisar los resultados estándar. x0: ruta de un iterado
     guardado desde el que se reanuda; etiqueta: sufijo de las salidas."""
@@ -70,7 +71,11 @@ def main(modelo, variante=None, c_limite=None, x0=None, etiqueta=None, barrera0=
     ruta_f = os.path.join(DIR_OUT, "f_fuente.json")
     r0 = _solve_forward(ctx, np.zeros(nQ), zp0)
     pico = max(float(np.max(c)) for c in r0["C"])
-    if modelo == "adr" or not os.path.exists(ruta_f):
+    if f:                                   # escala de otra variante
+        f = json.load(open(os.path.join(CODIGO, "data", "output", f"optimizacion_{f}", "f_fuente.json")))["f"]
+        if not os.path.exists(ruta_f):
+            json.dump({"f": f, "pico_adr": pico}, open(ruta_f, "w"))
+    elif modelo == "adr" or not os.path.exists(ruta_f):
         f = C_FUENTE / pico
         if modelo == "adr":
             json.dump({"f": f, "pico_adr": pico}, open(ruta_f, "w"))
