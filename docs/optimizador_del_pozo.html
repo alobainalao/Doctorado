@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optimizador del pozo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+  svg: { fontCache: 'global' },
+  options: { enableMenu: false }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js" defer></script>
+<style>
+/* Paleta y tipografía del avance 3 (presentación de la tesis): agua = lo que hay que mirar, pluma = límites y lo
+   rechazado, válido = lo verificado. Artículo de una columna con figuras más anchas que el texto. */
+:root {
+  --papel: #FAFBFC; --texto: #1C2B3A; --tinta: #10243E; --agua: #0F7A85; --pluma: #C4511F;
+  --valido: #2E7D4F; --estrato: #5F7180; --filete: #D3DCE3; --fondo-fig: #F1F5F7; --agua-suave: rgba(15,122,133,0.10);
+  --serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --fs-cuerpo: 1.075rem; --fs-nota: 0.88rem; --fs-h2: 1.6rem; --fs-h1: clamp(2rem, 5vw, 2.9rem);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papel: #0B1724; --texto: #E3EAF0; --tinta: #F2F6F9; --agua: #5CC4CC; --pluma: #EE8B5E; --valido: #63C08A;
+    --estrato: #95A7B6; --filete: #2A3D52; --fondo-fig: #102133; --agua-suave: rgba(92,196,204,0.12); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --papel: #0B1724; --texto: #E3EAF0; --tinta: #F2F6F9; --agua: #5CC4CC; --pluma: #EE8B5E; --valido: #63C08A;
+  --estrato: #95A7B6; --filete: #2A3D52; --fondo-fig: #102133; --agua-suave: rgba(92,196,204,0.12); color-scheme: dark;
+}
+body { margin: 0; background: var(--papel); color: var(--texto); font-family: var(--serif); font-size: var(--fs-cuerpo); line-height: 1.6;
+       padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.pagina { max-width: 980px; margin: 0 auto; padding-block: 48px 80px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 56px; }
+.pagina > *, section > *, figure > * { min-width: 0; }
+.texto { max-width: 68ch; }
+header { display: grid; gap: 14px; }
+.ceja { font-family: var(--sans); font-size: 0.8rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--agua); font-weight: 600; }
+h1 { font-size: var(--fs-h1); line-height: 1.1; margin: 0; color: var(--tinta); font-weight: 700; text-wrap: balance; }
+h2 { font-size: var(--fs-h2); line-height: 1.25; margin: 0 0 6px; color: var(--tinta); font-weight: 600; text-wrap: balance;
+     display: flex; gap: 14px; align-items: baseline; }
+h2 .num { font-family: var(--mono); font-size: 0.95rem; color: var(--agua); font-weight: 500; flex: none; }
+h3 { font-family: var(--sans); font-size: 1rem; margin: 18px 0 4px; color: var(--tinta); font-weight: 600; }
+p { margin: 0 0 12px; }
+.lede { font-size: 1.2rem; color: var(--texto); max-width: 62ch; }
+section { display: grid; gap: 8px; }
+.nota, figcaption { font-family: var(--sans); font-size: var(--fs-nota); color: var(--estrato); line-height: 1.5; }
+a { color: var(--agua); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--agua); outline-offset: 2px; }
+.ec { overflow-x: auto; padding: 4px 0; }
+figure { margin: 8px 0 0; display: grid; gap: 10px; }
+.lienzo { background: var(--fondo-fig); border-radius: 6px; padding: 14px; overflow-x: auto; }
+.lienzo > svg { display: block; width: 100%; height: auto; }
+.lienzo pre.mermaid { margin: 0; display: flex; justify-content: center; background: none; overflow-x: auto; }
+.indice { font-family: var(--sans); font-size: 0.95rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 4px 24px;
+          margin: 0; padding: 0; list-style: none; counter-reset: paso; }
+.indice li { counter-increment: paso; display: flex; gap: 10px; }
+.indice li::before { content: counter(paso); font-family: var(--mono); color: var(--agua); min-width: 1.2em; }
+.indice a { color: var(--texto); text-decoration: none; }
+.indice a:hover { color: var(--agua); }
+table { border-collapse: collapse; font-family: var(--sans); font-size: 0.92rem; font-variant-numeric: tabular-nums; width: 100%; }
+th { text-align: left; font-weight: 500; color: var(--estrato); border-bottom: 1px solid var(--filete); padding: 6px 12px 6px 0; }
+td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--filete); vertical-align: top; }
+td.n { font-family: var(--mono); text-align: right; white-space: nowrap; }
+.tabla { overflow-x: auto; max-width: 760px; }
+.controles { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; font-family: var(--sans); font-size: 0.92rem; }
+.controles label { display: flex; gap: 10px; align-items: center; }
+input[type=range] { width: min(320px, 70vw); accent-color: var(--agua); }
+.lectura { font-family: var(--mono); font-size: 0.88rem; color: var(--texto); display: flex; flex-wrap: wrap; gap: 4px 20px; }
+.lectura b { font-weight: 500; color: var(--estrato); font-family: var(--sans); }
+.veredicto { font-family: var(--sans); font-size: 0.95rem; padding: 8px 12px; border-left: 3px solid var(--agua); background: var(--agua-suave); }
+.veredicto.malo { border-left-color: var(--pluma); }
+.dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+.dos > * { min-width: 0; }
+.cifra { font-family: var(--mono); color: var(--agua); }
+ul.puntos { margin: 0 0 12px; padding-left: 1.2em; }
+ul.puntos li { margin-bottom: 6px; }
+.refs { font-family: var(--sans); font-size: 0.93rem; display: grid; gap: 10px; }
+.refs p { margin: 0; }
+.refs .tipo { font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--estrato); }
+svg text { font-family: var(--sans); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div class="pagina">
+<header>
+  <div class="ceja">Tesis doctoral · control óptimo de un pozo · avance 3</div>
+  <h1>Cómo optimizamos el pozo</h1>
+  <p class="lede">El optimizador elige el caudal \(Q(t)\) y la profundidad \(z_p\) del pozo. En cada iteración simula el acuífero hacia
+    adelante, resuelve el adjunto hacia atrás para obtener el gradiente, y da un paso de región de confianza sobre un problema de
+    barrera que mantiene el bombeo, el tanque y la bomba dentro de sus límites. Para cuando la medida de criticidad \(\chi\) dice que
+    ninguna dirección admisible baja más \(\hat J\).</p>
+  <ol class="indice">
+    <li><a href="#problema">El problema discreto</a></li>
+    <li><a href="#adjunto">El gradiente por el adjunto</a></li>
+    <li><a href="#proyectar">Por qué no proyectar</a></li>
+    <li><a href="#barrera">Holguras y barrera</a></li>
+    <li><a href="#region">El paso de región de confianza</a></li>
+    <li><a href="#bfgs">La curvatura: BFGS</a></li>
+    <li><a href="#chi">Cuándo parar: χ</a></li>
+    <li><a href="#corridas">Costo y corridas</a></li>
+    <li><a href="#estudiar">Para estudiar</a></li>
+  </ol>
+</header>
+
+<section aria-labelledby="t-flujo">
+  <h2 id="t-flujo">Una iteración, de principio a fin</h2>
+  <figure>
+    <div class="lienzo">
+<pre class="mermaid">
+flowchart TD
+  A["Problema de barrera con el μ actual"] --> B["Paso de región de confianza<br/>d = paso normal + tangencial, ‖d‖ ≤ Δ"]
+  B --> C["Simulación directa en el punto de prueba: Ĵ(ξ + d)"]
+  C --> D(["ρ = reducción real / predicha"])
+  D -- "ρ < 10⁻⁸" --> R["Rechazar: Δ se reduce"]
+  R --> B
+  D -- "ρ ≥ 10⁻⁸" --> E["Aceptar: adjunto → ∇Ĵ<br/>actualizar BFGS y Δ"]
+  E --> F(["¿χ < 10⁻⁴ y admisible?"])
+  F -- "sí" --> FIN["Óptimo (KKT): parar"]
+  F -- "no" --> G(["¿Problema de barrera resuelto?"])
+  G -- "no" --> B
+  G -- "sí: μ ← 0.2 μ, Δ ← máx(Δ₀, 5Δ)" --> A
+</pre>
+    </div>
+    <figcaption>Así funciona trust-constr de SciPy con desigualdades (punto interior por región de confianza [Byrd, Hribar y Nocedal, 1999]).
+      El paro por χ es nuestro: lo revisa el optimizador en cada iteración.</figcaption>
+  </figure>
+</section>
+
+<section id="problema" aria-labelledby="t-problema">
+  <h2 id="t-problema"><span class="num">1</span>El problema discreto</h2>
+  <div class="texto">
+    <p>El control continuo es \(u=(Q(t),z_p)\). Con 30 días y pasos de \(\Delta t=10\) h, el caudal es constante en cada paso: el
+      optimizador ve 72 caudales y una profundidad, <span class="cifra">73 variables</span>. El funcional es</p>
+    <div class="ec">\[\hat J(u)=\gamma\,\underbrace{\int_0^T\!\!\int_\Omega g_\varepsilon(\mathbf x;z_p)\,C_m^2\,d\Omega\,dt}_{J_m:\ \text{calidad}}
+      +\alpha\,\underbrace{\kappa_p\,(z_p-z_0)^2}_{J_{\rm inst}}+\beta\,\underbrace{d_p\!\int_0^T Q(t)^2\,dt}_{J_{\rm op}},\]</div>
+    <p>donde \(C_m\) sale de resolver flujo y transporte (ADR o MRMT) con ese bombeo. Cada término se divide entre su escala
+      (\(C_{\rm ref}\) = 50 mg/L de nitrato, la profundidad máxima, \(Q_{\max}\)) y \(\gamma=\alpha=\beta=1\).</p>
+    <p>Todas las restricciones son lineales en las 73 variables, así que el conjunto admisible \(\mathcal U_{ad}\) es un poliedro
+      convexo. Escritas como desigualdades, el optimizador ve 430:</p>
+  </div>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Restricción</th><th>Forma</th><th style="text-align:right">Desigualdades</th></tr></thead>
+      <tbody>
+        <tr><td>Bomba y profundidad</td><td>\(0\le Q_n\le Q_{\max}\,a_n\), \(z_{\min}\le z_p\le z_{\max}\)</td><td class="n">146</td></tr>
+        <tr><td>Tanque (2 000 m³)</td><td>\(0\le S_0+V_s\Delta t\sum_{k\le n}Q_k-\sum_{k\le n}d_k\le S_{\max}\)</td><td class="n">144</td></tr>
+        <tr><td>Ciclo de la bomba (20 h / 4 h)</td><td>\(0\le\sum_{k=n}^{n+2}Q_k\le f_d\,Q_{\max}\,3\)</td><td class="n">140</td></tr>
+        <tr><td><b>Total</b></td><td></td><td class="n"><b>430</b></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="texto">
+    <p style="margin-top:12px">Desde el 24-nov, \(d_n\) es el volumen consumido en cada paso y \(a_n\) la disponibilidad media de la
+      bomba en el paso (antes se tomaban a la mitad del paso, lo que exageraba los picos).</p>
+    <h3>Variables escaladas</h3>
+    <p>El optimizador no trabaja con \(x=(Q_1,\dots,Q_{72},z_p)\) sino con \(\xi=x/s\), \(s=(Q_{\max},\dots,Q_{\max},\,1200\text{ m})\):
+      todas las variables quedan en \([0,1]\). Sin esto, un mismo radio de confianza mediría 1 m en la profundidad y diez veces el
+      caudal máximo en los caudales.</p>
+  </div>
+</section>
+
+<section id="adjunto" aria-labelledby="t-adjunto">
+  <h2 id="t-adjunto"><span class="num">2</span>El gradiente por el adjunto</h2>
+  <div class="texto">
+    <p>Por diferencias finitas, el gradiente costaría una simulación por variable: 73 por iteración, y además con un error que depende
+      del paso \(\delta\). El método adjunto da las 73 derivadas exactas (del modelo discreto) con dos resoluciones: la directa, hacia
+      adelante en el tiempo, y la adjunta, hacia atrás desde \(t=T\). Con los adjuntos \(\psi_h\) (flujo) y \(\psi_C\) (transporte):</p>
+    <div class="ec">\[\frac{\partial\hat J}{\partial Q_n}=\int_{t_n}^{t_{n+1}}\Big(2\beta\,d_p\,Q(t)+\int_\Omega g_\varepsilon\,\psi_h\,d\Omega\Big)dt,\]</div>
+    <div class="ec">\[\frac{\partial\hat J}{\partial z_p}=\gamma\!\int_0^T\!\!\int_\Omega\dot g_\varepsilon\,C_m^2\,d\Omega\,dt
+      +2\alpha\kappa_p(z_p-z_0)-\beta\!\int_0^T\!Q^2\,dt+\int_0^T\!Q\!\int_\Omega\dot g_\varepsilon\,\psi_h\,d\Omega\,dt.\]</div>
+    <p>Todo lo que el gradiente necesita está en \(C_m\) y \(\psi_h\) sobre el pozo. El gradiente se verificó contra diferencias
+      centradas en los seis códigos (ADR, MRMT semianalítico y por bloques, en RBF-FD y elementos finitos): el error baja como
+      \(\delta^2\), lo que solo pasa si el adjunto es correcto (lámina 22 de la presentación).</p>
+  </div>
+</section>
+
+<section id="proyectar" aria-labelledby="t-proyectar">
+  <h2 id="t-proyectar"><span class="num">3</span>Por qué no proyectar</h2>
+  <div class="texto">
+    <p>Con solo cotas, el método más simple es el gradiente (o gradiente conjugado) proyectado: dar el paso y recortar cada componente a
+      su intervalo. El tanque lo impide: \(S_n\) depende de todos los caudales anteriores, así que proyectar sobre
+      \(\mathcal U_{ad}\) ya no es recortar, es resolver en cada paso un problema cuadrático con 144 restricciones acopladas. Por eso
+      se usa un método que trata las restricciones directamente: punto interior con región de confianza.</p>
+  </div>
+</section>
+
+<section id="barrera" aria-labelledby="t-barrera">
+  <h2 id="t-barrera"><span class="num">4</span>Holguras y barrera</h2>
+  <div class="texto">
+    <p>Cada desigualdad \(c_i(\xi)\ge0\) recibe una holgura \(s_i\), y las desigualdades se cambian por igualdades más un término de
+      barrera que impide que alguna holgura llegue a cero:</p>
+    <div class="ec">\[\min_{\xi,\ \mathbf s>0}\ \hat J(\xi)-\mu\sum_{i=1}^{430}\ln s_i\qquad\text{s.a.}\qquad \mathbf c(\xi)-\mathbf s=0.\]</div>
+    <p>Para \(\mu\) grande, el mínimo de este problema se queda lejos de los bordes; al bajar \(\mu\), se acerca al óptimo verdadero,
+      que puede estar sobre un borde (un tanque casi vacío, una bomba al máximo). El optimizador resuelve el problema de barrera
+      aproximadamente, divide \(\mu\) entre 5 (\(\mu\leftarrow0.2\,\mu\), lo mismo la tolerancia del subproblema) y repite. Los
+      mínimos para cada \(\mu\) forman la <i>trayectoria central</i>:</p>
+  </div>
+  <figure>
+    <div class="lienzo"><svg id="figBarrera" viewBox="0 0 640 430" role="img" aria-label="Trayectoria central de la barrera en un problema de dos variables"></svg></div>
+    <div class="controles">
+      <label for="muLog">μ <input id="muLog" type="range" min="0" max="119" value="0" step="1"></label>
+      <div class="lectura" id="lecturaBarrera"></div>
+    </div>
+    <figcaption>Ejemplo de dos variables con el mismo esquema que la lámina 28: \(\hat J\) cuadrático con su mínimo fuera del
+      polígono. Mueve μ: el punto sigue la trayectoria central y llega al óptimo restringido \(\hat u\) sobre el borde. En las corridas,
+      μ empezó en 0.1 (corridas desde cero) o en 10⁻⁴ (reanudaciones, que ya están cerca del óptimo).</figcaption>
+  </figure>
+</section>
+
+<section id="region" aria-labelledby="t-region">
+  <h2 id="t-region"><span class="num">5</span>El paso de región de confianza</h2>
+  <div class="texto">
+    <p>Cada problema de barrera tiene 73 + 430 incógnitas y 430 igualdades lineales. Se resuelve con el método de región de confianza
+      de Byrd y Omojokun: en el punto actual se arma un modelo cuadrático,</p>
+    <div class="ec">\[m(\mathbf d)=\hat J_\mu+\nabla\hat J_\mu^{\!\top}\mathbf d+\tfrac12\,\mathbf d^{\top}B\,\mathbf d,\qquad \|\mathbf d\|\le\Delta,\]</div>
+    <p>y el paso se arma en dos partes:</p>
+    <ul class="puntos">
+      <li><b>Paso normal</b>: reduce la violación de las restricciones linealizadas, con \(\|\mathbf d_n\|\le0.8\,\Delta\).</li>
+      <li><b>Paso tangencial</b>: baja el modelo sin deshacer lo anterior (se mueve dentro de \(\mathbf c(\xi)-\mathbf s=\text{cte}\)),
+        con gradiente conjugado proyectado, en el radio que queda.</li>
+      <li><b>Freno al borde</b>: ninguna holgura puede perder más del 99.5 % de su valor en un paso (\(s_i+d_{s,i}\ge0.005\,s_i\)).</li>
+    </ul>
+    <p>Luego se simula el punto de prueba y se compara la reducción real de la función de mérito
+      \(\phi=\hat J_\mu+\nu\,\|\mathbf c(\xi)-\mathbf s\|\) con la que predijo el modelo. Su cociente \(\rho\) decide:</p>
+  </div>
+  <div class="tabla">
+    <table>
+      <thead><tr><th>Razón ρ</th><th>Paso</th><th>Radio para el siguiente paso</th></tr></thead>
+      <tbody>
+        <tr><td class="n">ρ ≥ 0.9</td><td>se acepta</td><td>\(\Delta\leftarrow\max(7\|\mathbf d\|,\Delta)\)</td></tr>
+        <tr><td class="n">0.3 ≤ ρ &lt; 0.9</td><td>se acepta</td><td>\(\Delta\leftarrow\max(2\|\mathbf d\|,\Delta)\)</td></tr>
+        <tr><td class="n">10⁻⁸ ≤ ρ &lt; 0.3</td><td>se acepta</td><td>sin cambio</td></tr>
+        <tr><td class="n">ρ &lt; 10⁻⁸</td><td>se rechaza</td><td>se reduce a entre \(0.1\Delta\) y \(0.5\Delta\)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <figure>
+    <div class="lienzo"><svg id="figRegion" viewBox="0 0 640 430" role="img" aria-label="Paso de región de confianza en un ejemplo de dos variables"></svg></div>
+    <div class="controles">
+      <label for="radio">Δ <input id="radio" type="range" min="1" max="100" value="30" step="1"></label>
+      <div class="lectura" id="lecturaRegion"></div>
+    </div>
+    <div class="veredicto" id="veredicto"></div>
+    <figcaption>Ejemplo sin restricciones, para ver solo la región de confianza. El modelo cuadrático en \(u_k\) (elipses punteadas) es exacto
+      cerca de \(u_k\); la función real tiene además un término de cuarto orden. Con Δ chico el paso sigue al gradiente y el modelo
+      acierta (ρ ≈ 1); con Δ grande el paso apunta al mínimo del modelo, que ya no es el de la función, y ρ cae. La curva gris es el
+      camino del paso al crecer Δ.</figcaption>
+  </figure>
+</section>
+
+<section id="bfgs" aria-labelledby="t-bfgs">
+  <h2 id="t-bfgs"><span class="num">6</span>La curvatura: BFGS</h2>
+  <div class="texto">
+    <p>El modelo necesita la segunda derivada \(B\). El adjunto solo da gradientes, así que \(B\) se aproxima con BFGS: después de
+      cada paso aceptado se corrige con el cambio de gradiente \(\mathbf y=\nabla\hat J(\xi_{k+1})-\nabla\hat J(\xi_k)\) a lo largo del
+      paso \(\mathbf d\), de modo que \(B\mathbf d=\mathbf y\). Como las restricciones son lineales, no aportan curvatura: \(B\) aproxima
+      solo \(\nabla^2\hat J\). La parte de las holguras sí es exacta: el término de barrera aporta \(\mu/s_i^2\), que en las variables
+      escaladas por \(s_i\) queda como \(\mu\).</p>
+    <p class="nota">Al reanudar una corrida, BFGS empieza de nuevo desde la identidad: por eso χ sube en las primeras iteraciones de
+      cada reanudación y tarda unas 10–15 en volver a donde estaba.</p>
+  </div>
+</section>
+
+<section id="chi" aria-labelledby="t-chi">
+  <h2 id="t-chi"><span class="num">7</span>Cuándo parar: χ</h2>
+  <div class="texto">
+    <p>El criterio por defecto de trust-constr estima los multiplicadores de Lagrange por mínimos cuadrados sin exigir su signo; con
+      más restricciones que variables se cumple en puntos que no son óptimos (en la malla anterior paró MRMT bloque donde \(\hat J\)
+      todavía bajaba). Por eso se usa la medida de criticidad del gradiente proyectado:</p>
+    <div class="ec">\[\chi(\xi)=\big\|\,\xi-P_{\mathcal U_{ad}}\big(\xi-\nabla\hat J(\xi)\big)\big\|_\infty,\qquad
+      \chi(\hat\xi)=0\iff\nabla\hat J(\hat\xi)\cdot(\xi-\hat\xi)\ge0\ \ \forall\,\xi\in\mathcal U_{ad}.\]</div>
+    <p>Se da un paso de gradiente, se proyecta de vuelta a \(\mathcal U_{ad}\) y se mide cuánto se movió el punto. Si ninguna dirección
+      admisible baja \(\hat J\), el punto regresa a sí mismo: son las condiciones KKT. Aquí sí hay que proyectar, pero solo para medir:
+      es un problema cuadrático pequeño, sin simulaciones. Desde el 24-nov la proyección se certifica con su residuo KKT; si no es
+      exacta, el optimizador avisa y no para con ese χ.</p>
+    <p>Se para cuando \(\chi<10^{-4}\) y la violación de restricciones es menor que \(10^{-8}\), o al llegar a 100 iteraciones.</p>
+  </div>
+</section>
+
+<section id="corridas" aria-labelledby="t-corridas">
+  <h2 id="t-corridas"><span class="num">8</span>Costo y corridas</h2>
+  <div class="dos">
+    <div class="texto">
+      <p>Cada iteración resuelve tres veces el modelo de EDP: una simulación directa en el punto de prueba (para \(\hat J\)) y una
+        directa más una adjunta para el gradiente. Con la malla de 25 871 nodos y 72 pasos, y cinco corridas en paralelo, una iteración
+        tarda unos 30 minutos.</p>
+      <p>En la práctica χ baja dos órdenes de magnitud en las primeras 30–40 iteraciones (de 0.4 a unos 5·10⁻³) y luego avanza
+        despacio. Con el caso de prueba sin nitrato, donde \(\hat J\) es explícito y el gradiente exacto, el mismo optimizador
+        necesitó 107–127 iteraciones para llegar a \(10^{-4}\): la meseta es propia del método, no un error del gradiente.</p>
+    </div>
+    <div>
+      <div class="tabla">
+        <table>
+          <thead><tr><th>Corrida (malla con eje, γ = 1)</th><th style="text-align:right">Iter.</th><th style="text-align:right">Ĵ</th></tr></thead>
+          <tbody>
+            <tr><td>ADR, mejor iterado (demanda anterior)</td><td class="n">43</td><td class="n">0.4549</td></tr>
+            <tr><td>MRMT semi, mejor iterado</td><td class="n">64</td><td class="n">0.4614</td></tr>
+            <tr><td>MRMT bloque, mejor iterado</td><td class="n">—</td><td class="n">0.4619</td></tr>
+            <tr><td>Validación sin nitrato (exacto 0.1990)</td><td class="n">36</td><td class="n">0.2005</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="nota" style="margin-top:8px">Resultados preliminares, con la demanda tomada a la mitad de cada paso. Las corridas se
+        relanzaron el 24-nov con la demanda corregida, desde estos iterados; el nuevo óptimo exacto sin nitrato es 0.1896.</p>
+    </div>
+  </div>
+</section>
+
+<section id="estudiar" aria-labelledby="t-estudiar">
+  <h2 id="t-estudiar"><span class="num">9</span>Para estudiar</h2>
+  <div class="dos">
+    <div class="refs">
+      <p class="tipo">El algoritmo exacto</p>
+      <p>Byrd, Hribar y Nocedal (1999). An interior point algorithm for large-scale nonlinear programming. <i>SIAM J. Optim.</i> 9(4).
+        <a href="https://doi.org/10.1137/S1052623497325107">doi:10.1137/S1052623497325107</a></p>
+      <p>Lalee, Nocedal y Plantenga (1998). On the implementation of an algorithm for large-scale equality constrained optimization
+        (pasos normal y tangencial). <a href="https://doi.org/10.1137/S1052623493262993">doi:10.1137/S1052623493262993</a></p>
+      <p>Nocedal y Wright (2006). <i>Numerical Optimization</i>, cap. 4 (región de confianza), 6 (BFGS), 18–19 (SQP y punto interior).</p>
+      <p>SciPy: <a href="https://docs.scipy.org/doc/scipy/reference/optimize.minimize-trustconstr.html">minimize(method='trust-constr')</a>
+        y su código, <a href="https://github.com/scipy/scipy/blob/main/scipy/optimize/_trustregion_constr/tr_interior_point.py">tr_interior_point.py</a>.</p>
+      <p class="tipo" style="margin-top:6px">χ y el adjunto</p>
+      <p>Calamai y Moré (1987). Projected gradient methods for linearly constrained problems.
+        <a href="https://doi.org/10.1007/BF02592073">doi:10.1007/BF02592073</a></p>
+      <p>Conn, Gould y Toint (2000). <i>Trust-Region Methods</i>. <a href="https://doi.org/10.1137/1.9780898719857">doi:10.1137/1.9780898719857</a></p>
+      <p>Código del optimizador: <a href="https://github.com/alobainalao/Doctorado/blob/7915679/fenicsx/adjoint.py#L769-L963">fenicsx/adjoint.py</a>
+        y <a href="https://github.com/alobainalao/Doctorado/blob/7915679/funtions/optimizador.py#L51-L82">funtions/optimizador.py</a>.</p>
+    </div>
+    <div class="refs">
+      <p class="tipo">Videos, por pieza</p>
+      <p>Adjunto: S. G. Johnson, MIT 18.S096, <a href="https://ocw.mit.edu/courses/18-s096-matrix-calculus-for-machine-learning-and-beyond-january-iap-2023/resources/ocw_18s096_lecture04-part2_2023jan26_mp4/">clase 4, parte 2</a>
+        y <a href="https://ocw.mit.edu/courses/18-s096-matrix-calculus-for-machine-learning-and-beyond-january-iap-2023/resources/ocw_18s096_lecture06-part1_2023jan30_mp4/">clase 6, parte 1</a> (adjunto de EDO).</p>
+      <p>Control óptimo con EDP: <a href="https://www.carmin.tv/fr/collections/jean-morlet-chair-2022-research-school-domain-decomposition-for-optimal-control-problems-chaire-jean/video/introduction-to-pde-constrained-optimization-lecture-1">Introduction to PDE-constrained optimization, lecture 1</a> (CIRM, 2022).</p>
+      <p>Región de confianza: <a href="https://ocw.mit.edu/courses/10-34-numerical-methods-applied-to-chemical-engineering-fall-2015/resources/session-11-unconstrained-optimization-newton-raphson-and-trust-region-methods">MIT 10.34, sesión 11</a>
+        y <a href="https://www.youtube.com/watch?v=77ZbCzEj_cg">Trust Region Method, Optimization Lecture 39</a>.</p>
+      <p>Barrera y punto interior: S. Boyd, <a href="https://see.stanford.edu/Course/EE364A">Stanford EE364A</a>, clases 17–19 (caso convexo).</p>
+      <p>Uso de trust-constr con restricciones: <a href="https://aleksandarhaber.com/solve-constrained-optimization-problems-in-python-by-using-scipy-library-and-minimize-function/">tutorial de A. Haber</a>.</p>
+      <p class="nota">Ninguno explica la combinación completa; este orden la arma: adjunto → región de confianza → barrera → el artículo de 1999.</p>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, padre) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (padre) padre.appendChild(e); return e; };
+  const txt = (padre, x, y, s, attrs = {}) => { const t = el('text', { x, y, 'font-size': 15, fill: 'var(--estrato)', ...attrs }, padre); t.textContent = s; return t; };
+  const fmt = (v, d = 3) => Number(v).toPrecision(d);
+
+  // ── Ejemplo común (coordenadas en unidades de 100 px): polígono admisible, Ĵ = ½ (x−M)ᵀ H (x−M) con eje mayor horizontal y
+  // curvatura 8 veces mayor en vertical; M se construye para que el óptimo restringido Û esté sobre el lado 2 (lámina 28).
+  const POLI = [[0.6, 3.9], [0.8, 2.0], [2.5, 1.5], [4.0, 2.5], [3.7, 3.9]];
+  const K = 8, H = [[1, 0], [0, K]];
+  const mul = (A, v) => [A[0][0] * v[0] + A[0][1] * v[1], A[1][0] * v[0] + A[1][1] * v[1]];
+  const U_OPT = (() => { const [a, b] = [POLI[2], POLI[3]]; return [a[0] + 0.35 * (b[0] - a[0]), a[1] + 0.35 * (b[1] - a[1])]; })();
+  const M = (() => {
+    const [a, b] = [POLI[2], POLI[3]], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = [(b[1] - a[1]) / L, -(b[0] - a[0]) / L];
+    return [U_OPT[0] + 2.6 * n[0] / H[0][0], U_OPT[1] + 2.6 * n[1] / H[1][1]];
+  })();
+  const J = x => { const v = [x[0] - M[0], x[1] - M[1]]; return 0.5 * (v[0] * mul(H, v)[0] + v[1] * mul(H, v)[1]); };
+  const R_OPT = Math.sqrt(2 * J(U_OPT));
+  // semiplanos c_i(x) = a_iᵀx − b_i ≥ 0 con ‖a_i‖ = 1 (distancia al lado i)
+  const SEMI = POLI.map((a, i) => {
+    const b = POLI[(i + 1) % POLI.length], v = [-(b[1] - a[1]), b[0] - a[0]], L = Math.hypot(...v), w = [v[0] / L, v[1] / L];
+    return { a: w, b: w[0] * a[0] + w[1] * a[1] };
+  });
+  const cs = x => SEMI.map(h => h.a[0] * x[0] + h.a[1] * x[1] - h.b);
+  const P = v => v * 100;
+
+  function fondo(svg, conElipses, conPoligono = true) {
+    if (conElipses) {
+      const g = el('g', { 'clip-path': 'url(#marco-' + svg.id + ')' }, svg);
+      el('clipPath', { id: 'marco-' + svg.id }, svg).appendChild(el('rect', { x: 0, y: 0, width: 640, height: 430 }));
+      [0.4, 0.7, 1, 1.4, 1.9].forEach(e => el('ellipse', { cx: P(M[0]), cy: P(M[1]), rx: P(e * R_OPT), ry: P(e * R_OPT / Math.sqrt(K)),
+        fill: 'none', stroke: e === 1 ? 'var(--valido)' : 'var(--estrato)', 'stroke-opacity': e === 1 ? 0.6 : 0.3,
+        'stroke-dasharray': e === 1 ? '' : '4 5', 'stroke-width': 1.3 }, g));
+    }
+    if (!conPoligono) return;
+    el('polygon', { points: POLI.map(q => q.map(P).join(',')).join(' '), fill: 'var(--agua-suave)', stroke: 'var(--agua)', 'stroke-width': 2 }, svg);
+    const t = txt(svg, 120, 345, 'U', { 'font-size': 22, fill: 'var(--agua)', 'font-style': 'italic' });
+    const sub = el('tspan', { dy: 6, 'font-size': 14 }, t); sub.textContent = 'ad';
+    el('path', { d: `M${P(M[0]) - 7},${P(M[1]) - 7} L${P(M[0]) + 7},${P(M[1]) + 7} M${P(M[0]) - 7},${P(M[1]) + 7} L${P(M[0]) + 7},${P(M[1]) - 7}`,
+      stroke: 'var(--estrato)', 'stroke-width': 2.4 }, svg);
+    txt(svg, P(M[0]) + 12, P(M[1]) - 4, 'mínimo de Ĵ');
+    txt(svg, P(M[0]) + 12, P(M[1]) + 15, '(no admisible)');
+  }
+
+  // ── Figura 4: trayectoria central x*(μ) = argmin Ĵ − μ Σ ln c_i, por Newton amortiguado con arranque en el μ anterior.
+  const MUS = Array.from({ length: 120 }, (_, k) => Math.pow(10, 1 - 5 * k / 119));
+  const CAMINO = (() => {
+    let x = [2.2, 3.0];
+    return MUS.map(mu => {
+      for (let it = 0; it < 60; it++) {
+        const c = cs(x); const g = mul(H, [x[0] - M[0], x[1] - M[1]]);
+        const Hb = [[H[0][0], H[0][1]], [H[1][0], H[1][1]]];
+        SEMI.forEach((h, i) => { g[0] -= mu * h.a[0] / c[i]; g[1] -= mu * h.a[1] / c[i];
+          for (let p = 0; p < 2; p++) for (let q = 0; q < 2; q++) Hb[p][q] += mu * h.a[p] * h.a[q] / (c[i] * c[i]); });
+        const det = Hb[0][0] * Hb[1][1] - Hb[0][1] * Hb[1][0];
+        const d = [-(Hb[1][1] * g[0] - Hb[0][1] * g[1]) / det, -(-Hb[1][0] * g[0] + Hb[0][0] * g[1]) / det];
+        const phi = z => J(z) - mu * cs(z).reduce((s, v) => s + Math.log(v), 0);
+        let t = 1; const f0 = phi(x);
+        while (t > 1e-10) { const z = [x[0] + t * d[0], x[1] + t * d[1]]; if (cs(z).every(v => v > 0) && phi(z) <= f0) { x = z; break; } t *= 0.5; }
+        if (Math.hypot(d[0], d[1]) * t < 1e-12) break;
+      }
+      return x.slice();
+    });
+  })();
+
+  const svgB = document.getElementById('figBarrera');
+  fondo(svgB, true);
+  el('polyline', { points: CAMINO.map(q => q.map(P).join(',')).join(' '), fill: 'none', stroke: 'var(--estrato)', 'stroke-width': 1.6, 'stroke-dasharray': '2 4' }, svgB);
+  el('circle', { cx: P(U_OPT[0]), cy: P(U_OPT[1]), r: 7, fill: 'var(--papel)', stroke: 'var(--valido)', 'stroke-width': 3 }, svgB);
+  txt(svgB, P(U_OPT[0]) + 12, P(U_OPT[1]) - 10, 'û', { fill: 'var(--valido)', 'font-size': 20, 'font-style': 'italic' });
+  const puntoB = el('circle', { r: 7, fill: 'var(--agua)' }, svgB);
+  const etqB = txt(svgB, 0, 0, '', { fill: 'var(--agua)', 'font-size': 16 });
+  const muIn = document.getElementById('muLog'), lecB = document.getElementById('lecturaBarrera');
+  function dibujaBarrera() {
+    const k = +muIn.value, x = CAMINO[k];
+    puntoB.setAttribute('cx', P(x[0])); puntoB.setAttribute('cy', P(x[1]));
+    etqB.setAttribute('x', P(x[0]) - 12); etqB.setAttribute('y', P(x[1]) + 26); etqB.setAttribute('text-anchor', 'end'); etqB.textContent = 'x*(μ)';
+    const dist = Math.hypot(x[0] - U_OPT[0], x[1] - U_OPT[1]), cmin = Math.min(...cs(x));
+    lecB.innerHTML = `<span><b>μ</b> ${fmt(MUS[k], 2)}</span><span><b>Ĵ(x*) − Ĵ(û)</b> ${fmt(J(x) - J(U_OPT), 3)}</span>`
+      + `<span><b>distancia a û</b> ${fmt(dist, 2)}</span><span><b>holgura mínima</b> ${fmt(cmin, 2)}</span>`;
+    muIn.setAttribute('aria-valuetext', 'mu ' + fmt(MUS[k], 2));
+  }
+  muIn.addEventListener('input', dibujaBarrera);
+  dibujaBarrera();
+
+  // ── Figura 5: paso exacto de región de confianza para el modelo cuadrático en u_k (B = H), sobre f = Ĵ + κ‖x − u_k‖⁴.
+  const UK = [1.1, 2.5], KAPPA = 0.9;
+  const f = x => J(x) + KAPPA * Math.pow((x[0] - UK[0]) ** 2 + (x[1] - UK[1]) ** 2, 2);
+  const G = mul(H, [UK[0] - M[0], UK[1] - M[1]]);
+  const modelo = d => G[0] * d[0] + G[1] * d[1] + 0.5 * (d[0] * mul(H, d)[0] + d[1] * mul(H, d)[1]);
+  const pasoLam = lam => [-G[0] / (H[0][0] + lam), -G[1] / (H[1][1] + lam)];      // H diagonal
+  const NEWTON = pasoLam(0), N_NORMA = Math.hypot(...NEWTON);
+  function paso(De) {
+    if (N_NORMA <= De) return NEWTON;
+    let a = 0, b = 1e6;
+    for (let i = 0; i < 200; i++) { const m = 0.5 * (a + b); if (Math.hypot(...pasoLam(m)) > De) a = m; else b = m; }
+    return pasoLam(b);
+  }
+  const DMAX = 3.2, radioDe = v => DMAX * v / 100;
+  const svgR = document.getElementById('figRegion');
+  fondo(svgR, false, false);
+  // elipses del modelo, centradas en u_k + paso de Newton
+  const C = [UK[0] + NEWTON[0], UK[1] + NEWTON[1]], m0 = modelo(NEWTON);
+  const gM = el('g', { 'clip-path': 'url(#marcoR)' }, svgR);
+  el('clipPath', { id: 'marcoR' }, svgR).appendChild(el('rect', { x: 0, y: 0, width: 640, height: 430 }));
+  [0.3, 0.8, 1.6, 2.6, 3.8].forEach(e => el('ellipse', { cx: P(C[0]), cy: P(C[1]), rx: P(Math.sqrt(2 * e) ), ry: P(Math.sqrt(2 * e / K)),
+    fill: 'none', stroke: 'var(--estrato)', 'stroke-opacity': 0.4, 'stroke-dasharray': '4 5', 'stroke-width': 1.2 }, gM));
+  el('polyline', { points: Array.from({ length: 160 }, (_, i) => { const d = paso(DMAX * (i + 1) / 160); return `${P(UK[0] + d[0])},${P(UK[1] + d[1])}`; }).join(' '),
+    fill: 'none', stroke: 'var(--estrato)', 'stroke-width': 1.6 }, svgR);
+  el('circle', { cx: P(C[0]), cy: P(C[1]), r: 4, fill: 'var(--estrato)' }, svgR);
+  txt(svgR, P(C[0]) + 8, P(C[1]) + 18, 'mínimo del modelo');
+  const circR = el('circle', { cx: P(UK[0]), cy: P(UK[1]), fill: 'var(--agua-suave)', stroke: 'var(--agua)', 'stroke-width': 1.6 }, svgR);
+  const flecha = el('line', { x1: P(UK[0]), y1: P(UK[1]), stroke: 'var(--agua)', 'stroke-width': 3, 'marker-end': 'url(#flR)' }, svgR);
+  const mk = el('marker', { id: 'flR', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto' }, svgR);
+  el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--agua)' }, mk);
+  el('circle', { cx: P(UK[0]), cy: P(UK[1]), r: 7, fill: 'var(--papel)', stroke: 'var(--pluma)', 'stroke-width': 3 }, svgR);
+  const tk = txt(svgR, P(UK[0]) - 10, P(UK[1]) + 24, 'u', { 'text-anchor': 'end', fill: 'var(--pluma)', 'font-size': 17 });
+  const tks = el('tspan', { dy: 5, 'font-size': 12 }, tk); tks.textContent = 'k';
+  const radioIn = document.getElementById('radio'), lecR = document.getElementById('lecturaRegion'), ver = document.getElementById('veredicto');
+  function dibujaRegion() {
+    const De = radioDe(+radioIn.value), d = paso(De), x = [UK[0] + d[0], UK[1] + d[1]];
+    circR.setAttribute('r', P(De));
+    flecha.setAttribute('x2', P(x[0])); flecha.setAttribute('y2', P(x[1]));
+    const pred = -modelo(d), real = f(UK) - f(x), rho = real / pred, nd = Math.hypot(...d);
+    lecR.innerHTML = `<span><b>Δ</b> ${fmt(De, 2)}</span><span><b>‖d‖</b> ${fmt(nd, 2)}</span><span><b>predicha</b> ${fmt(pred, 3)}</span>`
+      + `<span><b>real</b> ${fmt(real, 3)}</span><span><b>ρ</b> ${fmt(rho, 3)}</span>`;
+    let v, malo = false;
+    if (rho >= 0.9) v = `ρ ≥ 0.9: el modelo acertó. Se acepta y el radio crece a máx(7‖d‖, Δ) = ${fmt(Math.max(7 * nd, De), 2)}.`;
+    else if (rho >= 0.3) v = `0.3 ≤ ρ < 0.9: se acepta y el radio crece a máx(2‖d‖, Δ) = ${fmt(Math.max(2 * nd, De), 2)}.`;
+    else if (rho >= 1e-8) v = 'ρ < 0.3: se acepta, pero el modelo ya no es fiable tan lejos; el radio no cambia.';
+    else { v = 'ρ < 0: la función subió. Se rechaza el paso y el radio se reduce (entre 0.1Δ y 0.5Δ).'; malo = true; }
+    ver.textContent = v; ver.className = 'veredicto' + (malo ? ' malo' : '');
+    radioIn.setAttribute('aria-valuetext', 'radio ' + fmt(De, 2));
+  }
+  radioIn.addEventListener('input', dibujaRegion);
+  dibujaRegion();
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+// Copia local: fuera del visor de claude.ai el diagrama se dibuja con mermaid, con el tema del sistema.
+mermaid.initialize({ startOnLoad: true, theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'neutral' });
+</script>
+</body>
+</html>

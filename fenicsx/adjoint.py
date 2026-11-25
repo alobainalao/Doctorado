@@ -779,7 +779,9 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     ctx = build_context(pozo, p, mesh_cache)
 
     Q0 = np.asarray(p.Qout[0], float)
-    x0 = np.concatenate([Q0, [float(pozo[1])]])
+    # opt_zp0 (opcional): profundidad inicial distinta de la de la config (pruebas de que el óptimo no depende de ella)
+    zp_ini = getattr(p, "opt_zp0", None)
+    x0 = np.concatenate([Q0, [float(pozo[1] if zp_ini is None else zp_ini)]])
     # Reanudar (opcional): x0 desde un iterado guardado (<opt_x0>: "x" de <modelo>_progreso.json o "x_opt" de
     # <modelo>.json). trust-constr no guarda su estado (BFGS, radio, barrera), así que se reinician; con un punto
     # admisible conviene una barrera inicial pequeña (opt_barrera0) para no alejarlo de las restricciones activas.
@@ -898,6 +900,10 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     # P_U (funtions/optimizador.py:proyectar) viene con su residuo KKT: si pasa de proy_tol, χ no es fiable y no se para.
     chi_tol = float(getattr(p, "opt_chi_tol", 1e-4))
     proy_tol = 1e-2 * chi_tol
+    # Parada práctica (opcional, opt_chi_bueno): χ ≤ opt_chi_bueno, admisible, con al menos opt_nit_min iteraciones
+    # acumuladas (contando opt_nit_previas de la corrida de la que se reanuda); el resultado queda marcado sin KKT.
+    chi_bueno = getattr(p, "opt_chi_bueno", None)
+    nit_min = int(getattr(p, "opt_nit_min", 0)) - int(getattr(p, "opt_nit_previas", 0))
 
     # Iterados admisibles (opcional, opt_factible): keep_feasible en cotas y restricciones; trust-constr fija la
     # holgura en −c(x) y rechaza los pasos que salen del conjunto admisible (Nocedal y Wright 2006, p. 576), así que
@@ -920,7 +926,7 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
     # <opt_progreso>.jsonl (todos los iterados); si existe <opt_progreso>.stop la optimización termina en la
     # siguiente iteración guardando el resultado como siempre.
     progreso = getattr(p, "opt_progreso", None)
-    parado = [False]
+    parado = [None]
 
     def criticidad(xk, state):
         z, residuo = proyectar(xk - state.grad, lb_s, ub_s, lin)
@@ -942,9 +948,15 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
         if progreso and os.path.exists(progreso + ".stop"):
             if ctx.comm.rank == 0:
                 print(f"[fenicsx-opt] paro pedido ({progreso}.stop)", flush=True)
-            parado[0] = True
+            parado[0] = "usuario"
             return True
-        return chi < chi_tol and residuo <= proy_tol and state.constr_violation < 1e-8
+        if chi < chi_tol and residuo <= proy_tol and state.constr_violation < 1e-8:
+            return True
+        if chi_bueno and state.nit >= nit_min and chi <= float(chi_bueno) and residuo <= proy_tol \
+                and state.constr_violation < 1e-8:
+            parado[0] = "practica"
+            return True
+        return False
 
     opts = {"maxiter": int(max_iter) if max_iter else int(getattr(p, "opt_maxiter", 20)),
             "gtol": 1e-12, "xtol": 1e-8}
@@ -958,8 +970,10 @@ def optimize_fenicsx(p, mesh_cache=None, max_iter=None):
                    constraints=[LinearConstraint(A_, l_, u_, keep_feasible=factible) for A_, l_, u_ in lin],
                    callback=criticidad, options=opts)
     res.x = s * res.x
-    if parado[0]:
+    if parado[0] == "usuario":
         res.success, res.message = False, "paro pedido por el usuario"
+    elif parado[0] == "practica":
+        res.success, res.message = False, f"parada práctica: χ ≤ {float(chi_bueno):g} tras {res.nit} iteraciones (sin KKT)"
     elif res.status == 3:
         res.success, res.message = True, f"χ < {chi_tol:g} (KKT)"
 
