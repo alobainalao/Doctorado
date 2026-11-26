@@ -3,9 +3,10 @@ Evaluación cruzada de los óptimos de experimentos/optimizar_nitrato.py: Ĵ y s
 iterado guardado de cada modelo (<modelo>_progreso.json, o <modelo>.json si la corrida terminó). Si el
 óptimo de otro modelo da menor Ĵ que el propio, el optimizador paró antes de tiempo.
 
-    python -m experimentos.evaluar_optimos <adr|mrmt_semi|mrmt_block> <variante> [x_de ...]
+    python -m experimentos.evaluar_optimos <adr|mrmt_semi|mrmt_block> <variante> [x_de ...] [--nit=N]
 
-x_de: modelos cuyo iterado se evalúa (por defecto los otros dos). Entorno: fenics_env.
+x_de: modelos cuyo iterado se evalúa (por defecto los otros dos). --nit: el iterado N de <x_de>_progreso.jsonl en lugar
+del final (comparar con el mismo número de iteraciones). Entorno: fenics_env.
 Salida: data/output/optimizacion_<variante>/cruce/<modelo>_en_<x_de>.json
 """
 import json
@@ -26,8 +27,15 @@ C_LIMITE = 0.05                    # kg/m³ (50 mg/L como nitrato, OMS), igual q
 MODELOS = ("adr", "mrmt_semi", "mrmt_block")
 
 
-def iterado(dir_out, m):
-    """x guardado del modelo m: el óptimo final si existe, si no el último iterado aceptado."""
+def iterado(dir_out, m, nit=None):
+    """x guardado del modelo m: el iterado nit del registro si se pide; si no, el óptimo final si existe, y si no el
+    último iterado aceptado."""
+    if nit:
+        for linea in open(os.path.join(dir_out, f"{m}_progreso.jsonl")):
+            r = json.loads(linea)
+            if r["nit"] == nit:
+                return np.asarray(r["x"]), f"progreso it {nit}"
+        raise SystemExit(f"{m}: el registro no tiene la iteración {nit}")
     ruta = os.path.join(dir_out, f"{m}.json")
     if os.path.exists(ruta):
         return np.asarray(json.load(open(ruta))["x_opt"]), "final"
@@ -35,7 +43,9 @@ def iterado(dir_out, m):
     return np.asarray(d["x"]), f"progreso it {d['nit']}"
 
 
-def main(modelo, variante, *x_de):
+def main(modelo, variante, *args):
+    nit = next((int(a.split("=")[1]) for a in args if a.startswith("--nit=")), None)
+    x_de = tuple(a for a in args if not a.startswith("--"))
     dir_out = os.path.join(CODIGO, "data", "output", f"optimizacion_{variante}")
     x_de = x_de or tuple(m for m in MODELOS if m != modelo)
     cfg = json.load(open(os.path.join(CODIGO, "config", f"{variante}.json")))
@@ -57,7 +67,7 @@ def main(modelo, variante, *x_de):
 
     os.makedirs(os.path.join(dir_out, "cruce"), exist_ok=True)
     for m in x_de:
-        x, origen = iterado(dir_out, m)
+        x, origen = iterado(dir_out, m, nit)
         Q, zp = x[:-1], float(x[-1])
         r = _solve_forward(ctx, Q, zp)
         J2 = w2 * p.koppa * abs(zp - p.z0) ** 2
