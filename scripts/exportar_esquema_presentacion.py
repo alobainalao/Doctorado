@@ -9,6 +9,12 @@ optimizacion_<variante>/instantanea_23nov/adr_progreso.json, el mismo que muestr
 data/output/presentacion_esquema/campos.npz; sin él se reusa ese archivo. --estados: GeoJSON de los estados de México
 (p. ej. github.com/angelnmara/geojson, mexicoHigh.json) para el mapa de ubicación. Escribe
 <presentacion>/src/slides-avance3/esquema.js con contornos y polilíneas ya en las coordenadas de escena.jsx.
+--modelo, --iterado y --salida (versión simplificada del avance 3, 26-nov-2026) cambian el modelo del transporte, el
+iterado del caudal y el archivo de salida, p. ej. MRMT por bloques en su último iterado:
+    python scripts/exportar_esquema_presentacion.py --simular --modelo=mrmt_block \
+        --iterado=data/output/optimizacion_nitrato_vscale_malla_eje_g1_prom/mrmt_block.json \
+        --salida=<presentacion>/src/slides-avance3s/esquemaBloque.js
+Los campos de otro modelo se guardan en campos_<modelo>.npz; sin las opciones todo queda como antes (ADR).
 """
 import json
 import os
@@ -22,13 +28,16 @@ if CODIGO not in sys.path:
 os.chdir(CODIGO)
 SIMULAR = "--simular" in sys.argv[1:]
 ESTADOS = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--estados=")), None)
+_OPC = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a)
 _ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
 PRES = _ARGS[0] if _ARGS else os.path.join(os.path.dirname(CODIGO), "presentaciones", "avance1-doc")
 
 VARIANTE = "nitrato_vscale_malla_eje_g1"
 DIR_OPT = os.path.join(CODIGO, "data", "output", f"optimizacion_{VARIANTE}")
-X0_OPT = os.path.join(DIR_OPT, "instantanea_23nov", "adr_progreso.json")
-NPZ = os.path.join(CODIGO, "data", "output", "presentacion_esquema", "campos.npz")
+MODELO = _OPC.get("modelo", "adr")
+X0_OPT = os.path.join(CODIGO, _OPC["iterado"]) if "iterado" in _OPC else os.path.join(DIR_OPT, "instantanea_23nov", "adr_progreso.json")
+NPZ = os.path.join(CODIGO, "data", "output", "presentacion_esquema", "campos.npz" if MODELO == "adr" else f"campos_{MODELO}.npz")
+SALIDA = _OPC.get("salida")
 
 # Coordenadas de escena.jsx: x' = (x − 816)/9.939, z' = (250.5 − z)/9.939 (dominio en [0, 1000] × [0, 296]).
 ESC = 9.939
@@ -103,7 +112,7 @@ def simular():
     from funtions.runtime import RUNTIME
     from config.parameters import Parameters
     cfg = json.load(open(os.path.join(CODIGO, "config", f"{VARIANTE}.json")))
-    cfg.update({"metodo": "fenicsx", "run_type": "optimization", "model": "adr", "pre": True,
+    cfg.update({"metodo": "fenicsx", "run_type": "optimization", "model": MODELO, "pre": True,
                 "save_dat": False, "animate": False, "postproc": False, "extract_C": False})
     RUNTIME.params = Parameters(config=cfg)
     p = RUNTIME.get()
@@ -117,7 +126,7 @@ def simular():
     f = json.load(open(os.path.join(DIR_OPT, "f_fuente.json")))["f"]
     p.C_ref = 0.05 / f
     d = json.load(open(X0_OPT))
-    x = np.asarray(d["x"], float)
+    x = np.asarray(d.get("x", d.get("x_opt")), float)
     Q, zp = x[:-1], float(x[-1])
 
     G = ctx.G
@@ -263,7 +272,7 @@ def main():
     pluma = {k: [bandas(tri, d[f"C_{k}"][i], NIV_C, tol=1.5, dec=0, area_min=2.0) for i in range(PASO_C - 1, nt, PASO_C)]
              for k in ("sin", "con")}
     out = dict(
-        fuente=dict(variante=VARIANTE, iterado=os.path.relpath(X0_OPT, CODIGO), nit=int(d["nit"]),
+        fuente=dict(variante=VARIANTE, modelo=MODELO, iterado=os.path.relpath(X0_OPT, CODIGO), nit=int(d["nit"]),
                     zp=float(d["zp"]), dt_cuadro_h=PASO_C * float(d["dt"]) / 3600.0),
         phi=dict(niveles=NIV_PHI, bandas=bandas(tri, phi, NIV_PHI)),
         pozos_campo=pozos_campo, capas=capas, zona=zona(),
@@ -271,7 +280,7 @@ def main():
         corrientes=dict(sin=corrientes(tri, v_sin, semillas), con=corrientes(tri, v_con, semillas_con, pozo)),
         pluma=dict(niveles=NIV_C, sin=pluma["sin"], con=pluma["con"]),
     )
-    ruta = os.path.join(PRES, "src", "slides-avance3", "esquema.js")
+    ruta = SALIDA or os.path.join(PRES, "src", "slides-avance3", "esquema.js")
     with open(ruta, "w") as fh:
         fh.write("// Generado por codigo/scripts/exportar_esquema_presentacion.py. No editar a mano.\n")
         fh.write(f"export const ESQ = {json.dumps(out, separators=(',', ':'))};\n")
