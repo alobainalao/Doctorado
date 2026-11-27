@@ -31,10 +31,12 @@ def jsonl(ruta):
 
 def trayectoria():
     """Iterados de la corrida principal y de su continuación (la 1.ª línea de «sigue» repite el último iterado)."""
-    prin = jsonl(os.path.join(DIR_OPT, "mrmt_block_progreso.jsonl"))
-    base = prin[-1]["nit"] - 1
-    sig = [dict(r, nit=r["nit"] + base) for r in jsonl(os.path.join(DIR_OPT, "mrmt_block_sigue_progreso.jsonl"))]
-    tray = prin + [r for r in sig if r["nit"] > prin[-1]["nit"]]
+    tray = jsonl(os.path.join(DIR_OPT, "mrmt_block_progreso.jsonl"))
+    # continuaciones en orden (sigue2 reanuda la que mató el OOM el 26-nov); cada una repite el último iterado de la anterior
+    for etq in ("sigue", "sigue2", "sigue3"):
+        base = tray[-1]["nit"] - 1
+        sig = [dict(r, nit=r["nit"] + base) for r in jsonl(os.path.join(DIR_OPT, f"mrmt_block_{etq}_progreso.jsonl"))]
+        tray += [r for r in sig if r["nit"] > tray[-1]["nit"]]
     return tray
 
 
@@ -44,7 +46,9 @@ def optimo_js():
     cons = {}
     for etq, previas in (("zp200", 0), ("reinicio25", 25)):
         t = jsonl(os.path.join(DIR_OPT, f"mrmt_block_{etq}_progreso.jsonl"))
-        t += [dict(r, nit=r["nit"] + t[-1]["nit"] - 1) for r in jsonl(os.path.join(DIR_OPT, f"mrmt_block_{etq}_sigue_progreso.jsonl"))[1:]] if t else []
+        if t:
+            base = t[-1]["nit"] - 1
+            t += [dict(r, nit=r["nit"] + base) for r in jsonl(os.path.join(DIR_OPT, f"mrmt_block_{etq}_sigue_progreso.jsonl"))[1:]]
         if t:
             cons[etq] = dict(nit=t[-1]["nit"] + previas, J=t[-1]["J"], chi=t[-1]["chi"], zp=t[-1]["x"][-1],
                              historia=[[r["nit"] + previas, r["J"], r["chi"], r["x"][-1]] for r in t])
